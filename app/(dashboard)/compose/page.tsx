@@ -20,7 +20,6 @@ import {
   Loader2,
   MessageCircle,
   MoveRight,
-  Music2,
   PenSquare,
   RefreshCcw,
   RefreshCw,
@@ -70,14 +69,14 @@ import {
   isRecord,
   joinHashtags,
   platformFormatOptions,
-  readInstagramAudioSuggestions,
   readInstagramSlides,
   readLinkedInSlides,
   readString,
   readStringArray,
   readXThreadTweets,
   toVisualSearchHref,
-  type InstagramAudioSuggestion,
+  type SlideBackgroundSelection,
+  type XThreadTweet,
   type LinkedInCarouselSlide,
   type PostFormat,
   type SocialFormatOption,
@@ -752,58 +751,6 @@ export default function ComposePage() {
     router.push(toVisualSearchHref(query))
   }
 
-  const fetchAudioSuggestions = async (
-    platform: Platform,
-    caption: string,
-    angle: string,
-    postId?: string | null,
-    initialExportMetadata?: Record<string, unknown> | null
-  ) => {
-    if (platform !== 'instagram' || !caption.trim()) {
-      return
-    }
-
-    try {
-      const response = await fetch('/api/instagram/audio', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ angle, caption }),
-      })
-      const data = (await response.json()) as {
-        error?: string
-        suggestions?: InstagramAudioSuggestion[]
-      }
-
-      if (!response.ok) {
-        throw new Error(data.error || 'No fue posible generar audio sugerido')
-      }
-
-      updateGeneratedResult(platform, (result) => ({
-        ...result,
-        export_metadata: {
-          ...(isRecord(result.export_metadata) ? result.export_metadata : {}),
-          audio_suggestions: data.suggestions ?? [],
-        },
-      }))
-
-      if (postId) {
-        const currentExportMetadata = isRecord(initialExportMetadata) ? initialExportMetadata : {}
-
-        await supabase
-          .from('posts')
-          .update({
-            export_metadata: {
-              ...currentExportMetadata,
-              audio_suggestions: data.suggestions ?? [],
-            },
-          })
-          .eq('id', postId)
-      }
-    } catch (error) {
-      console.error(error)
-    }
-  }
-
   const dismissAssistance = () => {
     persistAssistanceState({ dismissed: true, usageCount: assistanceUsageCount });
   };
@@ -982,17 +929,6 @@ export default function ComposePage() {
       setGenerateButtonState('success');
       scrollToOutput();
 
-      if (activePlatform === 'instagram') {
-        const caption = readString(data.content.caption)
-
-        void fetchAudioSuggestions(
-          activePlatform,
-          caption,
-          selectedAngle,
-          data.post_id,
-          isRecord(data.export_metadata) ? data.export_metadata : null
-        )
-      }
     } catch (error) {
       setGenerateButtonState('error');
       setErrorMessage(error instanceof Error ? error.message : 'No fue posible generar contenido');
@@ -2031,43 +1967,6 @@ export default function ComposePage() {
     )
   }
 
-  const renderAudioSuggestionSection = (suggestions: InstagramAudioSuggestion[]) => {
-    if (suggestions.length === 0) {
-      return null
-    }
-
-    return (
-      <div className="rounded-[24px] border border-white/10 bg-[#101417] p-4">
-        <div className="flex items-center gap-2">
-          <Music2 className="h-4 w-4 text-[#D3C2F1]" />
-          <p className="text-sm font-medium text-[#E0E5EB]">Audio sugerido</p>
-        </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {suggestions.map((suggestion, index) => {
-            const isOpen = expandedAudioSuggestion === index
-
-            return (
-              <button
-                key={`${suggestion.style}-${index}`}
-                type="button"
-                onClick={() => setExpandedAudioSuggestion((current) => (current === index ? null : index))}
-                className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-left transition-colors hover:border-white/20 hover:bg-white/[0.05]"
-              >
-                <p className="text-sm text-[#E0E5EB]">{suggestion.style}</p>
-                <p className="mt-1 text-xs text-[#8D95A6]">{suggestion.mood}</p>
-                {isOpen && (
-                  <div className="mt-3 space-y-2 border-t border-white/10 pt-3 text-xs leading-5 text-[#B5BDCA]">
-                    <p>Buscar: {suggestion.search_query}</p>
-                    <p>{suggestion.why}</p>
-                  </div>
-                )}
-              </button>
-            )
-          })}
-        </div>
-      </div>
-    )
-  }
 
   const renderMarkdownParagraph = (line: string, key: string) => {
     const chunks = line.split(/(\*\*.*?\*\*)/g)
@@ -2174,30 +2073,38 @@ export default function ComposePage() {
 
     if (platform === 'instagram' && format === 'carousel') {
       const slides = readInstagramSlides(content.slides)
-      const suggestions = readInstagramAudioSuggestions(
-        isRecord(result.export_metadata) ? result.export_metadata.audio_suggestions : undefined
-      )
 
       return (
         <div className="space-y-5">
           <InstagramCarouselPreview
             slides={slides}
             onSearchUnsplash={(query) => openVisualSearch(query)}
+            onBackgroundChange={(backgrounds) => {
+              setGeneratedResults((prev) => {
+                const r = prev[platform];
+                if (!r) return prev;
+                return {
+                  ...prev,
+                  [platform]: {
+                    ...r,
+                    export_metadata: {
+                      ...r.export_metadata,
+                      slide_backgrounds: backgrounds,
+                    }
+                  }
+                }
+              });
+            }}
           />
           <div className="rounded-[24px] border border-white/10 bg-[#101417] p-4 text-sm leading-7 text-[#E0E5EB]">
             <p className="whitespace-pre-wrap">{readString(content.caption)}</p>
             {hashtags.length > 0 ? <p className="mt-4 text-[#8D95A6]">{joinHashtags(hashtags)}</p> : null}
           </div>
-          {renderAudioSuggestionSection(suggestions)}
         </div>
       )
     }
 
     if (platform === 'instagram') {
-      const suggestions = readInstagramAudioSuggestions(
-        isRecord(result.export_metadata) ? result.export_metadata.audio_suggestions : undefined
-      )
-
       return (
         <div className="space-y-5">
           <div className="rounded-[24px] border border-white/10 bg-[#101417] p-4 text-sm leading-7 text-[#E0E5EB]">
@@ -2219,7 +2126,6 @@ export default function ComposePage() {
               <ExternalLink className="h-4 w-4" />
             </button>
           </div>
-          {renderAudioSuggestionSection(suggestions)}
         </div>
       )
     }
@@ -2250,7 +2156,7 @@ export default function ComposePage() {
       const tweets = readXThreadTweets(content.tweets ?? content.thread)
       const hookStrength = (
         readString(content.hook_strength) ||
-        readString(isRecord(result.export_metadata) ? result.export_metadata.hook_strength : undefined)
+        readString(isRecord(result.export_metadata) ? result.export_metadata?.hook_strength : undefined)
       ) as XHookStrength
       const hookNote = readString(content.hook_note)
 
@@ -2274,7 +2180,7 @@ export default function ComposePage() {
           )}
 
           <div className="space-y-3">
-            {tweets.map((tweet) => (
+            {tweets.map((tweet: XThreadTweet) => (
               <div key={`thread-${tweet.number}`} className="rounded-2xl border border-white/8 bg-[#101417] p-4">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-xs uppercase tracking-[0.2em] text-[#4E576A]">Tweet {tweet.number}</p>
@@ -3143,7 +3049,13 @@ export default function ComposePage() {
                         state={ideasButtonState}
                         disabled={suggestingIdeas}
                         idleLabel={suggestedIdeas.length > 0 ? 'Sugerir otras 3' : 'Sugerir 3 ideas'}
-                        loadingLabel="Generando ideas"
+                        loadingPhases={[
+                          'Inicializando',
+                          'Analizando tu marca',
+                          'Identificando oportunidad',
+                          'Generando ideas',
+                          'Finalizando detalles',
+                        ]}
                         successLabel="Ideas listas"
                         errorLabel="Reintentar ideas"
                         icon={Sparkles}
@@ -3258,7 +3170,12 @@ export default function ComposePage() {
                             disabled={!idea.trim() || loadingAngles}
                             state={anglesButtonState}
                             idleLabel="Sugerir ángulos"
-                            loadingLabel="Pensando ángulos"
+                            loadingPhases={[
+                              'Inicializando',
+                              'Analizando contexto',
+                              'Identificando ángulos',
+                              'Propuesta lista',
+                            ]}
                             successLabel="Ángulos listos"
                             errorLabel="Reintentar ángulos"
                             icon={Lightbulb}
@@ -3269,7 +3186,13 @@ export default function ComposePage() {
                             disabled={!canGenerate}
                             state={generateButtonState}
                             idleLabel={generationActionLabel}
-                            loadingLabel={`${generationActionLabel}...`}
+                            loadingPhases={[
+                              'Inicializando',
+                              'Identificando oportunidad',
+                              'Generando contenido',
+                              'Finalizando detalles',
+                              'Propuesta lista',
+                            ]}
                             successLabel="Contenido listo"
                             errorLabel="Reintentar generación"
                             icon={Sparkles}
@@ -3354,7 +3277,13 @@ export default function ComposePage() {
                             disabled={!canGenerate}
                             state={generateButtonState}
                             idleLabel={generationActionLabel}
-                            loadingLabel={`${generationActionLabel}...`}
+                            loadingPhases={[
+                              'Inicializando',
+                              'Identificando oportunidad',
+                              'Generando contenido',
+                              'Finalizando detalles',
+                              'Propuesta lista',
+                            ]}
                             successLabel="Contenido listo"
                             errorLabel="Reintentar generación"
                             icon={Sparkles}

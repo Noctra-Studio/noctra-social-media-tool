@@ -632,7 +632,7 @@ export const landingContent = {
       {
         answer: {
           en: 'Instagram exports a ZIP with the caption, slide structure and audio suggestion. X exports a TXT with the numbered thread. LinkedIn exports a ZIP with the upload-ready carousel PDF and the caption separately.',
-          es: 'Instagram exporta un ZIP con el caption, estructura de slides y sugerencia de audio. X exporta un TXT con el hilo numerado. LinkedIn exporta un ZIP con el PDF de carrusel listo para subir y el caption por separado.',
+          es: 'Instagram exporta un ZIP con el caption, estructura de slides y selección de fondos. X exporta un TXT con el hilo numerado. LinkedIn exporta un ZIP con el PDF de carrusel listo para subir y el caption por separado.',
         },
         question: {
           en: 'How does export work?',
@@ -799,8 +799,8 @@ export const landingContent = {
         es: 'Exportar ZIP',
       },
       footer: {
-        en: '8 slides · audio suggestion · authority pillar',
-        es: '8 slides · audio sugerido · pilar autoridad',
+        en: '8 slides · background selection · authority pillar',
+        es: '8 slides · selección de fondos · pilar autoridad',
       },
       hook: {
         en: 'Authority does not come from publishing more. It comes from saying one sharp thing often enough.',

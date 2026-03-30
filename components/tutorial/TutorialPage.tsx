@@ -467,7 +467,7 @@ const timelineItems = [
     steps: [
       'Genera un post o carrusel para el fin de semana.',
       'Busca imagen en /visual o genera con Gemini.',
-      'Exporta ZIP con caption + slides + audio sugerido.',
+      'Exporta ZIP con caption + slides + selección de fondos.',
       'Sube a Instagram o programa.',
     ],
   },
@@ -889,22 +889,23 @@ export function TutorialPage() {
                   </CollapsibleTip>
 
                   <CollapsibleTip
-                    title="Audio sugerido — cómo usarlo"
-                    summary="La app sugiere musica para mejorar alcance al exportar."
+                    title="Fondos de carrusel"
+                    summary="La app sugiere fondos dinámicos por slide al exportar."
                   >
                     <p>
-                      Cuando exportas tu contenido de Instagram, la app incluye 3 sugerencias de
-                      audio con el termino exacto para buscar en la biblioteca de Instagram.
+                      Cuando generas un carrusel de Instagram, la app recomienda un fondo
+                      específico por cada slide (Imagen, Degradado o Color sólido) para
+                      maximizar el impacto visual y la legibilidad.
                     </p>
                     <ol className="mt-4 space-y-2 text-[#C5CBD6]">
-                      <li>1. Exporta tu post (ZIP).</li>
-                      <li>2. Abre el `caption.txt` y revisa las sugerencias al final.</li>
-                      <li>3. En Instagram, busca ese termino en la biblioteca de audio.</li>
-                      <li>4. Elige el que mejor suene con tu contenido.</li>
+                      <li>1. Revisa las recomendaciones de la IA en la previsualización.</li>
+                      <li>2. Cambia el tipo de fondo o busca una imagen en Unsplash si lo prefieres.</li>
+                      <li>3. Exporta el post (ZIP) para obtener las instrucciones de diseño.</li>
+                      <li>4. En Canva o Figma, aplica los estilos indicados en `canva_instructions.txt`.</li>
                     </ol>
                     <p className="mt-4">
-                      Los posts con audio suelen ganar alcance extra en el algoritmo de Instagram,
-                      incluso cuando son publicaciones estaticas.
+                      Alternar entre fondos oscuros y claros genera un ritmo visual que mantiene
+                      al usuario deslizando hasta el final.
                     </p>
                   </CollapsibleTip>
 

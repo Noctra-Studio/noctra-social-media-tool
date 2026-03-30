@@ -31,7 +31,6 @@ type CarouselBody = {
 }
 
 type CarouselResponse = {
-  audio_mood?: string
   caption?: string
   hashtags?: unknown
   slides?: unknown
@@ -114,18 +113,38 @@ Generate each slide with:
 - body: string (max 30 words)
 - visual_direction: string
 - design_note: string using Noctra palette (#101417, #212631, #E0E5EB, #462D6E)
+- stat_or_example: (optional) a short case study, statistic, or example related to the headline to be highlighted in a separate box.
+- bg_type: 'image' | 'gradient' | 'solid'
+- bg_reasoning: string (1 sentence why this bg type fits)
+- unsplash_query: string | null (only when bg_type is 'image', specific terms like "dark minimal workspace")
+- gradient_style: 'brand_dark' | 'brand_navy' | 'brand_subtle' | null (only when bg_type is 'gradient')
+
+For each slide, recommend a background type based on content:
+- Use 'image' when: Slide type is 'cover' or 'cta', or content is narrative/human/case-study centric. Provide a specific unsplash_query for dark, minimal, editorial photography.
+- Use 'gradient' when: Content is technical, abstract (SEO, AI, automation), or data-driven.
+- Use 'solid' when: Slide has extensive text or a minimalist approach fits better.
 
 Also generate:
 - caption: full Instagram caption for the post (max 150 words, 5-8 hashtags)
 - hashtags: string[]
-- audio_mood: string
 
 Return ONLY valid JSON:
 {
-  "slides": [{ "slide_number": 1, "type": "cover", "headline": "string", "body": "string", "visual_direction": "string", "design_note": "string" }],
+  "slides": [{ 
+    "slide_number": 1, 
+    "type": "cover", 
+    "headline": "string", 
+    "body": "string", 
+    "visual_direction": "string", 
+    "design_note": "string", 
+    "stat_or_example": "string",
+    "bg_type": "image",
+    "bg_reasoning": "string",
+    "unsplash_query": "string",
+    "gradient_style": "brand_dark"
+  }],
   "caption": "string",
-  "hashtags": ["#tag"],
-  "audio_mood": "string"
+  "hashtags": ["#tag"]
 }`,
         },
       ],
@@ -134,7 +153,6 @@ Return ONLY valid JSON:
     const parsed = parseAnthropicJson<CarouselResponse>(message)
     const slides = readInstagramSlides(parsed.slides)
     const content = {
-      audio_mood: readString(parsed.audio_mood),
       caption: readString(parsed.caption),
       hashtags: readStringArray(parsed.hashtags),
       slides,

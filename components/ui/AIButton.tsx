@@ -1,6 +1,6 @@
 'use client'
 
-import type { ButtonHTMLAttributes } from 'react'
+import { useEffect, useState, type ButtonHTMLAttributes } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { AlertCircle, Check, Loader2, Sparkles } from 'lucide-react'
 
@@ -11,6 +11,8 @@ type AIButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   icon?: LucideIcon
   idleLabel: string
   loadingLabel?: string
+  loadingPhases?: string[]
+  phaseInterval?: number
   state?: AIButtonState
   successLabel?: string
   variant?: 'primary' | 'secondary'
@@ -47,21 +49,43 @@ export function AIButton({
   icon: Icon = Sparkles,
   idleLabel,
   loadingLabel,
+  loadingPhases,
+  phaseInterval = 2800,
   state = 'idle',
   successLabel,
   type = 'button',
   variant = 'primary',
   ...props
 }: AIButtonProps) {
+  const [phaseIndex, setPhaseIndex] = useState(0)
+
+  useEffect(() => {
+    if (state !== 'loading' || !loadingPhases?.length) {
+      setPhaseIndex(0)
+      return
+    }
+
+    const timer = setInterval(() => {
+      setPhaseIndex((current) =>
+        current < loadingPhases.length - 1 ? current + 1 : current
+      )
+    }, phaseInterval)
+
+    return () => clearInterval(timer)
+  }, [state, loadingPhases, phaseInterval])
+
   const isDisabled = disabled || state === 'loading'
-  const stateLabel =
-    state === 'loading'
-      ? loadingLabel || idleLabel
-      : state === 'success'
-        ? successLabel || idleLabel
-        : state === 'error'
-          ? errorLabel || idleLabel
-          : idleLabel
+
+  let stateLabel: string
+  if (state === 'loading') {
+    stateLabel = loadingPhases?.length ? loadingPhases[phaseIndex] : (loadingLabel || idleLabel)
+  } else if (state === 'success') {
+    stateLabel = successLabel || idleLabel
+  } else if (state === 'error') {
+    stateLabel = errorLabel || idleLabel
+  } else {
+    stateLabel = idleLabel
+  }
 
   const StateIcon =
     state === 'loading' ? Loader2 : state === 'success' ? Check : state === 'error' ? AlertCircle : Icon
@@ -78,7 +102,7 @@ export function AIButton({
       {...props}
     >
       <StateIcon className={`h-4 w-4 ${state === 'loading' ? 'animate-spin' : ''}`} />
-      <span>{stateLabel}</span>
+      <span className="transition-opacity duration-200">{stateLabel}</span>
     </button>
   )
 }

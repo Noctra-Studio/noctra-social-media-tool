@@ -2,6 +2,7 @@ import { getUser } from '@/lib/auth/get-user';
 import { NextResponse } from 'next/server';
 import { anthropic } from '@/lib/anthropic';
 import { withUserInputLanguageRule } from '@/lib/ai/language-rule';
+import { stripMarkdownJSON } from '@/lib/ai/strip-markdown-json';
 
 export async function POST(req: Request) {
   try {
@@ -65,7 +66,7 @@ Return ONLY a JSON object (no markdown, no backticks, no extra text) with this s
     });
 
     const responseText = message.content[0].type === 'text' ? message.content[0].text : '';
-    const parsed = JSON.parse(responseText.trim());
+    const parsed = JSON.parse(stripMarkdownJSON(responseText));
 
     return NextResponse.json(parsed);
 

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { anthropic } from '@/lib/anthropic'
 import { withUserInputLanguageRule } from '@/lib/ai/language-rule'
+import { stripMarkdownJSON } from '@/lib/ai/strip-markdown-json'
 import { getUser } from '@/lib/auth/get-user'
 import { createClient } from '@/lib/supabase/server'
 import type { Platform, SuggestedIdea } from '@/lib/product'
@@ -113,11 +114,15 @@ Return ONLY JSON with this structure:
     })
 
     const responseText = message.content[0]?.type === 'text' ? message.content[0].text : ''
-    const parsed = JSON.parse(responseText.trim()) as { ideas?: SuggestedIdea[] }
+    const parsed = JSON.parse(stripMarkdownJSON(responseText)) as { ideas?: SuggestedIdea[] }
 
     return NextResponse.json({ ideas: parsed.ideas || [] })
   } catch (error) {
-    console.error('Suggest ideas error:', error)
+    console.error('Suggest ideas error:', {
+      name: error instanceof Error ? error.name : 'unknown',
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    })
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to suggest ideas' },
       { status: 500 }

@@ -153,13 +153,7 @@ function DroppableDay({
         ))}
       </div>
 
-      {posts.length === 0 ? (
-        <Plus
-          className={`pointer-events-none absolute right-3 bottom-3 h-[18px] w-[18px] opacity-0 transition-opacity group-hover:opacity-40 ${
-            isCurrentMonth ? 'text-white' : 'text-white/60'
-          }`}
-        />
-      ) : null}
+
     </div>
   );
 }

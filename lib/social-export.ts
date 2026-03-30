@@ -6,12 +6,12 @@ import {
   formatExportDate,
   joinHashtags,
   plainTextFromMarkdown,
-  readInstagramAudioSuggestions,
   readInstagramSlides,
   readLinkedInSlides,
   readString,
   readStringArray,
   readXThreadTweets,
+  type SlideBackgroundSelection,
   type PostFormat,
 } from '@/lib/social-content'
 
@@ -41,23 +41,11 @@ export async function exportInstagramPackage(args: {
 
   const caption = readString(content.caption)
   const hashtags = ensureHashtags(readStringArray(content.hashtags))
-  const audioSuggestions = readInstagramAudioSuggestions(exportMetadata?.audio_suggestions)
 
   const captionSections = [caption]
 
   if (hashtags.length > 0) {
     captionSections.push('---', `Hashtags: ${joinHashtags(hashtags)}`)
-  }
-
-  if (audioSuggestions.length > 0) {
-    captionSections.push(
-      '---',
-      'Audio sugerido:',
-      ...audioSuggestions.map(
-        (suggestion, index) =>
-          `${index + 1}. ${suggestion.style} - buscar "${suggestion.search_query}" en Instagram`
-      )
-    )
   }
 
   root.file('caption.txt', captionSections.filter(Boolean).join('\n'))
@@ -72,26 +60,72 @@ export async function exportInstagramPackage(args: {
 
     slides.forEach((slide) => {
       const indexLabel = String(slide.slide_number).padStart(2, '0')
+      const bgSelections = exportMetadata?.slide_backgrounds as SlideBackgroundSelection[] | undefined
+      const selection = bgSelections?.find(s => s.slide_number === slide.slide_number)
+      
+      const bgType = selection?.bg_type || slide.bg_type
+      const sections = [
+        `TITULAR: ${slide.headline}`,
+        `CUERPO: ${slide.body}`,
+        `FONDO: ${bgType.toUpperCase()}`
+      ]
+
+      if (bgType === 'image') {
+        const url = selection?.image_url || 'Buscar en Unsplash'
+        const photographer = selection?.photographer || 'Unsplash'
+        sections.push(
+          `FOTO SELECCIONADA: ${url}`,
+          `FOTOGRÁFO: ${photographer}`,
+          `INSTRUCCIÓN: Descarga la foto del link y úsala como fondo en Canva. Agrega un overlay oscuro de 50-60% opacidad antes de agregar el texto.`
+        )
+      } else if (bgType === 'gradient') {
+        const style = selection?.gradient_style || slide.gradient_style || 'brand_dark'
+        sections.push(
+          `GRADIENTE: ${style}`,
+          `INSTRUCCIÓN: En Canva, usa un rectángulo con el estilo de gradiente indicado como fondo.`
+        )
+      } else if (bgType === 'solid') {
+        const color = selection?.solid_color || (slide.slide_number % 2 !== 0 ? '#101417' : '#212631')
+        sections.push(
+          `COLOR: ${color}`,
+          `INSTRUCCIÓN: Usa este color sólido como fondo en Canva.`
+        )
+      }
+
+      sections.push(`LOGO: Agrega favicon-light.svg en esquina inferior derecha, 24px, opacidad 75%`)
+
       slidesFolder.file(
         `slide-${indexLabel}-${slide.type}.txt`,
-        [
-          `TITULAR: ${slide.headline}`,
-          `CUERPO: ${slide.body}`,
-          `IMAGEN SUGERIDA: ${slide.visual_direction}`,
-          `NOTA DE DISENO: ${slide.design_note}`,
-        ].join('\n')
+        sections.join('\n')
       )
     })
 
     root.file(
       'guia-rapida.txt',
       [
-        'Instrucciones breves:',
-        '1. Disena cada slide en Canva usando el titular y cuerpo',
-        '2. Busca la imagen sugerida en Unsplash o usa la de la app',
-        '3. Sube los slides en orden al carrusel de Instagram',
-        '4. Copia el caption.txt en la descripcion',
-        '5. Busca el audio sugerido en la biblioteca de Instagram',
+        'CÓMO PUBLICAR ESTE CARRUSEL',
+        '═══════════════════════════',
+        '',
+        '1. DISEÑO EN CANVA',
+        '   - Abre Canva y crea un diseño Instagram Post (1080x1080px)',
+        '   - Para slides con FOTO: descarga la imagen del link indicado y úsala como fondo. Agrega un overlay oscuro del 55% para asegurar legibilidad.',
+        '   - Para slides con GRADIENTE: usa las indicaciones CSS en cada archivo de slide.',
+        '   - Para slides con SÓLIDO: usa el color HEX indicado.',
+        '',
+        '2. TIPOGRAFÍA',
+        '   - Titulares: Satoshi Bold (o DM Sans Bold)',
+        '   - Cuerpo: Inter Regular',
+        '',
+        '3. LOGO',
+        '   - Agrega favicon-light.svg en la esquina inferior derecha.',
+        '   - Tamaño: 24x24px, Opacidad: 75%.',
+        '',
+        '4. PUBLICACIÓN',
+        '   - Sube los slides en orden a Instagram.',
+        '   - Copia el texto de caption.txt como descripción.',
+        '',
+        '═══════════════════════════',
+        'Generado con social.noctra.studio',
       ].join('\n')
     )
   } else {

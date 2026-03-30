@@ -60,7 +60,12 @@ export function parseAnthropicJson<T>(message: Anthropic.Messages.Message) {
     throw new Error('Anthropic returned an empty response')
   }
 
-  return JSON.parse(text) as T
+  const cleaned = text
+    .replace(/^```(?:json)?\s*\n?/i, '')
+    .replace(/\n?```\s*$/i, '')
+    .trim()
+
+  return JSON.parse(cleaned) as T
 }
 
 export async function saveGeneratedPost(params: {

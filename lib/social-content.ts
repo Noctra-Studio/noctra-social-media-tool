@@ -5,11 +5,10 @@ export type XFormat = 'tweet' | 'thread' | 'article'
 export type LinkedInFormat = 'text' | 'image' | 'carousel' | 'document'
 export type PostFormat = InstagramFormat | XFormat | LinkedInFormat
 
-export type InstagramAudioSuggestion = {
-  mood: string
-  search_query: string
-  style: string
-  why: string
+export type InstagramCarouselPost = {
+  caption: string
+  hashtags: string[]
+  slides: InstagramCarouselSlide[]
 }
 
 export type InstagramCarouselSlide = {
@@ -19,6 +18,11 @@ export type InstagramCarouselSlide = {
   slide_number: number
   type: 'cover' | 'content' | 'cta'
   visual_direction: string
+  stat_or_example: string | null
+  bg_type: 'image' | 'gradient' | 'solid'
+  bg_reasoning: string
+  unsplash_query: string | null
+  gradient_style: 'brand_dark' | 'brand_navy' | 'brand_subtle' | null
 }
 
 export type XThreadTweet = {
@@ -41,8 +45,16 @@ export type LinkedInCarouselSlide = {
   type: 'cover' | 'content' | 'cta'
 }
 
+export type SlideBackgroundSelection = {
+  slide_number: number
+  bg_type: 'image' | 'gradient' | 'solid'
+  image_url?: string
+  photographer?: string
+  gradient_style?: string
+  solid_color?: string
+}
+
 export type ExportMetadata = {
-  audio_suggestions?: InstagramAudioSuggestion[]
   hook_strength?: XHookStrength
   include_cover?: boolean
   include_cta?: boolean
@@ -52,6 +64,7 @@ export type ExportMetadata = {
   thread_count?: number
   tweet_count?: number
   word_count?: number
+  slide_backgrounds?: SlideBackgroundSelection[]
 }
 
 export type SocialFormatOption = {
@@ -180,29 +193,13 @@ export function readStringArray(value: unknown) {
   return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
 }
 
-export function readInstagramAudioSuggestions(value: unknown): InstagramAudioSuggestion[] {
-  if (!Array.isArray(value)) {
-    return []
+export function readInstagramCarouselPost(data: unknown): InstagramCarouselPost {
+  const item = data as Record<string, unknown>
+  return {
+    caption: readString(item.caption),
+    hashtags: readStringArray(item.hashtags),
+    slides: readInstagramSlides(item.slides),
   }
-
-  return value
-    .map((item) => {
-      if (!isRecord(item)) {
-        return null
-      }
-
-      const style = readString(item.style)
-      const mood = readString(item.mood)
-      const search_query = readString(item.search_query)
-      const why = readString(item.why)
-
-      if (!style || !mood || !search_query || !why) {
-        return null
-      }
-
-      return { mood, search_query, style, why }
-    })
-    .filter((item): item is InstagramAudioSuggestion => item !== null)
 }
 
 export function readInstagramSlides(value: unknown): InstagramCarouselSlide[] {
@@ -222,6 +219,15 @@ export function readInstagramSlides(value: unknown): InstagramCarouselSlide[] {
       const slide_number = typeof item.slide_number === 'number' ? item.slide_number : NaN
       const type = item.type
       const visual_direction = readString(item.visual_direction)
+      const stat_or_example = readOptionalString(item.stat_or_example)
+      const bg_type = (readString(item.bg_type) as 'image' | 'gradient' | 'solid') || 'solid'
+      const bg_reasoning = readString(item.bg_reasoning)
+      const unsplash_query = readOptionalString(item.unsplash_query)
+      const gradient_style = readOptionalString(item.gradient_style) as
+        | 'brand_dark'
+        | 'brand_navy'
+        | 'brand_subtle'
+        | null
 
       if (
         !body ||
@@ -241,6 +247,11 @@ export function readInstagramSlides(value: unknown): InstagramCarouselSlide[] {
         slide_number,
         type,
         visual_direction,
+        stat_or_example,
+        bg_type,
+        bg_reasoning,
+        unsplash_query,
+        gradient_style,
       }
     })
     .filter((item): item is InstagramCarouselSlide => item !== null)
