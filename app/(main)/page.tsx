@@ -54,23 +54,34 @@ function getWeekStart() {
 export default async function Home() {
   const user = await getUser()
   const supabase = await createClient()
-  const [{ count: postsThisWeek }, { count: savedIdeas }, { data: nextPost }] = await Promise.all([
-    supabase
-      .from('posts')
-      .select('*', { count: 'exact', head: true })
-      .gte('created_at', getWeekStart()),
-    supabase.from('content_ideas').select('*', { count: 'exact', head: true }),
-    supabase
-      .from('posts')
-      .select('scheduled_at, platform')
-      .eq('status', 'scheduled')
-      .gte('scheduled_at', new Date().toISOString())
-      .order('scheduled_at', { ascending: true })
-      .limit(1)
-      .maybeSingle(),
-  ])
+  const [{ count: postsThisWeek }, { count: savedIdeas }, { data: nextPost }, { data: profile }] =
+    await Promise.all([
+      supabase
+        .from('posts')
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', getWeekStart()),
+      supabase.from('content_ideas').select('*', { count: 'exact', head: true }),
+      supabase
+        .from('posts')
+        .select('scheduled_at, platform')
+        .eq('status', 'scheduled')
+        .gte('scheduled_at', new Date().toISOString())
+        .order('scheduled_at', { ascending: true })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', user.id)
+        .maybeSingle(),
+    ])
 
-  const firstName = user.email?.split('@')[0] === 'manu' ? 'Manu' : user.email?.split('@')[0] || 'Manu'
+  const preferredName =
+    profile?.full_name?.trim() ||
+    (user.user_metadata as { full_name?: string } | undefined)?.full_name?.trim() ||
+    user.email?.split('@')[0] ||
+    'Usuario'
+  const firstName = preferredName.split(' ')[0] || preferredName
   const metricCards = [
     {
       icon: CalendarClock,
