@@ -4,14 +4,15 @@ import { TopNavbar } from '@/components/layout/TopNavbar'
 
 type AppShellProps = {
   children: React.ReactNode
+  userAvatarUrl: string
   userEmail: string
   userName: string
 }
 
-export function AppShell({ children, userEmail, userName }: AppShellProps) {
+export function AppShell({ children, userAvatarUrl, userEmail, userName }: AppShellProps) {
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
-      <TopNavbar userEmail={userEmail} userName={userName} />
+      <TopNavbar userAvatarUrl={userAvatarUrl} userEmail={userEmail} userName={userName} />
 
       <div className="flex min-h-[calc(100vh-4rem)] flex-col">
         <main className="min-w-0 flex-1">

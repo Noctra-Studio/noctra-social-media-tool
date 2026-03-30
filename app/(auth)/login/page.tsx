@@ -1,8 +1,7 @@
 "use client";
 
 import Image from 'next/image';
-import { useRef, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { getSupabasePublicConfig } from '@/lib/supabase/config';
 import { Loader2 } from 'lucide-react';
@@ -12,12 +11,10 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
-  const [isPending, startTransition] = useTransition();
   const formRef = useRef<HTMLFormElement>(null);
-  const router = useRouter();
   const supabaseConfig = getSupabasePublicConfig();
   const isSupabaseReady = supabaseConfig.isConfigured;
-  const isBusy = loading || isPending;
+  const isBusy = loading;
 
   const submitLoginForm = () => {
     if (!isBusy) {
@@ -48,10 +45,7 @@ export default function LoginPage() {
         return;
       }
 
-      startTransition(() => {
-        router.push('/');
-        router.refresh();
-      });
+      window.location.assign('/');
     } catch (error) {
       setErrorMsg(
         error instanceof Error

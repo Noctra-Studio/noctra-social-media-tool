@@ -1,6 +1,7 @@
 'use client'
 
 import Image from 'next/image'
+import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { Check, Loader2, Save } from 'lucide-react'
@@ -55,6 +56,7 @@ export function AccountSettingsForm({
   initialEmail,
   initialName,
 }: AccountSettingsFormProps) {
+  const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
   const avatarInputRef = useRef<HTMLInputElement | null>(null)
   const previewUrlRef = useRef<string | null>(null)
@@ -221,6 +223,7 @@ export function AccountSettingsForm({
       setCurrentPassword('')
       setNewPassword('')
       setSaveState('saved')
+      router.refresh()
     } catch (error) {
       setMessage(getAccountErrorMessage(error, 'No fue posible actualizar la cuenta.'))
       setSaveState('error')

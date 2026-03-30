@@ -11,6 +11,7 @@ export default async function MainLayout({
 }) {
   let user
   let fullName = ''
+  let avatarUrl = ''
 
   try {
     user = await getUser()
@@ -31,9 +32,13 @@ export default async function MainLayout({
     fullName = ''
   }
 
+  avatarUrl =
+    (user.user_metadata as { avatar_url?: string } | undefined)?.avatar_url?.trim() || ''
+
   return (
     <>
       <AppShell
+        userAvatarUrl={avatarUrl}
         userEmail={user.email ?? 'owner@noctra.studio'}
         userName={
           fullName ||

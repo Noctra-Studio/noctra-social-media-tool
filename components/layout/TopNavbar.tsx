@@ -19,6 +19,7 @@ const settingsLinks = [
 ]
 
 type TopNavbarProps = {
+  userAvatarUrl: string
   userEmail: string
   userName: string
 }
@@ -36,7 +37,7 @@ function isNavigationActive(pathname: string, href: string) {
   return pathname.startsWith(href)
 }
 
-export function TopNavbar({ userEmail, userName }: TopNavbarProps) {
+export function TopNavbar({ userAvatarUrl, userEmail, userName }: TopNavbarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
@@ -81,6 +82,8 @@ export function TopNavbar({ userEmail, userName }: TopNavbarProps) {
     setIsProfileMenuOpen(false)
     setIsMobileMenuOpen(false)
   }
+
+  const hasAvatar = userAvatarUrl.trim().length > 0
 
   return (
     <header className="sticky top-0 z-50 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-md">
@@ -142,22 +145,42 @@ export function TopNavbar({ userEmail, userName }: TopNavbarProps) {
               <button
                 type="button"
                 onClick={() => setIsProfileMenuOpen((current) => !current)}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-[#4E576A] bg-[#212631] text-xs font-medium text-white transition-colors hover:border-[#7A8498]"
+                className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-[#4E576A] bg-[#212631] text-xs font-medium text-white transition-colors hover:border-[#7A8498]"
                 style={{ fontFamily: 'var(--font-brand-display, Satoshi, sans-serif)' }}
                 aria-expanded={isProfileMenuOpen}
                 aria-haspopup="menu"
               >
-                {initials}
+                {hasAvatar ? (
+                  <Image
+                    src={userAvatarUrl}
+                    alt={displayName}
+                    fill
+                    className="object-cover"
+                    unoptimized
+                  />
+                ) : (
+                  initials
+                )}
               </button>
 
               {isProfileMenuOpen && (
                 <div className="absolute right-0 top-full z-50 mt-3 min-w-[220px] rounded-xl border border-[#2A3040] bg-[#212631] p-2 shadow-xl">
                   <div className="flex items-center gap-3 rounded-lg px-3 py-2">
                     <div
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-[#4E576A] bg-[#212631] text-xs font-medium text-white"
+                      className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-[#4E576A] bg-[#212631] text-xs font-medium text-white"
                       style={{ fontFamily: 'var(--font-brand-display, Satoshi, sans-serif)' }}
                     >
-                      {initials}
+                      {hasAvatar ? (
+                        <Image
+                          src={userAvatarUrl}
+                          alt={displayName}
+                          fill
+                          className="object-cover"
+                          unoptimized
+                        />
+                      ) : (
+                        initials
+                      )}
                     </div>
                     <div className="min-w-0">
                       <p className="truncate text-sm text-[#E0E5EB]">{displayName}</p>
@@ -237,10 +260,20 @@ export function TopNavbar({ userEmail, userName }: TopNavbarProps) {
             <div className="mt-4 rounded-xl border border-[#2A3040] bg-[#212631] p-2 shadow-xl">
               <div className="flex items-center gap-3 rounded-lg px-3 py-2">
                 <div
-                  className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-[#4E576A] bg-[#212631] text-xs font-medium text-white"
+                  className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border-2 border-[#4E576A] bg-[#212631] text-xs font-medium text-white"
                   style={{ fontFamily: 'var(--font-brand-display, Satoshi, sans-serif)' }}
                 >
-                  {initials}
+                  {hasAvatar ? (
+                    <Image
+                      src={userAvatarUrl}
+                      alt={displayName}
+                      fill
+                      className="object-cover"
+                      unoptimized
+                    />
+                  ) : (
+                    initials
+                  )}
                 </div>
                 <div className="min-w-0">
                   <p className="truncate text-sm text-[#E0E5EB]">{displayName}</p>
