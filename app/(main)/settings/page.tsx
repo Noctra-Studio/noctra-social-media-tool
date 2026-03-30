@@ -25,7 +25,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
   const userMetadata = user.user_metadata as { avatar_url?: string; full_name?: string } | undefined
 
   const validTab =
-    params.tab === 'assistance' || params.tab === 'platforms' || params.tab === 'voice'
+    params.tab === 'assistance' || params.tab === 'platforms' || params.tab === 'voice' || params.tab === 'strategy'
       ? params.tab
       : 'voice'
   const validSection = params.section === 'account' || params.tab === 'account' ? 'account' : 'studio'

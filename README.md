@@ -134,36 +134,421 @@ UNSPLASH_ACCESS_KEY=tu-access-key
 
 ## Configuración de Supabase
 
-### 1. Ejecutar el schema
-
-En el SQL Editor de tu proyecto Supabase, ejecuta el archivo completo:
-
-```
-supabase/schema.sql
-```
-
-Esto crea todas las tablas necesarias:
-
-- `profiles` — perfil de usuario con configuración de asistencia y social handles
-- `brand_voice` — voz de marca (tono, valores, palabras prohibidas, posts de referencia)
-- `content_ideas` — banco de ideas capturadas
-- `posts` — posts generados con estado y metadata
-- `post_feedback` — ratings y notas por post
-- `ai_learning_context` — learnings extraídos para mejorar generaciones
-- `image_library` — imágenes guardadas con score on-brand
-
-### 2. Habilitar autenticación
+### 1. Habilitar autenticación
 
 En tu proyecto Supabase:
+**Authentication → Providers → Email → Enable**
 
-1. Authentication → Providers → Email → Enable
+### 2. Ejecutar el schema completo
 
-### 3. Crear tu usuario
+En el **SQL Editor** de tu proyecto Supabase, ejecuta los siguientes bloques en orden.
 
-Authentication → Users → Add user → Create new user
+---
 
-Usa el email y contraseña con los que quieres acceder a la app.
-El campo `email_confirm` se maneja automáticamente desde el dashboard.
+#### BLOQUE 1 — Tablas principales
+
+```sql
+-- ─────────────────────────────────────────────
+-- PROFILES
+-- ─────────────────────────────────────────────
+create table if not exists profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  email text not null,
+  full_name text,
+  role text default 'owner',
+  assistance_level text default 'balanced'
+    check (assistance_level in ('guided', 'balanced', 'expert')),
+  social_handles jsonb default '{}'::jsonb,
+  created_at timestamptz default now()
+);
+
+-- ─────────────────────────────────────────────
+-- BRAND VOICE
+-- ─────────────────────────────────────────────
+create table if not exists brand_voice (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references profiles(id) on delete cascade,
+  tone text,
+  values text[] default '{}',
+  forbidden_words text[] default '{}',
+  example_posts text[] default '{}',
+  updated_at timestamptz default now()
+);
+
+-- ─────────────────────────────────────────────
+-- BRAND PILLARS
+-- ─────────────────────────────────────────────
+create table if not exists brand_pillars (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references profiles(id) on delete cascade,
+  name text not null,
+  description text,
+  color text default '#212631',
+  post_count int default 0,
+  sort_order int default 0,
+  created_at timestamptz default now()
+);
+
+-- ─────────────────────────────────────────────
+-- PLATFORM AUDIENCES
+-- ─────────────────────────────────────────────
+create table if not exists platform_audiences (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references profiles(id) on delete cascade,
+  platform text not null check (platform in ('instagram', 'linkedin', 'x')),
+  audience_description text,
+  pain_points text[] default '{}',
+  desired_outcomes text[] default '{}',
+  language_level text default 'mixed'
+    check (language_level in ('technical', 'mixed', 'non-technical')),
+  updated_at timestamptz default now()
+);
+
+-- ─────────────────────────────────────────────
+-- CONTENT IDEAS
+-- ─────────────────────────────────────────────
+create table if not exists content_ideas (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references profiles(id) on delete cascade,
+  raw_idea text not null,
+  platform text check (platform in ('instagram', 'linkedin', 'x')),
+  status text default 'raw'
+    check (status in ('raw', 'drafted', 'scheduled', 'published')),
+  created_at timestamptz default now()
+);
+
+-- ─────────────────────────────────────────────
+-- POSTS
+-- ─────────────────────────────────────────────
+create table if not exists posts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references profiles(id) on delete cascade,
+  idea_id uuid references content_ideas(id) on delete set null,
+  pillar_id uuid references brand_pillars(id) on delete set null,
+  platform text not null check (platform in ('instagram', 'linkedin', 'x')),
+  angle text check (angle in ('opinion', 'tutorial', 'story', 'data')),
+  format text,
+  content jsonb not null default '{}'::jsonb,
+  image_url text,
+  export_metadata jsonb default '{}'::jsonb,
+  scheduled_at timestamptz,
+  published_at timestamptz,
+  status text default 'draft'
+    check (status in ('draft', 'scheduled', 'published')),
+  created_at timestamptz default now()
+);
+
+-- ─────────────────────────────────────────────
+-- POST FEEDBACK
+-- ─────────────────────────────────────────────
+create table if not exists post_feedback (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references profiles(id) on delete cascade,
+  post_id uuid references posts(id) on delete cascade,
+  rating int check (rating between 1 and 5),
+  used_as_published boolean default false,
+  edited_before_publish boolean default false,
+  notes text,
+  created_at timestamptz default now()
+);
+
+-- ─────────────────────────────────────────────
+-- AI LEARNING CONTEXT
+-- ─────────────────────────────────────────────
+create table if not exists ai_learning_context (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references profiles(id) on delete cascade,
+  platform text not null check (platform in ('instagram', 'linkedin', 'x')),
+  context_type text not null
+    check (context_type in ('top_performing', 'avoided', 'style_note')),
+  content text not null,
+  source_post_id uuid references posts(id) on delete set null,
+  created_at timestamptz default now()
+);
+
+-- ─────────────────────────────────────────────
+-- IMAGE LIBRARY
+-- ─────────────────────────────────────────────
+create table if not exists image_library (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references profiles(id) on delete cascade,
+  unsplash_id text,
+  url text not null,
+  thumb_url text not null,
+  photographer text,
+  on_brand_score float check (on_brand_score between 0 and 1),
+  tags text[] default '{}',
+  used_in_post uuid references posts(id) on delete set null,
+  saved_at timestamptz default now()
+);
+
+-- ─────────────────────────────────────────────
+-- EXPORTS
+-- ─────────────────────────────────────────────
+create table if not exists exports (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references profiles(id) on delete cascade,
+  post_id uuid references posts(id) on delete cascade,
+  platform text not null,
+  format text not null,
+  exported_at timestamptz default now()
+);
+```
+
+---
+
+#### BLOQUE 2 — Índices de performance
+
+```sql
+create index if not exists idx_posts_user_id        on posts(user_id);
+create index if not exists idx_posts_scheduled_at   on posts(scheduled_at);
+create index if not exists idx_posts_platform        on posts(platform);
+create index if not exists idx_posts_status          on posts(status);
+create index if not exists idx_posts_pillar_id       on posts(pillar_id);
+create index if not exists idx_content_ideas_user_id on content_ideas(user_id);
+create index if not exists idx_content_ideas_status  on content_ideas(status);
+create index if not exists idx_ai_learning_user_platform
+  on ai_learning_context(user_id, platform);
+create index if not exists idx_image_library_user_id on image_library(user_id);
+create index if not exists idx_post_feedback_post_id on post_feedback(post_id);
+```
+
+---
+
+#### BLOQUE 3 — Row Level Security (RLS)
+
+```sql
+-- Habilitar RLS en todas las tablas
+alter table profiles           enable row level security;
+alter table brand_voice        enable row level security;
+alter table brand_pillars      enable row level security;
+alter table platform_audiences enable row level security;
+alter table content_ideas      enable row level security;
+alter table posts               enable row level security;
+alter table post_feedback       enable row level security;
+alter table ai_learning_context enable row level security;
+alter table image_library       enable row level security;
+alter table exports             enable row level security;
+
+-- ─── profiles ────────────────────────────────
+create policy "profiles: select own"
+  on profiles for select
+  using (auth.uid() = id);
+
+create policy "profiles: insert own"
+  on profiles for insert
+  with check (auth.uid() = id);
+
+create policy "profiles: update own"
+  on profiles for update
+  using (auth.uid() = id)
+  with check (auth.uid() = id);
+
+-- ─── brand_voice ─────────────────────────────
+create policy "brand_voice: select own"
+  on brand_voice for select
+  using (auth.uid() = user_id);
+
+create policy "brand_voice: insert own"
+  on brand_voice for insert
+  with check (auth.uid() = user_id);
+
+create policy "brand_voice: update own"
+  on brand_voice for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create policy "brand_voice: delete own"
+  on brand_voice for delete
+  using (auth.uid() = user_id);
+
+-- ─── brand_pillars ────────────────────────────
+create policy "brand_pillars: select own"
+  on brand_pillars for select
+  using (auth.uid() = user_id);
+
+create policy "brand_pillars: insert own"
+  on brand_pillars for insert
+  with check (auth.uid() = user_id);
+
+create policy "brand_pillars: update own"
+  on brand_pillars for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create policy "brand_pillars: delete own"
+  on brand_pillars for delete
+  using (auth.uid() = user_id);
+
+-- ─── platform_audiences ───────────────────────
+create policy "platform_audiences: select own"
+  on platform_audiences for select
+  using (auth.uid() = user_id);
+
+create policy "platform_audiences: insert own"
+  on platform_audiences for insert
+  with check (auth.uid() = user_id);
+
+create policy "platform_audiences: update own"
+  on platform_audiences for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create policy "platform_audiences: delete own"
+  on platform_audiences for delete
+  using (auth.uid() = user_id);
+
+-- ─── content_ideas ───────────────────────────
+create policy "content_ideas: select own"
+  on content_ideas for select
+  using (auth.uid() = user_id);
+
+create policy "content_ideas: insert own"
+  on content_ideas for insert
+  with check (auth.uid() = user_id);
+
+create policy "content_ideas: update own"
+  on content_ideas for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create policy "content_ideas: delete own"
+  on content_ideas for delete
+  using (auth.uid() = user_id);
+
+-- ─── posts ───────────────────────────────────
+create policy "posts: select own"
+  on posts for select
+  using (auth.uid() = user_id);
+
+create policy "posts: insert own"
+  on posts for insert
+  with check (auth.uid() = user_id);
+
+create policy "posts: update own"
+  on posts for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create policy "posts: delete own"
+  on posts for delete
+  using (auth.uid() = user_id);
+
+-- ─── post_feedback ───────────────────────────
+create policy "post_feedback: select own"
+  on post_feedback for select
+  using (auth.uid() = user_id);
+
+create policy "post_feedback: insert own"
+  on post_feedback for insert
+  with check (auth.uid() = user_id);
+
+create policy "post_feedback: update own"
+  on post_feedback for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create policy "post_feedback: delete own"
+  on post_feedback for delete
+  using (auth.uid() = user_id);
+
+-- ─── ai_learning_context ─────────────────────
+create policy "ai_learning_context: select own"
+  on ai_learning_context for select
+  using (auth.uid() = user_id);
+
+create policy "ai_learning_context: insert own"
+  on ai_learning_context for insert
+  with check (auth.uid() = user_id);
+
+create policy "ai_learning_context: update own"
+  on ai_learning_context for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create policy "ai_learning_context: delete own"
+  on ai_learning_context for delete
+  using (auth.uid() = user_id);
+
+-- ─── image_library ───────────────────────────
+create policy "image_library: select own"
+  on image_library for select
+  using (auth.uid() = user_id);
+
+create policy "image_library: insert own"
+  on image_library for insert
+  with check (auth.uid() = user_id);
+
+create policy "image_library: update own"
+  on image_library for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create policy "image_library: delete own"
+  on image_library for delete
+  using (auth.uid() = user_id);
+
+-- ─── exports ─────────────────────────────────
+create policy "exports: select own"
+  on exports for select
+  using (auth.uid() = user_id);
+
+create policy "exports: insert own"
+  on exports for insert
+  with check (auth.uid() = user_id);
+
+create policy "exports: delete own"
+  on exports for delete
+  using (auth.uid() = user_id);
+```
+
+---
+
+#### BLOQUE 4 — Trigger: auto-crear perfil al registrar usuario
+
+```sql
+-- Función que crea el perfil automáticamente
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  insert into public.profiles (id, email, full_name)
+  values (
+    new.id,
+    new.email,
+    coalesce(new.raw_user_meta_data->>'full_name', '')
+  );
+  return new;
+end;
+$$;
+
+-- Trigger que ejecuta la función en cada nuevo usuario
+create or replace trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
+```
+
+---
+
+### 3. Verificar que RLS funciona
+
+Después de ejecutar todos los bloques, verifica en **Table Editor** que cada tabla muestra el candado 🔒 (RLS enabled). También puedes ejecutar:
+
+```sql
+-- Debe retornar todas las tablas con rowsecurity = true
+select tablename, rowsecurity
+from pg_tables
+where schemaname = 'public'
+order by tablename;
+```
+
+### 4. Crear tu usuario
+
+**Authentication → Users → Add user → Create new user**
+
+Usa el email y contraseña con los que quieres acceder a la app. El trigger del Bloque 4 crea el perfil en `public.profiles` automáticamente.
 
 ---
 
@@ -311,4 +696,4 @@ Para el dominio `social.noctra.studio`:
 
 ## Licencia
 
-Uso interno — Noctra Studio © 2026. Todos los derechos reservados.
+Uso interno — Noctra Studio © 2025. Todos los derechos reservados.

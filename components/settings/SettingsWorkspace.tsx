@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { Check, Loader2 } from 'lucide-react'
 import { AccountSettingsForm } from '@/components/settings/AccountSettingsForm'
 import { BrandVoiceSettingsForm } from '@/components/settings/BrandVoiceSettingsForm'
+import { StrategySettingsForm } from '@/components/settings/StrategySettingsForm'
 import type { Platform } from '@/lib/product'
 import type { AssistanceLevel } from '@/lib/product'
 
@@ -14,7 +15,7 @@ type SettingsWorkspaceProps = {
   initialName: string
   initialSocialHandles: Partial<Record<Platform, string>>
   initialSection?: 'account' | 'studio'
-  initialTab?: 'assistance' | 'platforms' | 'voice'
+  initialTab?: 'assistance' | 'platforms' | 'strategy' | 'voice'
 }
 
 const sections = [
@@ -26,6 +27,7 @@ const tabs = [
   { key: 'voice', label: 'Voz de marca' },
   { key: 'assistance', label: 'Nivel de asistencia' },
   { key: 'platforms', label: 'Plataformas' },
+  { key: 'strategy', label: 'Estrategia' },
 ] as const
 
 const assistanceOptions: Array<{
@@ -389,6 +391,12 @@ export function SettingsWorkspace({
             {socialHandlesMessage ? (
               <p className="text-sm text-[#8D95A6]">{socialHandlesMessage}</p>
             ) : null}
+          </div>
+        )}
+
+        {activeSection === 'studio' && activeTab === 'strategy' && (
+          <div className="mx-auto w-full max-w-[1080px]">
+            <StrategySettingsForm />
           </div>
         )}
       </section>

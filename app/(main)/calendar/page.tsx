@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   addMonths,
   addWeeks,
@@ -55,6 +56,13 @@ type Post = {
 type Balance = {
   by_platform: Record<string, number>;
   by_angle: Record<string, number>;
+  by_pillar: Array<{
+    color: string | null;
+    count: number;
+    id: string;
+    name: string;
+    percentage: number;
+  }>;
   total: number;
   days_with_content: number;
   days_without_content: number;
@@ -100,15 +108,18 @@ function DraggablePost({ post }: { post: Post }) {
 
 function DroppableDay({
   date,
+  focusedDate,
   isCurrentMonth,
   posts,
 }: {
   date: Date;
+  focusedDate: Date | null;
   posts: Post[];
   isCurrentMonth: boolean;
 }) {
   const dateStr = format(date, 'yyyy-MM-dd');
   const isToday = isSameDay(date, new Date());
+  const isFocused = focusedDate ? isSameDay(date, focusedDate) : false;
   const { setNodeRef, isOver } = useDroppable({
     id: dateStr,
     data: { type: 'Day', dateStr },
@@ -119,7 +130,7 @@ function DroppableDay({
       ref={setNodeRef}
       className={`group relative min-h-[132px] border-r border-b border-white/6 p-2.5 transition-colors ${
         !isCurrentMonth ? 'bg-[#0D1015] opacity-45' : 'bg-[#101417]'
-      } ${isOver ? 'bg-[#171B22]' : ''}`}
+      } ${isOver ? 'bg-[#171B22]' : ''} ${isFocused ? 'ring-1 ring-inset ring-white/25' : ''}`}
     >
       <div className="mb-3 flex items-center justify-between">
         <span
@@ -154,6 +165,9 @@ function DroppableDay({
 }
 
 export default function CalendarPage() {
+  const searchParams = useSearchParams();
+  const requestedDate = searchParams.get('date');
+  const focusedDate = requestedDate ? parseISO(requestedDate) : null;
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<'month' | 'week'>('month');
   const [scheduledGrouped, setScheduledGrouped] = useState<Record<string, Post[]>>({});
@@ -206,6 +220,12 @@ export default function CalendarPage() {
   useEffect(() => {
     void loadMonthData(currentDate);
   }, [currentDate]);
+
+  useEffect(() => {
+    if (focusedDate && !Number.isNaN(focusedDate.getTime())) {
+      setCurrentDate(focusedDate);
+    }
+  }, [focusedDate, requestedDate]);
 
   const checkRepeat = async (idea: string) => {
     try {
@@ -429,6 +449,7 @@ export default function CalendarPage() {
                   <DroppableDay
                     key={dateKey}
                     date={day}
+                    focusedDate={focusedDate && !Number.isNaN(focusedDate.getTime()) ? focusedDate : null}
                     posts={postsForDay}
                     isCurrentMonth={isSameMonth(day, currentDate)}
                   />
@@ -479,112 +500,162 @@ export default function CalendarPage() {
       </DndContext>
 
       {balance && (
-        <div className="grid gap-3 md:grid-cols-3">
-          <div className="rounded-[24px] border border-white/10 bg-[#212631]/45 p-4">
-            <h4 className="mb-3 text-[11px] uppercase tracking-[0.24em] text-[#4E576A]">Distribución</h4>
-            {hasScheduledContent ? (
-              <div className="flex h-2 overflow-hidden rounded-full bg-[#101417]">
-                {Object.entries(balance.by_platform).map(([platform, count]) => {
-                  const percentage = balance.total > 0 ? (count / balance.total) * 100 : 0;
-                  const colors: Record<string, string> = {
-                    instagram: 'bg-[#D76DB6]',
-                    linkedin: 'bg-[#7AA2F7]',
-                    x: 'bg-[#E0E5EB]',
-                  };
+        <div className="space-y-3">
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-[24px] border border-white/10 bg-[#212631]/45 p-4">
+              <h4 className="mb-3 text-[11px] uppercase tracking-[0.24em] text-[#4E576A]">Distribución</h4>
+              {hasScheduledContent ? (
+                <div className="flex h-2 overflow-hidden rounded-full bg-[#101417]">
+                  {Object.entries(balance.by_platform).map(([platform, count]) => {
+                    const percentage = balance.total > 0 ? (count / balance.total) * 100 : 0;
+                    const colors: Record<string, string> = {
+                      instagram: 'bg-[#D76DB6]',
+                      linkedin: 'bg-[#7AA2F7]',
+                      x: 'bg-[#E0E5EB]',
+                    };
 
-                  return (
-                    <div
-                      key={platform}
-                      style={{ width: `${percentage}%` }}
-                      className={`${colors[platform] || 'bg-white'} h-full`}
-                      title={`${platform}: ${count}`}
-                    />
-                  );
-                })}
+                    return (
+                      <div
+                        key={platform}
+                        style={{ width: `${percentage}%` }}
+                        className={`${colors[platform] || 'bg-white'} h-full`}
+                        title={`${platform}: ${count}`}
+                      />
+                    );
+                  })}
+                </div>
+              ) : (
+                <EmptyState
+                  icon={BarChart3}
+                  title="Sin distribución todavía"
+                  description="Programa tu primer post para empezar a ver cómo se reparte el calendario entre plataformas."
+                  action={{ label: 'Crear post', href: '/compose' }}
+                />
+              )}
+            </div>
+
+            <div className="rounded-[24px] border border-white/10 bg-[#212631]/45 p-4">
+              <h4 className="mb-3 text-[11px] uppercase tracking-[0.24em] text-[#4E576A]">Ángulos</h4>
+              {hasScheduledContent ? (
+                <div className="flex h-2 overflow-hidden rounded-full bg-[#101417]">
+                  {Object.entries(balance.by_angle).map(([angle, count], index) => {
+                    const percentage = balance.total > 0 ? (count / balance.total) * 100 : 0;
+                    const colors = ['bg-[#E0E5EB]', 'bg-[#AAB4C8]', 'bg-[#7D889C]', 'bg-[#4E576A]'];
+
+                    return (
+                      <div
+                        key={angle}
+                        style={{ width: `${percentage}%` }}
+                        className={`${colors[index % colors.length]} h-full`}
+                        title={`${angle}: ${count}`}
+                      />
+                    );
+                  })}
+                </div>
+              ) : (
+                <EmptyState
+                  icon={Lightbulb}
+                  title="Sin ángulos detectados"
+                  description="Cuando empieces a agendar ideas, aquí verás qué enfoques dominan y cuáles te faltan."
+                  action={{ label: 'Crear post', href: '/compose' }}
+                />
+              )}
+            </div>
+
+            <div className="rounded-[24px] border border-white/10 bg-[#212631]/45 p-4">
+              <div className="mb-3 flex items-end justify-between">
+                <h4 className="text-[11px] uppercase tracking-[0.24em] text-[#4E576A]">Consistencia</h4>
+                <span className="inline-flex items-center gap-1.5 text-sm text-[#E0E5EB]">
+                  <Flame className={`h-4 w-4 ${balance.days_with_content > 0 ? 'text-orange-300' : 'text-white/35'}`} />
+                  {balance.days_with_content} días
+                </span>
+              </div>
+              {hasScheduledContent ? (
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: daysInMonth }).map((_, index) => {
+                    const dateKey = format(
+                      new Date(currentDate.getFullYear(), currentDate.getMonth(), index + 1),
+                      'yyyy-MM-dd'
+                    );
+                    const hasPost = Boolean(scheduledGrouped[dateKey]?.length);
+
+                    return (
+                      <div
+                        key={index}
+                        className={`h-2 flex-1 rounded-sm ${hasPost ? 'bg-[#E0E5EB]' : 'bg-[#101417]'}`}
+                        title={`${index + 1}`}
+                      />
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-center gap-1.5 text-white/30">
+                    {Array.from({ length: 7 }).map((_, index) => (
+                      <div key={index} className="flex items-center gap-1.5">
+                        <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.02]">
+                          <Flame className="h-3.5 w-3.5" />
+                        </span>
+                        {index < 6 ? <span className="h-px w-3 bg-white/10" /> : null}
+                      </div>
+                    ))}
+                  </div>
+                  <EmptyState
+                    icon={Flame}
+                    title="La racha aún no empieza"
+                    description="Agenda algo esta semana para encender el streak del calendario y empezar a construir consistencia."
+                    action={{ label: 'Crear post', href: '/compose' }}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-[24px] border border-white/10 bg-[#212631]/45 p-4">
+            <div className="mb-4">
+              <h4 className="text-[11px] uppercase tracking-[0.24em] text-[#4E576A]">Balance de pilares</h4>
+              <p className="mt-2 text-sm leading-6 text-[#8D95A6]">
+                Revisa si el mes realmente está construyendo autoridad en varios frentes, no solo repitiendo el mismo ángulo.
+              </p>
+            </div>
+
+            {balance.by_pillar.length > 0 ? (
+              <div className="space-y-4">
+                {balance.by_pillar.map((pillar) => (
+                  <div key={pillar.id} className="space-y-2">
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                      <span className="text-[#E0E5EB]">{pillar.name}</span>
+                      <span className="text-[#8D95A6]">
+                        {pillar.count} post{pillar.count === 1 ? '' : 's'} · {Math.round(pillar.percentage)}%
+                      </span>
+                    </div>
+                    <div className="h-3 overflow-hidden rounded-full bg-[#101417]">
+                      <div
+                        className="h-full rounded-full transition-[width]"
+                        style={{
+                          backgroundColor: pillar.color || '#4E576A',
+                          width: `${pillar.percentage}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+
+                <div className="space-y-2 border-t border-white/8 pt-4 text-sm text-[#F3D19C]">
+                  {balance.by_pillar
+                    .filter((pillar) => pillar.count === 0)
+                    .map((pillar) => (
+                      <p key={pillar.id}>⚠️ Sin posts de &apos;{pillar.name}&apos; este mes</p>
+                    ))}
+                </div>
               </div>
             ) : (
               <EmptyState
                 icon={BarChart3}
-                title="Sin distribución todavía"
-                description="Programa tu primer post para empezar a ver cómo se reparte el calendario entre plataformas."
-                action={{ label: 'Crear post', href: '/compose' }}
+                title="Aún no hay pilares configurados"
+                description="Define tus pilares en Estrategia para medir si el calendario está construyendo autoridad de forma balanceada."
+                action={{ label: 'Ir a estrategia', href: '/settings?section=studio&tab=strategy' }}
               />
-            )}
-          </div>
-
-          <div className="rounded-[24px] border border-white/10 bg-[#212631]/45 p-4">
-            <h4 className="mb-3 text-[11px] uppercase tracking-[0.24em] text-[#4E576A]">Ángulos</h4>
-            {hasScheduledContent ? (
-              <div className="flex h-2 overflow-hidden rounded-full bg-[#101417]">
-                {Object.entries(balance.by_angle).map(([angle, count], index) => {
-                  const percentage = balance.total > 0 ? (count / balance.total) * 100 : 0;
-                  const colors = ['bg-[#E0E5EB]', 'bg-[#AAB4C8]', 'bg-[#7D889C]', 'bg-[#4E576A]'];
-
-                  return (
-                    <div
-                      key={angle}
-                      style={{ width: `${percentage}%` }}
-                      className={`${colors[index % colors.length]} h-full`}
-                      title={`${angle}: ${count}`}
-                    />
-                  );
-                })}
-              </div>
-            ) : (
-              <EmptyState
-                icon={Lightbulb}
-                title="Sin ángulos detectados"
-                description="Cuando empieces a agendar ideas, aquí verás qué enfoques dominan y cuáles te faltan."
-                action={{ label: 'Crear post', href: '/compose' }}
-              />
-            )}
-          </div>
-
-          <div className="rounded-[24px] border border-white/10 bg-[#212631]/45 p-4">
-            <div className="mb-3 flex items-end justify-between">
-              <h4 className="text-[11px] uppercase tracking-[0.24em] text-[#4E576A]">Consistencia</h4>
-              <span className="inline-flex items-center gap-1.5 text-sm text-[#E0E5EB]">
-                <Flame className={`h-4 w-4 ${balance.days_with_content > 0 ? 'text-orange-300' : 'text-white/35'}`} />
-                {balance.days_with_content} días
-              </span>
-            </div>
-            {hasScheduledContent ? (
-              <div className="flex items-center gap-1">
-                {Array.from({ length: daysInMonth }).map((_, index) => {
-                  const dateKey = format(
-                    new Date(currentDate.getFullYear(), currentDate.getMonth(), index + 1),
-                    'yyyy-MM-dd'
-                  );
-                  const hasPost = Boolean(scheduledGrouped[dateKey]?.length);
-
-                  return (
-                    <div
-                      key={index}
-                      className={`h-2 flex-1 rounded-sm ${hasPost ? 'bg-[#E0E5EB]' : 'bg-[#101417]'}`}
-                      title={`${index + 1}`}
-                    />
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="flex items-center justify-center gap-1.5 text-white/30">
-                  {Array.from({ length: 7 }).map((_, index) => (
-                    <div key={index} className="flex items-center gap-1.5">
-                      <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.02]">
-                        <Flame className="h-3.5 w-3.5" />
-                      </span>
-                      {index < 6 ? <span className="h-px w-3 bg-white/10" /> : null}
-                    </div>
-                  ))}
-                </div>
-                <EmptyState
-                  icon={Flame}
-                  title="La racha aún no empieza"
-                  description="Agenda algo esta semana para encender el streak del calendario y empezar a construir consistencia."
-                  action={{ label: 'Crear post', href: '/compose' }}
-                />
-              </div>
             )}
           </div>
         </div>

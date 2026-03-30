@@ -3,10 +3,20 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { startOfMonth, endOfMonth, parseISO, format, getDaysInMonth } from 'date-fns';
 
+type PillarSummary = {
+  color: string | null;
+  count: number;
+  id: string;
+  name: string;
+  percentage: number;
+};
+
 export async function GET(req: Request) {
   try {
+    let user;
+
     try {
-      await getUser();
+      user = await getUser();
     } catch {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -25,18 +35,27 @@ export async function GET(req: Request) {
     const end = endOfMonth(new Date(year, month - 1));
     const totalDays = getDaysInMonth(new Date(year, month - 1));
 
-    const { data: posts, error } = await supabase
+    const [{ data: posts, error }, { data: pillars, error: pillarsError }] = await Promise.all([
+      supabase
       .from('posts')
-      .select('platform, angle, scheduled_at')
+      .select('platform, angle, scheduled_at, pillar_id')
       .gte('scheduled_at', start.toISOString())
       .lte('scheduled_at', end.toISOString())
-      .neq('status', 'draft');
+      .neq('status', 'draft')
+      .eq('user_id', user.id),
+      supabase
+        .from('brand_pillars')
+        .select('id, name, color, sort_order')
+        .eq('user_id', user.id)
+        .order('sort_order', { ascending: true }),
+    ]);
 
-    if (error) throw error;
+    if (error || pillarsError) throw error || pillarsError;
 
     const by_platform: Record<string, number> = { instagram: 0, linkedin: 0, x: 0 };
     const by_angle: Record<string, number> = {};
     const contentDays = new Set<string>();
+    const pillarCounts = new Map<string, number>();
 
     if (posts) {
       posts.forEach(post => {
@@ -50,15 +69,31 @@ export async function GET(req: Request) {
           const day = format(parseISO(post.scheduled_at), 'yyyy-MM-dd');
           contentDays.add(day);
         }
+        if (post.pillar_id) {
+          pillarCounts.set(post.pillar_id, (pillarCounts.get(post.pillar_id) || 0) + 1);
+        }
       });
     }
 
     const daysWithContent = contentDays.size;
+    const totalPosts = posts?.length || 0;
+    const by_pillar: PillarSummary[] = ((pillars as Array<{ color: string | null; id: string; name: string }> | null) || []).map((pillar) => {
+      const count = pillarCounts.get(pillar.id) || 0;
+
+      return {
+        color: pillar.color,
+        count,
+        id: pillar.id,
+        name: pillar.name,
+        percentage: totalPosts > 0 ? (count / totalPosts) * 100 : 0,
+      };
+    });
 
     return NextResponse.json({
       by_platform,
       by_angle,
-      total: posts?.length || 0,
+      by_pillar,
+      total: totalPosts,
       days_with_content: daysWithContent,
       days_without_content: totalDays - daysWithContent
     });

@@ -435,7 +435,7 @@ function VisualEditorContent() {
                <div key={img.id} className="relative aspect-square rounded-lg overflow-hidden border border-zinc-800 group cursor-pointer" onClick={() => { setSelectedImage(img); setLibraryOpen(false); }}>
                  <Image src={img.thumb_url} alt="" fill className="object-cover group-hover:scale-105 transition-transform" />
                  <div className="absolute bottom-0 w-full bg-black/80 px-2 py-1 text-xs text-center border-t border-zinc-800 text-green-400 font-mono">
-                   {(img.on_brand_score * 100).toFixed(0)}% Fit
+                    {((img.on_brand_score ?? 0) * 100).toFixed(0)}% Fit
                  </div>
                </div>
              ))}

@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import {
   ArrowRight,
+  BarChart3,
   CalendarClock,
   CalendarDays,
   Clock3,
@@ -14,6 +15,47 @@ import { getUser } from '@/lib/auth/get-user'
 import { HomeSuggestions } from '@/components/home/HomeSuggestions'
 import { SocialPlatformMark } from '@/components/ui/SocialPlatformMark'
 import { formatPlatformLabel, platforms } from '@/lib/product'
+
+function getDateKeyInMexicoCity(input: Date | string) {
+  return new Intl.DateTimeFormat('en-CA', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone: 'America/Mexico_City',
+    year: 'numeric',
+  }).format(new Date(input))
+}
+
+function getCurrentStreak(activityKeys: Set<string>) {
+  let streak = 0
+  const cursor = new Date()
+  cursor.setHours(0, 0, 0, 0)
+
+  while (activityKeys.has(getDateKeyInMexicoCity(cursor))) {
+    streak += 1
+    cursor.setDate(cursor.getDate() - 1)
+  }
+
+  return streak
+}
+
+function getActiveWeeksCount(postDates: Array<string | null>, windowWeeks = 8) {
+  const activeWeeks = new Set<string>()
+
+  for (const rawDate of postDates) {
+    if (!rawDate) {
+      continue
+    }
+
+    const date = new Date(rawDate)
+    date.setHours(0, 0, 0, 0)
+    const day = date.getDay()
+    const distance = day === 0 ? 6 : day - 1
+    date.setDate(date.getDate() - distance)
+    activeWeeks.add(date.toISOString().slice(0, 10))
+  }
+
+  return Math.min(activeWeeks.size, windowWeeks)
+}
 
 function getGreeting() {
   const hour = new Date().getHours()
@@ -54,7 +96,10 @@ function getWeekStart() {
 export default async function Home() {
   const user = await getUser()
   const supabase = await createClient()
-  const [{ count: postsThisWeek }, { count: savedIdeas }, { data: nextPost }, { data: profile }] =
+  const eightWeeksAgo = new Date()
+  eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 55)
+  eightWeeksAgo.setHours(0, 0, 0, 0)
+  const [{ count: postsThisWeek }, { count: savedIdeas }, { data: nextPost }, { data: profile }, { data: recentPosts }, { data: allPosts }, { data: brandPillars }, { count: publishedCount }, { data: contentIdeas }] =
     await Promise.all([
       supabase
         .from('posts')
@@ -74,6 +119,29 @@ export default async function Home() {
         .select('full_name')
         .eq('id', user.id)
         .maybeSingle(),
+      supabase
+        .from('posts')
+        .select('created_at')
+        .gte('created_at', eightWeeksAgo.toISOString())
+        .eq('user_id', user.id),
+      supabase
+        .from('posts')
+        .select('created_at, scheduled_at, pillar_id')
+        .eq('user_id', user.id),
+      supabase
+        .from('brand_pillars')
+        .select('id, name, color, sort_order')
+        .eq('user_id', user.id)
+        .order('sort_order', { ascending: true }),
+      supabase
+        .from('post_feedback')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('used_as_published', true),
+      supabase
+        .from('content_ideas')
+        .select('created_at')
+        .eq('user_id', user.id),
     ])
 
   const preferredName =
@@ -101,6 +169,55 @@ export default async function Home() {
         : 'Ninguno',
     },
   ]
+  const activeWeeks = getActiveWeeksCount(
+    ((recentPosts as Array<{ created_at: string | null }> | null) || []).map((post) => post.created_at),
+    8
+  )
+  const totalGeneratedPosts = ((allPosts as Array<{ pillar_id: string | null }> | null) || []).length
+  const publishedRatio = totalGeneratedPosts > 0 ? Math.round(((publishedCount || 0) / totalGeneratedPosts) * 100) : 0
+  const pillarCounts = new Map<string, number>()
+
+  for (const post of (allPosts as Array<{ pillar_id: string | null }> | null) || []) {
+    if (!post.pillar_id) {
+      continue
+    }
+
+    pillarCounts.set(post.pillar_id, (pillarCounts.get(post.pillar_id) || 0) + 1)
+  }
+
+  const pillarBalance = ((brandPillars as Array<{ color: string | null; id: string; name: string }> | null) || []).map((pillar) => ({
+    ...pillar,
+    count: pillarCounts.get(pillar.id) || 0,
+  }))
+  const topPillar = pillarBalance.reduce<(typeof pillarBalance)[number] | null>(
+    (currentTop, pillar) => {
+      if (!currentTop || pillar.count > currentTop.count) {
+        return pillar
+      }
+
+      return currentTop
+    },
+    null
+  )
+  const activityKeys = new Set<string>()
+
+  for (const post of (allPosts as Array<{ created_at: string | null; scheduled_at: string | null }> | null) || []) {
+    if (post.created_at) {
+      activityKeys.add(getDateKeyInMexicoCity(post.created_at))
+    }
+
+    if (post.scheduled_at) {
+      activityKeys.add(getDateKeyInMexicoCity(post.scheduled_at))
+    }
+  }
+
+  for (const idea of (contentIdeas as Array<{ created_at: string | null }> | null) || []) {
+    if (idea.created_at) {
+      activityKeys.add(getDateKeyInMexicoCity(idea.created_at))
+    }
+  }
+
+  const currentStreak = getCurrentStreak(activityKeys)
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 space-y-10 pb-20 duration-300">
@@ -226,6 +343,107 @@ export default async function Home() {
         <HomeSuggestions />
       </section>
 
+      <section id="audiencia" className="space-y-4">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.24em] text-[#4E576A]">Tutorial</p>
+            <h2
+              className="mt-1 text-2xl font-medium text-[#E0E5EB]"
+              style={{ fontFamily: 'var(--font-brand-display)' }}
+            >
+              Construcción de audiencia
+            </h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-[#8D95A6]">
+              Publicar mantiene el canal vivo. Construir autoridad hace que la gente te recuerde,
+              te entienda y te busque por criterio, no solo por frecuencia.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/settings?section=studio&tab=voice"
+              className="rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5"
+            >
+              Voz de marca
+            </Link>
+            <Link
+              href="/settings?section=studio&tab=strategy"
+              className="rounded-full bg-white px-4 py-2 text-sm font-medium text-black transition-colors hover:bg-zinc-100"
+            >
+              Ir a estrategia
+            </Link>
+          </div>
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-[28px] border border-white/10 bg-[#212631]/55 p-5">
+              <p className="text-[11px] uppercase tracking-[0.24em] text-[#4E576A]">1</p>
+              <p
+                className="mt-4 text-lg font-medium text-[#E0E5EB]"
+                style={{ fontFamily: 'var(--font-brand-display)' }}
+              >
+                Publicar no es lo mismo que construir autoridad
+              </p>
+              <p className="mt-3 text-sm leading-6 text-[#8D95A6]">
+                Una marca puede publicar diario y seguir sonando genérica. La autoridad aparece
+                cuando tus piezas repiten una tesis, un criterio y un territorio reconocible.
+              </p>
+            </div>
+
+            <div className="rounded-[28px] border border-white/10 bg-[#212631]/55 p-5">
+              <p className="text-[11px] uppercase tracking-[0.24em] text-[#4E576A]">2</p>
+              <p
+                className="mt-4 text-lg font-medium text-[#E0E5EB]"
+                style={{ fontFamily: 'var(--font-brand-display)' }}
+              >
+                Estrategia de pilares con ejemplos Noctra
+              </p>
+              <p className="mt-3 text-sm leading-6 text-[#8D95A6]">
+                Piensa en pilares como “Claridad digital”, “Decisiones de sitio web”, “Errores
+                comunes en marketing” o “Casos reales”. Así el calendario no depende del humor del día.
+              </p>
+            </div>
+
+            <div className="rounded-[28px] border border-white/10 bg-[#212631]/55 p-5">
+              <p className="text-[11px] uppercase tracking-[0.24em] text-[#4E576A]">3</p>
+              <p
+                className="mt-4 text-lg font-medium text-[#E0E5EB]"
+                style={{ fontFamily: 'var(--font-brand-display)' }}
+              >
+                La audiencia cambia por plataforma
+              </p>
+              <p className="mt-3 text-sm leading-6 text-[#8D95A6]">
+                En LinkedIn quizá te leen directores que valoran claridad estratégica; en Instagram,
+                dueños de PYME que necesitan ejemplos concretos y lenguaje menos técnico. El tema puede ser el mismo; la entrada no.
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-[28px] border border-white/10 bg-[#101417] p-5">
+            <p className="text-[11px] uppercase tracking-[0.24em] text-[#4E576A]">Checklist</p>
+            <p
+              className="mt-3 text-xl font-medium text-[#E0E5EB]"
+              style={{ fontFamily: 'var(--font-brand-display)' }}
+            >
+              ¿Ya definiste tus 4 pilares?
+            </p>
+            <div className="mt-5 space-y-3 text-sm text-[#8D95A6]">
+              {[
+                'Cada pilar tiene nombre, descripción y color.',
+                'Tus pilares no se pisan entre sí.',
+                'Definiste una audiencia distinta para Instagram, LinkedIn y X.',
+                'La IA ya tiene contexto suficiente para sugerir el pilar correcto.',
+              ].map((item) => (
+                <div key={item} className="flex gap-3">
+                  <span className="mt-1 h-2.5 w-2.5 rounded-full bg-[#E0E5EB]" />
+                  <p className="leading-6">{item}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section className="space-y-4">
         <div>
           <p className="text-xs uppercase tracking-[0.24em] text-[#4E576A]">Acciones rápidas</p>
@@ -319,6 +537,96 @@ export default async function Home() {
               </div>
             )
           })}
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <p className="text-xs uppercase tracking-[0.24em] text-[#4E576A]">Tu huella de marca</p>
+          <h2
+            className="mt-1 text-2xl font-medium text-[#E0E5EB]"
+            style={{ fontFamily: 'var(--font-brand-display)' }}
+          >
+            Tu huella de marca
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-[#8D95A6]">
+            Indicadores de consistencia editorial, no de vanidad.
+          </p>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-[28px] border border-white/10 bg-[#212631]/55 p-5">
+            <p className="text-[11px] uppercase tracking-[0.24em] text-[#4E576A]">Consistencia</p>
+            <p
+              className="mt-4 text-3xl font-medium text-[#E0E5EB]"
+              style={{ fontFamily: 'var(--font-brand-display)' }}
+            >
+              {activeWeeks} de 8
+            </p>
+            <p className="mt-2 text-sm text-[#8D95A6]">semanas activas</p>
+          </div>
+
+          <div className="rounded-[28px] border border-white/10 bg-[#212631]/55 p-5">
+            <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.24em] text-[#4E576A]">
+              <BarChart3 className="h-3.5 w-3.5" />
+              Balance
+            </div>
+            <p
+              className="mt-4 text-xl font-medium text-[#E0E5EB]"
+              style={{ fontFamily: 'var(--font-brand-display)' }}
+            >
+              Pilar más usado: {topPillar?.name || 'Sin datos'}
+            </p>
+            <div className="mt-4 flex items-end gap-2">
+              {pillarBalance.length > 0 ? (
+                pillarBalance.map((pillar) => {
+                  const maxCount = Math.max(...pillarBalance.map((item) => item.count), 1)
+                  const height = pillar.count > 0 ? Math.max(18, (pillar.count / maxCount) * 56) : 10
+
+                  return (
+                    <div key={pillar.id} className="flex flex-1 flex-col items-center gap-2">
+                      <div
+                        className="w-full rounded-t-[10px]"
+                        style={{
+                          backgroundColor: pillar.color || '#4E576A',
+                          height,
+                        }}
+                      />
+                      <span className="text-[11px] text-[#8D95A6]">{pillar.count}</span>
+                    </div>
+                  )
+                })
+              ) : (
+                <p className="text-sm text-[#8D95A6]">Define tus pilares para empezar a medir balance.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-[28px] border border-white/10 bg-[#212631]/55 p-5">
+            <p className="text-[11px] uppercase tracking-[0.24em] text-[#4E576A]">Ratio de uso</p>
+            <p
+              className="mt-4 text-3xl font-medium text-[#E0E5EB]"
+              style={{ fontFamily: 'var(--font-brand-display)' }}
+            >
+              {publishedRatio}%
+            </p>
+            <p className="mt-2 text-sm leading-6 text-[#8D95A6]">
+              de posts generados terminan marcados como publicados.
+            </p>
+          </div>
+
+          <div className="rounded-[28px] border border-white/10 bg-[#212631]/55 p-5">
+            <p className="text-[11px] uppercase tracking-[0.24em] text-[#4E576A]">Racha actual</p>
+            <p
+              className="mt-4 text-3xl font-medium text-[#E0E5EB]"
+              style={{ fontFamily: 'var(--font-brand-display)' }}
+            >
+              {currentStreak} días
+            </p>
+            <p className="mt-2 text-sm leading-6 text-[#8D95A6]">
+              con actividad de generación, captura o calendarización.
+            </p>
+          </div>
         </div>
       </section>
     </div>

@@ -30,7 +30,20 @@ export type AngleSuggestion = {
 export type GeneratedContent = {
   angle: string
   content: Record<string, unknown>
+  export_metadata?: Record<string, unknown> | null
+  format?:
+    | 'single'
+    | 'carousel'
+    | 'tweet'
+    | 'thread'
+    | 'article'
+    | 'text'
+    | 'image'
+    | 'document'
+    | null
   platform: Platform
+  pillar_id?: string | null
+  post_id?: string | null
   raw: string
 }
 

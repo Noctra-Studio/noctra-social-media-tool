@@ -2,24 +2,45 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowRight,
+  Briefcase,
+  Calendar,
   CalendarDays,
   Check,
   ChevronRight,
   Copy,
+  Download,
+  ExternalLink,
+  Image as ImageIcon,
   Layers3,
   Lightbulb,
   Loader2,
+  MessageCircle,
   MoveRight,
+  Music2,
   PenSquare,
   RefreshCcw,
+  RefreshCw,
   Save,
   Sparkles,
+  TrendingUp,
   type LucideIcon,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import {
+  getLanguageLevelLabel,
+  type BrandPillar,
+  type PlatformAudience,
+  type StrategyResponse,
+} from '@/lib/brand-strategy';
+import { InstagramCarouselPreview } from '@/components/instagram/carousel-preview';
+import {
+  LinkedInPdfGenerator,
+  type LinkedInPdfGeneratorHandle,
+} from '@/components/linkedin/pdf-generator';
 import { PostFeedback } from '@/components/post-feedback';
 import { AIButton, type AIButtonState } from '@/components/ui/AIButton';
 import { PlatformBadge } from '@/components/ui/PlatformBadge';
@@ -34,6 +55,44 @@ import {
   type Platform,
   type SuggestedIdea,
 } from '@/lib/product';
+import {
+  ensureHashtags,
+  estimateReadTime,
+  getCaptionText,
+  getCopyText,
+  getDefaultFormat,
+  getExportActionLabel,
+  getFormatLabel,
+  getPreviewText,
+  getXTweetColor,
+  inferPostFormat,
+  isRecord,
+  joinHashtags,
+  platformFormatOptions,
+  readInstagramAudioSuggestions,
+  readInstagramSlides,
+  readLinkedInSlides,
+  readString,
+  readStringArray,
+  readXThreadTweets,
+  toVisualSearchHref,
+  type InstagramAudioSuggestion,
+  type LinkedInCarouselSlide,
+  type PostFormat,
+  type SocialFormatOption,
+  type XHookStrength,
+} from '@/lib/social-content';
+import {
+  exportInstagramPackage,
+  exportLinkedInPackage,
+  exportXPackage,
+} from '@/lib/social-export';
+import type {
+  QuickActionFaqPost,
+  QuickActionPlanItem,
+  QuickActionThoughtLeadershipPost,
+  QuickActionViralTrend,
+} from '@/lib/quick-actions/types';
 
 const assistanceStateKey = 'noctra:compose:assistance'
 
@@ -87,9 +146,56 @@ type ProfileRow = {
   assistance_level: AssistanceLevel | null
 }
 
+type QuickActionKey =
+  | 'plan'
+  | 'repurpose'
+  | 'viral'
+  | 'caseStudy'
+  | 'thoughtLeadership'
+  | 'faq'
+
+type RepurposePostOption = {
+  content: Record<string, unknown> | null
+  created_at: string
+  id: string
+  platform: Platform
+  status: string
+}
+
+type QuickActionOutput =
+  | {
+      kind: 'generated'
+      note?: string
+      platformOrder: Platform[]
+      sourceLabel: string
+      stanceUsed?: string
+    }
+  | {
+      kind: 'plan'
+      plan: QuickActionPlanItem[]
+      sourceLabel: string
+    }
+  | {
+      kind: 'viral'
+      platform: Platform
+      sourceLabel: string
+      trends: QuickActionViralTrend[]
+    }
+  | {
+      kind: 'faq'
+      platform: Platform
+      posts: QuickActionFaqPost[]
+      sourceLabel: string
+    }
+
 type AssistanceState = {
   dismissed: boolean
   usageCount: number
+}
+
+type ExportStats = {
+  count: number
+  lastExportedAt: string | null
 }
 
 function getSuggestedIdeaKey(suggestedIdea: SuggestedIdea) {
@@ -123,19 +229,6 @@ function writeAssistanceState(state: AssistanceState) {
   window.localStorage.setItem(assistanceStateKey, JSON.stringify(state))
 }
 
-function formatContentForClipboard(content: Record<string, unknown>) {
-  if (Array.isArray(content.thread)) {
-    return content.thread.filter((item): item is string => typeof item === 'string').join('\n\n')
-  }
-
-  const caption = typeof content.caption === 'string' ? content.caption : ''
-  const hashtags = Array.isArray(content.hashtags)
-    ? content.hashtags.filter((item): item is string => typeof item === 'string').join(' ')
-    : ''
-
-  return [caption, hashtags].filter(Boolean).join('\n\n')
-}
-
 function formatSuggestedIdeaForClipboard(suggestedIdea: SuggestedIdea) {
   return [
     suggestedIdea.title,
@@ -143,6 +236,23 @@ function formatSuggestedIdeaForClipboard(suggestedIdea: SuggestedIdea) {
     `Angulo: ${suggestedIdea.angle}`,
     `Por que ahora: ${suggestedIdea.why_now}`,
   ].join('\n\n')
+}
+
+function getContentPreview(
+  platform: Platform,
+  format: PostFormat,
+  content: Record<string, unknown> | null,
+  maxLength = 100
+) {
+  if (!content) {
+    return 'Sin preview disponible.'
+  }
+
+  return getPreviewText(platform, format, content, maxLength)
+}
+
+function getQuickActionSourceLabel(label: string) {
+  return `✦ Generado con: ${label}`
 }
 
 function PlatformIcon({ platform, className }: { platform: Platform; className?: string }) {
@@ -182,8 +292,15 @@ export default function ComposePage() {
   const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
   const ideaTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const outputSectionRef = useRef<HTMLElement | null>(null);
+  const linkedInPdfRef = useRef<LinkedInPdfGeneratorHandle | null>(null);
   const [mode, setMode] = useState<ComposeMode | null>(null);
   const [activePlatform, setActivePlatform] = useState<Platform>('instagram');
+  const [selectedFormats, setSelectedFormats] = useState<Record<Platform, PostFormat>>({
+    instagram: 'single',
+    linkedin: 'text',
+    x: 'tweet',
+  });
   const [idea, setIdea] = useState('');
   const [sourceIdeaId, setSourceIdeaId] = useState<string | null>(null);
   const [angles, setAngles] = useState<AngleSuggestion[]>([]);
@@ -199,6 +316,13 @@ export default function ComposePage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [assistanceLevel, setAssistanceLevel] = useState<AssistanceLevel>('balanced');
+  const [brandPillars, setBrandPillars] = useState<BrandPillar[]>([]);
+  const [platformAudiences, setPlatformAudiences] = useState<Partial<Record<Platform, PlatformAudience>>>({});
+  const [strategyLoading, setStrategyLoading] = useState(false);
+  const [selectedPillarId, setSelectedPillarId] = useState<string | null>(null);
+  const [pillarSelectionMode, setPillarSelectionMode] = useState<'auto' | 'manual'>('auto');
+  const [suggestingPillar, setSuggestingPillar] = useState(false);
+  const [pillarSuggestionReason, setPillarSuggestionReason] = useState<string | null>(null);
   const [assistanceDismissed, setAssistanceDismissed] = useState(false);
   const [assistanceUsageCount, setAssistanceUsageCount] = useState(0);
   const [showGuidancePanel, setShowGuidancePanel] = useState(false);
@@ -211,14 +335,58 @@ export default function ComposePage() {
   const [ideasButtonState, setIdeasButtonState] = useState<AIButtonState>('idle');
   const [anglesButtonState, setAnglesButtonState] = useState<AIButtonState>('idle');
   const [generateButtonState, setGenerateButtonState] = useState<AIButtonState>('idle');
+  const [openQuickAction, setOpenQuickAction] = useState<QuickActionKey | null>(null);
+  const [runningQuickAction, setRunningQuickAction] = useState<QuickActionKey | null>(null);
+  const [quickActionOutput, setQuickActionOutput] = useState<QuickActionOutput | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [planDays, setPlanDays] = useState(7);
+  const [planPlatforms, setPlanPlatforms] = useState<Platform[]>([...platforms]);
+  const [repurposePosts, setRepurposePosts] = useState<RepurposePostOption[]>([]);
+  const [repurposePostsLoading, setRepurposePostsLoading] = useState(false);
+  const [repurposePostsLoaded, setRepurposePostsLoaded] = useState(false);
+  const [selectedRepurposePostId, setSelectedRepurposePostId] = useState<string | null>(null);
+  const [viralPlatform, setViralPlatform] = useState<Platform>('linkedin');
+  const [caseStudyClient, setCaseStudyClient] = useState('');
+  const [caseStudyService, setCaseStudyService] = useState('');
+  const [caseStudyResult, setCaseStudyResult] = useState('');
+  const [caseStudyPlatform, setCaseStudyPlatform] = useState<Platform>('linkedin');
+  const [thoughtLeadershipTopic, setThoughtLeadershipTopic] = useState('');
+  const [thoughtLeadershipStance, setThoughtLeadershipStance] = useState('');
+  const [thoughtLeadershipPlatform, setThoughtLeadershipPlatform] = useState<Platform>('linkedin');
+  const [faqQuestions, setFaqQuestions] = useState('');
+  const [faqPlatform, setFaqPlatform] = useState<Platform>('linkedin');
+  const [faqCount, setFaqCount] = useState(3);
+  const [faqActiveIndex, setFaqActiveIndex] = useState(0);
+  const [instagramSlideCount, setInstagramSlideCount] = useState(5);
+  const [instagramIncludeCover, setInstagramIncludeCover] = useState(true);
+  const [instagramIncludeCta, setInstagramIncludeCta] = useState(true);
+  const [linkedinSlideCount, setLinkedinSlideCount] = useState(8);
+  const [showLinkedInPreview, setShowLinkedInPreview] = useState(false);
+  const [expandedAudioSuggestion, setExpandedAudioSuggestion] = useState<number | null>(null);
+  const [regeneratingHook, setRegeneratingHook] = useState(false);
+  const [exportingPlatform, setExportingPlatform] = useState<Platform | null>(null);
+  const [exportStatsByPostId, setExportStatsByPostId] = useState<Record<string, ExportStats>>({});
 
   const assistanceVisible =
     assistanceLevel !== 'expert' && !assistanceDismissed && assistanceUsageCount < 10;
   const currentGuidance = getPlatformGuidance(activePlatform);
   const currentModeCard = mode ? modeCards.find((card) => card.key === mode) ?? null : null;
   const currentResult = generatedResults[activePlatform];
+  const activePillar = brandPillars.find((pillar) => pillar.id === selectedPillarId) || null;
+  const activeAudience = platformAudiences[activePlatform] || null;
+  const currentQuickGeneratedOutput = quickActionOutput?.kind === 'generated' ? quickActionOutput : null;
   const canGenerate =
     Boolean(idea.trim()) && Boolean(selectedAngle) && !generating && !loadingIdea;
+  const generationActionLabel =
+    activePlatform === 'instagram' && selectedFormats.instagram === 'carousel'
+      ? 'Generar carrusel'
+      : activePlatform === 'x' && selectedFormats.x === 'thread'
+        ? 'Generar hilo'
+        : activePlatform === 'x' && selectedFormats.x === 'article'
+          ? 'Generar articulo'
+          : activePlatform === 'linkedin' && (selectedFormats.linkedin === 'document' || selectedFormats.linkedin === 'carousel')
+            ? 'Generar documento'
+            : 'Generar contenido';
 
   useEffect(() => {
     let isActive = true;
@@ -262,6 +430,52 @@ export default function ComposePage() {
   }, [supabase]);
 
   useEffect(() => {
+    let isActive = true;
+
+    async function loadStrategy() {
+      setStrategyLoading(true);
+
+      try {
+        const response = await fetch('/api/settings/strategy');
+        const data = (await response.json()) as StrategyResponse & { error?: string };
+
+        if (!response.ok) {
+          throw new Error(data.error || 'No fue posible cargar la estrategia.');
+        }
+
+        if (!isActive) {
+          return;
+        }
+
+        setBrandPillars(data.pillars || []);
+        setPlatformAudiences(
+          (data.audiences || []).reduce<Partial<Record<Platform, PlatformAudience>>>((accumulator, audience) => {
+            accumulator[audience.platform] = audience;
+            return accumulator;
+          }, {})
+        );
+        setSelectedPillarId((current) =>
+          (data.pillars || []).some((pillar) => pillar.id === current) ? current : null
+        );
+      } catch (error) {
+        if (isActive) {
+          console.error('Failed to load strategy', error);
+        }
+      } finally {
+        if (isActive) {
+          setStrategyLoading(false);
+        }
+      }
+    }
+
+    void loadStrategy();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  useEffect(() => {
     setIdeasButtonState('idle');
   }, [activePlatform]);
 
@@ -271,7 +485,70 @@ export default function ComposePage() {
 
   useEffect(() => {
     setGenerateButtonState('idle');
-  }, [activePlatform, idea, selectedAngle]);
+  }, [activePlatform, idea, selectedAngle, selectedPillarId]);
+
+  useEffect(() => {
+    if (brandPillars.length === 0) {
+      setSelectedPillarId(null);
+      setPillarSuggestionReason(null);
+      setSuggestingPillar(false);
+      return;
+    }
+
+    if (pillarSelectionMode === 'manual') {
+      return;
+    }
+
+    const trimmedIdea = idea.trim();
+
+    if (!trimmedIdea) {
+      setSelectedPillarId(null);
+      setPillarSuggestionReason(null);
+      setSuggestingPillar(false);
+      return;
+    }
+
+    let cancelled = false;
+    const timeoutId = window.setTimeout(async () => {
+      setSuggestingPillar(true);
+
+      try {
+        const response = await fetch('/api/content/suggest-pillar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idea: trimmedIdea }),
+        });
+        const data = (await response.json()) as {
+          confidence?: 'high' | 'low' | 'medium'
+          error?: string
+          pillar_id?: string | null
+          reason?: string
+        };
+
+        if (!response.ok) {
+          throw new Error(data.error || 'No fue posible sugerir un pilar.');
+        }
+
+        if (!cancelled) {
+          setSelectedPillarId(data.pillar_id || null);
+          setPillarSuggestionReason(data.reason || null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Failed to suggest pillar', error);
+        }
+      } finally {
+        if (!cancelled) {
+          setSuggestingPillar(false);
+        }
+      }
+    }, 420);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [brandPillars, idea, pillarSelectionMode]);
 
   useEffect(() => {
     const modeParam = searchParams.get('mode');
@@ -289,6 +566,7 @@ export default function ComposePage() {
 
     if (draftIdea) {
       setIdea(draftIdea);
+      setPillarSelectionMode('auto');
       setSourceIdeaId(null);
       setMode('idea');
       return;
@@ -319,6 +597,7 @@ export default function ComposePage() {
 
         if (!cancelled && storedIdea) {
           setIdea(storedIdea.raw_idea);
+          setPillarSelectionMode('auto');
           setSourceIdeaId(storedIdea.id);
           if (storedIdea.platform) {
             setActivePlatform(storedIdea.platform);
@@ -370,11 +649,159 @@ export default function ComposePage() {
     textarea.style.height = `${Math.max(textarea.scrollHeight, 120)}px`;
   }, [idea, mode]);
 
+  useEffect(() => {
+    if (!toastMessage) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setToastMessage(null);
+    }, 2600);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [toastMessage]);
+
+  useEffect(() => {
+    const postIds = Object.values(generatedResults)
+      .map((result) => result?.post_id)
+      .filter((value): value is string => Boolean(value))
+      .filter((value) => !exportStatsByPostId[value]);
+
+    if (postIds.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadStats() {
+      const entries = await Promise.all(
+        postIds.map(async (postId) => {
+          const [{ count }, { data: lastRows }] = await Promise.all([
+            supabase
+              .from('exports')
+              .select('*', { count: 'exact', head: true })
+              .eq('post_id', postId),
+            supabase
+              .from('exports')
+              .select('exported_at')
+              .eq('post_id', postId)
+              .order('exported_at', { ascending: false })
+              .limit(1),
+          ])
+
+          return [
+            postId,
+            {
+              count: count ?? 0,
+              lastExportedAt: (lastRows as Array<{ exported_at: string }> | null)?.[0]?.exported_at ?? null,
+            },
+          ] as const
+        })
+      )
+
+      if (cancelled) {
+        return;
+      }
+
+      setExportStatsByPostId((current) => ({
+        ...current,
+        ...Object.fromEntries(entries),
+      }))
+    }
+
+    void loadStats()
+
+    return () => {
+      cancelled = true;
+    };
+  }, [exportStatsByPostId, generatedResults, supabase]);
+
   const persistAssistanceState = (nextState: AssistanceState) => {
     setAssistanceDismissed(nextState.dismissed);
     setAssistanceUsageCount(nextState.usageCount);
     writeAssistanceState(nextState);
   };
+
+  const setFormatForPlatform = (platform: Platform, format: PostFormat) => {
+    setSelectedFormats((current) => ({ ...current, [platform]: format }))
+    setExpandedAudioSuggestion(null)
+  }
+
+  const updateGeneratedResult = (
+    platform: Platform,
+    updater: (result: GeneratedContent) => GeneratedContent
+  ) => {
+    setGeneratedResults((current) => {
+      const existing = current[platform]
+
+      if (!existing) {
+        return current
+      }
+
+      return {
+        ...current,
+        [platform]: updater(existing),
+      }
+    })
+  }
+
+  const openVisualSearch = (query: string) => {
+    router.push(toVisualSearchHref(query))
+  }
+
+  const fetchAudioSuggestions = async (
+    platform: Platform,
+    caption: string,
+    angle: string,
+    postId?: string | null,
+    initialExportMetadata?: Record<string, unknown> | null
+  ) => {
+    if (platform !== 'instagram' || !caption.trim()) {
+      return
+    }
+
+    try {
+      const response = await fetch('/api/instagram/audio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ angle, caption }),
+      })
+      const data = (await response.json()) as {
+        error?: string
+        suggestions?: InstagramAudioSuggestion[]
+      }
+
+      if (!response.ok) {
+        throw new Error(data.error || 'No fue posible generar audio sugerido')
+      }
+
+      updateGeneratedResult(platform, (result) => ({
+        ...result,
+        export_metadata: {
+          ...(isRecord(result.export_metadata) ? result.export_metadata : {}),
+          audio_suggestions: data.suggestions ?? [],
+        },
+      }))
+
+      if (postId) {
+        const currentExportMetadata = isRecord(initialExportMetadata) ? initialExportMetadata : {}
+
+        await supabase
+          .from('posts')
+          .update({
+            export_metadata: {
+              ...currentExportMetadata,
+              audio_suggestions: data.suggestions ?? [],
+            },
+          })
+          .eq('id', postId)
+      }
+    } catch (error) {
+      console.error(error)
+    }
+  }
 
   const dismissAssistance = () => {
     persistAssistanceState({ dismissed: true, usageCount: assistanceUsageCount });
@@ -387,6 +814,36 @@ export default function ComposePage() {
     };
 
     persistAssistanceState(nextState);
+  };
+
+  const clearSavedPostIds = (platformKeys: Platform[]) => {
+    setSavedPostIds((current) => {
+      const next = { ...current };
+
+      platformKeys.forEach((platform) => {
+        delete next[platform];
+      });
+
+      return next;
+    });
+  };
+
+  const scrollToOutput = () => {
+    window.requestAnimationFrame(() => {
+      outputSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+
+  const showQuickActionToast = () => {
+    setToastMessage('Error al generar. Intenta de nuevo.');
+  };
+
+  const toggleQuickAction = (action: QuickActionKey) => {
+    setOpenQuickAction((current) => (current === action ? null : action));
+  };
+
+  const handleQuickActionError = () => {
+    showQuickActionToast();
   };
 
   const requestSuggestedIdeas = async () => {
@@ -458,19 +915,55 @@ export default function ComposePage() {
     setGenerating(true);
     setGenerateButtonState('loading');
     setErrorMessage(null);
+    setQuickActionOutput(null);
+    clearSavedPostIds([activePlatform]);
 
     try {
       const { data: brandVoice } = await supabase.from('brand_voice').select('*').limit(1).maybeSingle();
+      const selectedFormat = selectedFormats[activePlatform] ?? getDefaultFormat(activePlatform)
+      const route =
+        activePlatform === 'instagram' && selectedFormat === 'carousel'
+          ? '/api/instagram/carousel'
+          : activePlatform === 'x' && selectedFormat === 'thread'
+            ? '/api/x/thread'
+            : activePlatform === 'x' && selectedFormat === 'article'
+              ? '/api/x/article'
+              : activePlatform === 'linkedin' && (selectedFormat === 'document' || selectedFormat === 'carousel')
+                ? '/api/linkedin/carousel'
+                : '/api/content/generate'
 
-      const response = await fetch('/api/content/generate', {
+      const payload =
+        route === '/api/instagram/carousel'
+          ? {
+              angle: selectedAngle,
+              brand_voice: brandVoice || {},
+              idea,
+              include_cover: instagramIncludeCover,
+              include_cta: instagramIncludeCta,
+              pillar_id: selectedPillarId,
+              slide_count: instagramSlideCount,
+            }
+          : route === '/api/linkedin/carousel'
+            ? {
+                angle: selectedAngle,
+                brand_voice: brandVoice || {},
+                idea,
+                pillar_id: selectedPillarId,
+                slide_count: linkedinSlideCount,
+              }
+            : {
+                angle: selectedAngle,
+                brand_voice: brandVoice || {},
+                format: selectedFormat,
+                idea,
+                pillar_id: selectedPillarId,
+                platform: activePlatform,
+              }
+
+      const response = await fetch(route, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          angle: selectedAngle,
-          brand_voice: brandVoice || {},
-          idea,
-          platform: activePlatform,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = (await response.json()) as GeneratedContent & { error?: string };
@@ -480,8 +973,25 @@ export default function ComposePage() {
       }
 
       setGeneratedResults((current) => ({ ...current, [activePlatform]: data }));
+      setSelectedFormats((current) => ({
+        ...current,
+        [activePlatform]: inferPostFormat(activePlatform, data.content, data.format),
+      }))
       incrementAssistanceUsage();
       setGenerateButtonState('success');
+      scrollToOutput();
+
+      if (activePlatform === 'instagram') {
+        const caption = readString(data.content.caption)
+
+        void fetchAudioSuggestions(
+          activePlatform,
+          caption,
+          selectedAngle,
+          data.post_id,
+          isRecord(data.export_metadata) ? data.export_metadata : null
+        )
+      }
     } catch (error) {
       setGenerateButtonState('error');
       setErrorMessage(error instanceof Error ? error.message : 'No fue posible generar contenido');
@@ -497,9 +1007,11 @@ export default function ComposePage() {
 
     setAdapting(true);
     setErrorMessage(null);
+    setQuickActionOutput(null);
 
     try {
       const targetPlatforms = platforms.filter((platform) => platform !== activePlatform);
+      clearSavedPostIds(targetPlatforms);
       const response = await fetch('/api/content/adapt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -527,12 +1039,14 @@ export default function ComposePage() {
             angle: selectedAngle || 'Adaptación',
             content: adaptation.content,
             platform: adaptation.platform,
+            pillar_id: selectedPillarId,
             raw: idea,
           };
         });
 
         return nextResults;
       });
+      scrollToOutput();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'No fue posible adaptar contenido');
     } finally {
@@ -542,6 +1056,9 @@ export default function ComposePage() {
 
   const saveAsDraft = async (platform: Platform) => {
     const result = generatedResults[platform];
+    const inferredFormat = result
+      ? inferPostFormat(platform, result.content, result.format)
+      : getDefaultFormat(platform)
 
     if (!result) {
       return null;
@@ -599,13 +1116,41 @@ export default function ComposePage() {
         setSourceIdeaId(createdIdea.id);
       }
 
+      if (result.post_id) {
+        const { error: updateError } = await supabase
+          .from('posts')
+          .update({
+            angle: result.angle,
+            content: result.content,
+            export_metadata: result.export_metadata ?? {},
+            format: inferredFormat,
+            idea_id: ideaId,
+            pillar_id: result.pillar_id || selectedPillarId,
+            platform,
+            status: 'draft',
+            user_id: nextUserId,
+          })
+          .eq('id', result.post_id)
+          .eq('user_id', nextUserId);
+
+        if (updateError) {
+          throw updateError;
+        }
+
+        setSavedPostIds((current) => ({ ...current, [platform]: result.post_id! }));
+        return result.post_id;
+      }
+
       const { data: postData, error: postError } = await supabase
         .from('posts')
         .insert([
           {
             angle: result.angle,
             content: result.content,
+            export_metadata: result.export_metadata ?? {},
+            format: inferredFormat,
             idea_id: ideaId,
+            pillar_id: result.pillar_id || selectedPillarId,
             platform,
             status: 'draft',
             user_id: nextUserId,
@@ -637,7 +1182,8 @@ export default function ComposePage() {
       return;
     }
 
-    await navigator.clipboard.writeText(formatContentForClipboard(result.content));
+    const format = inferPostFormat(platform, result.content, result.format)
+    await navigator.clipboard.writeText(getCopyText(platform, format, result.content));
     setCopiedResultPlatform(platform);
 
     window.setTimeout(() => {
@@ -647,6 +1193,7 @@ export default function ComposePage() {
 
   const selectSuggestedIdea = (suggestedIdea: SuggestedIdea) => {
     setIdea(`${suggestedIdea.title}. ${suggestedIdea.hook}`);
+    setPillarSelectionMode('auto');
     setSelectedAngle(null);
     setAngles([]);
     setMode('idea');
@@ -717,6 +1264,338 @@ export default function ComposePage() {
     }
   };
 
+  const applyQuickGeneratedOutput = ({
+    note,
+    platformOrder,
+    results,
+    savedIds,
+    sourceLabel,
+    stanceUsed,
+  }: {
+    note?: string
+    platformOrder: Platform[]
+    results: Partial<Record<Platform, GeneratedContent>>
+    savedIds: Partial<Record<Platform, string>>
+    sourceLabel: string
+    stanceUsed?: string
+  }) => {
+    setGeneratedResults((current) => ({ ...current, ...results }));
+    setSavedPostIds((current) => ({ ...current, ...savedIds }));
+    setQuickActionOutput({
+      kind: 'generated',
+      note,
+      platformOrder,
+      sourceLabel,
+      stanceUsed,
+    });
+    setActivePlatform(platformOrder[0] ?? activePlatform);
+    setOpenQuickAction(null);
+    scrollToOutput();
+  };
+
+  const fetchRepurposePosts = async () => {
+    setRepurposePostsLoading(true);
+
+    try {
+      const { data, error } = await supabase
+        .from('posts')
+        .select('id, platform, status, created_at, content')
+        .in('status', ['published', 'draft'])
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (error) {
+        throw error;
+      }
+
+      const posts = ((data as RepurposePostOption[] | null) ?? []).filter(
+        (post): post is RepurposePostOption =>
+          post.platform === 'instagram' || post.platform === 'linkedin' || post.platform === 'x'
+      );
+
+      setRepurposePosts(posts);
+      setSelectedRepurposePostId(posts[0]?.id ?? null);
+      setRepurposePostsLoaded(true);
+    } catch {
+      handleQuickActionError();
+    } finally {
+      setRepurposePostsLoading(false);
+    }
+  };
+
+  const handleQuickActionChipClick = (action: QuickActionKey) => {
+    toggleQuickAction(action);
+
+    if (action === 'repurpose' && openQuickAction !== 'repurpose') {
+      void fetchRepurposePosts();
+    }
+  };
+
+  const runPlanQuickAction = async () => {
+    setRunningQuickAction('plan');
+
+    try {
+      const response = await fetch('/api/quick-actions/plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ days: planDays, platforms: planPlatforms, user_id: userId }),
+      });
+      const data = (await response.json()) as { error?: string; plan?: QuickActionPlanItem[] };
+
+      if (!response.ok || !data.plan) {
+        throw new Error(data.error || 'No fue posible generar el plan');
+      }
+
+      setQuickActionOutput({
+        kind: 'plan',
+        plan: data.plan,
+        sourceLabel: getQuickActionSourceLabel(`Planear ${planDays} días`),
+      });
+      setOpenQuickAction(null);
+      scrollToOutput();
+    } catch {
+      handleQuickActionError();
+    } finally {
+      setRunningQuickAction(null);
+    }
+  };
+
+  const runRepurposeQuickAction = async () => {
+    const selectedPost = repurposePosts.find((post) => post.id === selectedRepurposePostId);
+
+    if (!selectedPost) {
+      return;
+    }
+
+    setRunningQuickAction('repurpose');
+
+    try {
+      const response = await fetch('/api/quick-actions/repurpose', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          post_id: selectedPost.id,
+          source_platform: selectedPost.platform,
+        }),
+      });
+      const data = (await response.json()) as {
+        adaptations?: Array<{ content: Record<string, unknown>; platform: Platform; savedPostId: string }>
+        error?: string
+      };
+
+      if (!response.ok || !data.adaptations?.length) {
+        throw new Error(data.error || 'No fue posible adaptar el post');
+      }
+
+      const results: Partial<Record<Platform, GeneratedContent>> = {};
+      const savedIds: Partial<Record<Platform, string>> = {};
+      const platformOrder = data.adaptations.map((adaptation) => adaptation.platform);
+
+      data.adaptations.forEach((adaptation) => {
+        results[adaptation.platform] = {
+          angle: 'Repurpose',
+          content: adaptation.content,
+          platform: adaptation.platform,
+          raw: getContentPreview(
+            selectedPost.platform,
+            getDefaultFormat(selectedPost.platform),
+            selectedPost.content,
+            180
+          ),
+        };
+        savedIds[adaptation.platform] = adaptation.savedPostId;
+      });
+
+      applyQuickGeneratedOutput({
+        platformOrder,
+        results,
+        savedIds,
+        sourceLabel: getQuickActionSourceLabel('Repurpose'),
+      });
+    } catch {
+      handleQuickActionError();
+    } finally {
+      setRunningQuickAction(null);
+    }
+  };
+
+  const runViralQuickAction = async () => {
+    setRunningQuickAction('viral');
+
+    try {
+      const response = await fetch('/api/quick-actions/viral', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platform: viralPlatform }),
+      });
+      const data = (await response.json()) as { error?: string; trends?: QuickActionViralTrend[] };
+
+      if (!response.ok || !data.trends?.length) {
+        throw new Error(data.error || 'No fue posible buscar tendencias');
+      }
+
+      setQuickActionOutput({
+        kind: 'viral',
+        platform: viralPlatform,
+        sourceLabel: getQuickActionSourceLabel('Qué está viral'),
+        trends: data.trends,
+      });
+      setOpenQuickAction(null);
+      scrollToOutput();
+    } catch {
+      handleQuickActionError();
+    } finally {
+      setRunningQuickAction(null);
+    }
+  };
+
+  const runCaseStudyQuickAction = async () => {
+    setRunningQuickAction('caseStudy');
+
+    try {
+      const response = await fetch('/api/quick-actions/case-study', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client: caseStudyClient,
+          platform: caseStudyPlatform,
+          result: caseStudyResult,
+          service: caseStudyService,
+        }),
+      });
+      const data = (await response.json()) as {
+        error?: string
+        post?: { content: Record<string, unknown>; platform: Platform; savedPostId: string }
+      };
+
+      if (!response.ok || !data.post) {
+        throw new Error(data.error || 'No fue posible generar el caso de estudio');
+      }
+
+      applyQuickGeneratedOutput({
+        note: 'Recuerda validar con el cliente antes de publicar.',
+        platformOrder: [data.post.platform],
+        results: {
+          [data.post.platform]: {
+            angle: 'Caso de estudio',
+            content: data.post.content,
+            platform: data.post.platform,
+            raw: `Caso de estudio: ${caseStudyClient} · ${caseStudyService}`,
+          },
+        },
+        savedIds: {
+          [data.post.platform]: data.post.savedPostId,
+        },
+        sourceLabel: getQuickActionSourceLabel('Caso de estudio'),
+      });
+    } catch {
+      handleQuickActionError();
+    } finally {
+      setRunningQuickAction(null);
+    }
+  };
+
+  const runThoughtLeadershipQuickAction = async () => {
+    setRunningQuickAction('thoughtLeadership');
+
+    try {
+      const response = await fetch('/api/quick-actions/thought-leadership', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          platform: thoughtLeadershipPlatform,
+          stance: thoughtLeadershipStance,
+          topic: thoughtLeadershipTopic,
+        }),
+      });
+      const data = (await response.json()) as {
+        error?: string
+        post?: QuickActionThoughtLeadershipPost
+      };
+
+      if (!response.ok || !data.post) {
+        throw new Error(data.error || 'No fue posible generar la opinión');
+      }
+
+      applyQuickGeneratedOutput({
+        platformOrder: [data.post.platform],
+        results: {
+          [data.post.platform]: {
+            angle: 'Thought leadership',
+            content: data.post.content,
+            platform: data.post.platform,
+            raw: `Thought leadership: ${thoughtLeadershipTopic}`,
+          },
+        },
+        savedIds: {
+          [data.post.platform]: data.post.savedPostId,
+        },
+        sourceLabel: getQuickActionSourceLabel('Thought leadership'),
+        stanceUsed: data.post.stance_used,
+      });
+    } catch {
+      handleQuickActionError();
+    } finally {
+      setRunningQuickAction(null);
+    }
+  };
+
+  const runFaqQuickAction = async () => {
+    setRunningQuickAction('faq');
+
+    try {
+      const response = await fetch('/api/quick-actions/faq', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          count: faqCount,
+          platform: faqPlatform,
+          questions: faqQuestions,
+        }),
+      });
+      const data = (await response.json()) as { error?: string; posts?: QuickActionFaqPost[] };
+
+      if (!response.ok || !data.posts?.length) {
+        throw new Error(data.error || 'No fue posible generar contenido FAQ');
+      }
+
+      setFaqActiveIndex(0);
+      setQuickActionOutput({
+        kind: 'faq',
+        platform: faqPlatform,
+        posts: data.posts,
+        sourceLabel: getQuickActionSourceLabel('FAQ de clientes'),
+      });
+      setOpenQuickAction(null);
+      scrollToOutput();
+    } catch {
+      handleQuickActionError();
+    } finally {
+      setRunningQuickAction(null);
+    }
+  };
+
+  const openCalendarForDay = (day: number) => {
+    const targetDate = new Date();
+    targetDate.setDate(targetDate.getDate() + day - 1);
+    const year = targetDate.getFullYear();
+    const month = String(targetDate.getMonth() + 1).padStart(2, '0');
+    const date = String(targetDate.getDate()).padStart(2, '0');
+    const dateString = `${year}-${month}-${date}`;
+
+    router.push(`/calendar?date=${dateString}`);
+  };
+
+  const developTrend = (trend: QuickActionViralTrend) => {
+    setActivePlatform(trend.platform);
+    setIdea(trend.hook);
+    setPillarSelectionMode('auto');
+    setSelectedAngle(trend.angle);
+    setAngles([]);
+    setMode('idea');
+    focusIdeaTextarea();
+  };
+
   const enterMode = (nextMode: ComposeMode) => {
     setMode(nextMode);
 
@@ -747,6 +1626,8 @@ export default function ComposePage() {
     }
 
     setActivePlatform(platform);
+    setSelectedPillarId(result.pillar_id || null);
+    setPillarSelectionMode(result.pillar_id ? 'manual' : 'auto');
     setSelectedAngle(result.angle);
     setMode(mode === 'direct' ? 'direct' : 'idea');
     setIdea(result.raw);
@@ -762,6 +1643,342 @@ export default function ComposePage() {
 
     router.push('/calendar');
   };
+
+  const handlePillarSelection = (pillarId: string | null) => {
+    setSelectedPillarId(pillarId);
+    setPillarSelectionMode('manual');
+    setPillarSuggestionReason(null);
+  };
+
+  const renderPillarSelector = () => {
+    if (strategyLoading) {
+      return (
+        <div className="flex items-center gap-2 rounded-[24px] border border-white/10 bg-[#101417]/60 px-4 py-3 text-sm text-[#8D95A6]">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Cargando tu estrategia editorial...
+        </div>
+      );
+    }
+
+    if (brandPillars.length === 0) {
+      return (
+        <div className="rounded-[24px] border border-dashed border-white/10 bg-[#101417]/50 p-4">
+          <p className="text-sm text-[#E0E5EB]">¿A qué pilar pertenece este post?</p>
+          <p className="mt-2 text-sm leading-6 text-[#8D95A6]">
+            Primero define tus pilares y audiencias en estrategia para que la generación salga
+            calibrada por territorio y plataforma.
+          </p>
+          <Link
+            href="/settings?section=studio&tab=strategy"
+            className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5"
+          >
+            Abrir estrategia
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+      );
+    }
+
+    return (
+      <div className="rounded-[24px] border border-white/10 bg-[#101417]/70 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-[0.24em] text-[#4E576A]">Pilar</p>
+            <p className="mt-2 text-sm text-[#E0E5EB]">¿A qué pilar pertenece este post?</p>
+          </div>
+          {activeAudience ? (
+            <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-[#8D95A6]">
+              Audiencia {formatPlatformLabel(activePlatform)}: {getLanguageLevelLabel(activeAudience.language_level)}
+            </span>
+          ) : null}
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          {brandPillars.map((pillar) => (
+            <button
+              key={pillar.id}
+              type="button"
+              onClick={() => handlePillarSelection(pillar.id)}
+              className={`rounded-full border px-4 py-2 text-sm transition-colors ${
+                selectedPillarId === pillar.id
+                  ? 'text-white'
+                  : 'border-white/10 text-[#B5BDCA] hover:border-white/20 hover:text-white'
+              }`}
+              style={
+                selectedPillarId === pillar.id
+                  ? {
+                      backgroundColor: pillar.color || '#212631',
+                      borderColor: pillar.color || '#212631',
+                    }
+                  : undefined
+              }
+            >
+              {pillar.name}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => handlePillarSelection(null)}
+            className={`rounded-full border px-4 py-2 text-sm transition-colors ${
+              selectedPillarId === null
+                ? 'border-white/40 bg-white text-black'
+                : 'border-white/10 text-[#B5BDCA] hover:border-white/20 hover:text-white'
+            }`}
+          >
+            Sin pilar
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-2 text-xs leading-5 text-[#8D95A6]">
+          {suggestingPillar && pillarSelectionMode === 'auto' ? (
+            <p>Sugiriendo pilar en función de tu idea...</p>
+          ) : null}
+          {activePillar ? (
+            <p>
+              Pilar activo: <span className="text-[#E0E5EB]">{activePillar.name}</span>
+              {activePillar.description ? ` · ${activePillar.description}` : ''}
+            </p>
+          ) : null}
+          {pillarSuggestionReason && pillarSelectionMode === 'auto' ? (
+            <p>{pillarSuggestionReason}</p>
+          ) : null}
+          {activeAudience ? (
+            <p>
+              Esta audiencia en {formatPlatformLabel(activePlatform)} busca {activeAudience.desired_outcomes?.join(', ') || 'claridad útil'} y tiene problemas como {activeAudience.pain_points?.join(', ') || 'falta de contexto'}.
+            </p>
+          ) : (
+            <p>
+              Aún no definiste audiencia para {formatPlatformLabel(activePlatform)}. La generación usará
+              solo la voz de marca.
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const handleCopyCaption = async (platform: Platform) => {
+    const result = generatedResults[platform]
+
+    if (!result) {
+      return
+    }
+
+    const format = inferPostFormat(platform, result.content, result.format)
+    await navigator.clipboard.writeText(getCaptionText(platform, format, result.content))
+    setToastMessage('Caption copiado al portapapeles.')
+  }
+
+  const recordExport = async (postId: string, platform: Platform, format: PostFormat) => {
+    let nextUserId = userId
+
+    if (!nextUserId) {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+
+      if (!user) {
+        throw new Error('Necesitas iniciar sesion para registrar la exportacion.')
+      }
+
+      nextUserId = user.id
+      setUserId(user.id)
+    }
+
+    await supabase.from('exports').insert([
+      {
+        format,
+        platform,
+        post_id: postId,
+        user_id: nextUserId,
+      },
+    ])
+
+    setExportStatsByPostId((current) => {
+      const previous = current[postId] ?? { count: 0, lastExportedAt: null }
+
+      return {
+        ...current,
+        [postId]: {
+          count: previous.count + 1,
+          lastExportedAt: new Date().toISOString(),
+        },
+      }
+    })
+  }
+
+  const ensureExportPostId = async (platform: Platform) => {
+    const result = generatedResults[platform]
+
+    if (!result) {
+      return null
+    }
+
+    if (result.post_id) {
+      return result.post_id
+    }
+
+    if (savedPostIds[platform]) {
+      return savedPostIds[platform] ?? null
+    }
+
+    return saveAsDraft(platform)
+  }
+
+  const handleExport = async (platform: Platform) => {
+    const result = generatedResults[platform]
+
+    if (!result) {
+      return
+    }
+
+    const format = inferPostFormat(platform, result.content, result.format)
+    setExportingPlatform(platform)
+    setErrorMessage(null)
+
+    try {
+      const postId = await ensureExportPostId(platform)
+
+      if (!postId) {
+        throw new Error('No fue posible preparar el post para exportacion')
+      }
+
+      if (platform === 'instagram') {
+        await exportInstagramPackage({
+          content: result.content,
+          exportMetadata: isRecord(result.export_metadata) ? result.export_metadata : null,
+          format,
+        })
+      } else if (platform === 'linkedin') {
+        const pdfBlob =
+          format === 'document' || format === 'carousel'
+            ? await linkedInPdfRef.current?.generatePdf()
+            : null
+
+        await exportLinkedInPackage({
+          content: result.content,
+          format,
+          pdfBlob: pdfBlob ?? null,
+        })
+
+        if (pdfBlob && result.post_id) {
+          const exportMetadata = {
+            ...(isRecord(result.export_metadata) ? result.export_metadata : {}),
+            pdf_generated: true,
+          }
+
+          await supabase
+            .from('posts')
+            .update({ export_metadata: exportMetadata })
+            .eq('id', result.post_id)
+
+          updateGeneratedResult(platform, (current) => ({
+            ...current,
+            export_metadata: exportMetadata,
+          }))
+        }
+      } else {
+        exportXPackage({
+          content: result.content,
+          format,
+          idea: result.raw,
+        })
+      }
+
+      await recordExport(postId, platform, format)
+      setToastMessage(`${getExportActionLabel(platform)} listo.`)
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'No fue posible exportar el contenido')
+    } finally {
+      setExportingPlatform(null)
+    }
+  }
+
+  const handleSingleTweetEdit = (value: string) => {
+    updateGeneratedResult('x', (result) => {
+      const nextContent = {
+        ...result.content,
+        char_count: value.length,
+        tweet: value,
+      }
+
+      return {
+        ...result,
+        content: nextContent,
+      }
+    })
+  }
+
+  const handleThreadTweetEdit = (tweetNumber: number, value: string) => {
+    updateGeneratedResult('x', (result) => {
+      const tweets = readXThreadTweets(result.content.tweets ?? result.content.thread).map((tweet) =>
+        tweet.number === tweetNumber ? { ...tweet, char_count: value.length, content: value } : tweet
+      )
+
+      return {
+        ...result,
+        content: {
+          ...result.content,
+          tweets,
+        },
+      }
+    })
+  }
+
+  const handleRegenerateHook = async () => {
+    if (!currentResult?.post_id) {
+      return
+    }
+
+    const tweets = readXThreadTweets(currentResult.content.tweets ?? currentResult.content.thread)
+    const currentHook = tweets[0]?.content ?? ''
+
+    if (!currentHook) {
+      return
+    }
+
+    setRegeneratingHook(true)
+
+    try {
+      const response = await fetch('/api/x/regenerate-hook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          current_hook: currentHook,
+          thread_id: currentResult.post_id,
+        }),
+      })
+      const data = (await response.json()) as {
+        error?: string
+        hook_note?: string
+        hook_strength?: XHookStrength
+        tweets?: Array<{ char_count: number; content: string; number: number }>
+      }
+
+      if (!response.ok) {
+        throw new Error(data.error || 'No fue posible regenerar el hook')
+      }
+
+      updateGeneratedResult('x', (result) => ({
+        ...result,
+        content: {
+          ...result.content,
+          hook_note: data.hook_note ?? '',
+          hook_strength: data.hook_strength ?? 'strong',
+          tweets: data.tweets ?? [],
+        },
+        export_metadata: {
+          ...(isRecord(result.export_metadata) ? result.export_metadata : {}),
+          hook_strength: data.hook_strength ?? 'strong',
+          tweet_count: data.tweets?.length ?? readXThreadTweets(result.content.tweets).length,
+        },
+      }))
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'No fue posible regenerar el hook')
+    } finally {
+      setRegeneratingHook(false)
+    }
+  }
 
   const renderPlatformTabs = () => (
     <div className="flex flex-wrap gap-2">
@@ -783,6 +2000,427 @@ export default function ComposePage() {
     </div>
   );
 
+  const renderFormatSelector = () => {
+    const options = platformFormatOptions[activePlatform] as SocialFormatOption[]
+    const activeFormat = selectedFormats[activePlatform]
+
+    return (
+      <div className="space-y-3">
+        <p className="text-xs uppercase tracking-[0.24em] text-[#4E576A]">Formato</p>
+        <div className="flex flex-wrap gap-2">
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setFormatForPlatform(activePlatform, option.value)}
+              className={`rounded-full px-4 py-2 text-sm transition-colors ${
+                activeFormat === option.value
+                  ? 'bg-white text-black'
+                  : 'border border-white/10 text-[#B5BDCA] hover:border-white/20 hover:text-white'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs leading-5 text-[#6F7786]">
+          {options.find((option) => option.value === activeFormat)?.description}
+        </p>
+      </div>
+    )
+  }
+
+  const renderAudioSuggestionSection = (suggestions: InstagramAudioSuggestion[]) => {
+    if (suggestions.length === 0) {
+      return null
+    }
+
+    return (
+      <div className="rounded-[24px] border border-white/10 bg-[#101417] p-4">
+        <div className="flex items-center gap-2">
+          <Music2 className="h-4 w-4 text-[#D3C2F1]" />
+          <p className="text-sm font-medium text-[#E0E5EB]">Audio sugerido</p>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {suggestions.map((suggestion, index) => {
+            const isOpen = expandedAudioSuggestion === index
+
+            return (
+              <button
+                key={`${suggestion.style}-${index}`}
+                type="button"
+                onClick={() => setExpandedAudioSuggestion((current) => (current === index ? null : index))}
+                className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-left transition-colors hover:border-white/20 hover:bg-white/[0.05]"
+              >
+                <p className="text-sm text-[#E0E5EB]">{suggestion.style}</p>
+                <p className="mt-1 text-xs text-[#8D95A6]">{suggestion.mood}</p>
+                {isOpen && (
+                  <div className="mt-3 space-y-2 border-t border-white/10 pt-3 text-xs leading-5 text-[#B5BDCA]">
+                    <p>Buscar: {suggestion.search_query}</p>
+                    <p>{suggestion.why}</p>
+                  </div>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  const renderMarkdownParagraph = (line: string, key: string) => {
+    const chunks = line.split(/(\*\*.*?\*\*)/g)
+
+    return (
+      <p key={key} className="text-base leading-8 text-[#D5DBE5]">
+        {chunks.map((chunk, index) =>
+          chunk.startsWith('**') && chunk.endsWith('**') ? (
+            <strong key={`${key}-${index}`} className="font-semibold text-[#E0E5EB]">
+              {chunk.slice(2, -2)}
+            </strong>
+          ) : (
+            <span key={`${key}-${index}`}>{chunk}</span>
+          )
+        )}
+      </p>
+    )
+  }
+
+  const renderMarkdownBody = (body: string) => (
+    <div className="space-y-5">
+      {body.split('\n').map((line, index) => {
+        const trimmed = line.trim()
+
+        if (!trimmed) {
+          return <div key={`spacer-${index}`} className="h-2" />
+        }
+
+        if (trimmed.startsWith('## ')) {
+          return (
+            <h4
+              key={`heading-${index}`}
+              className="pt-2 text-2xl font-medium text-[#E0E5EB]"
+              style={{ fontFamily: 'var(--font-brand-display)' }}
+            >
+              {trimmed.replace(/^##\s+/, '')}
+            </h4>
+          )
+        }
+
+        if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+          return (
+            <div key={`bullet-${index}`} className="flex gap-3">
+              <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[#462D6E]" />
+              {renderMarkdownParagraph(trimmed.slice(2), `bullet-text-${index}`)}
+            </div>
+          )
+        }
+
+        return renderMarkdownParagraph(trimmed, `paragraph-${index}`)
+      })}
+    </div>
+  )
+
+  const renderExportBar = (platform: Platform, result: GeneratedContent) => {
+    const format = inferPostFormat(platform, result.content, result.format)
+    const postId = result.post_id ?? savedPostIds[platform] ?? null
+    const stats = postId ? exportStatsByPostId[postId] : undefined
+    const isExporting = exportingPlatform === platform
+
+    return (
+      <div className="rounded-[28px] border border-white/10 bg-[#171B22] p-5">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-lg font-medium text-[#E0E5EB]">Listo para publicar</p>
+            <p className="mt-2 text-sm text-[#8D95A6]">
+              Exportado {stats?.count ?? 0} veces
+              {'  '}
+              Ultima exportacion: {stats?.lastExportedAt ? new Date(stats.lastExportedAt).toLocaleString() : '—'}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void handleExport(platform)}
+              disabled={isExporting}
+              className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-60"
+            >
+              {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              {getExportActionLabel(platform)}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleCopyCaption(platform)}
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5"
+            >
+              <Copy className="h-4 w-4" />
+              Copiar caption
+            </button>
+            <span className="inline-flex items-center rounded-full border border-white/10 px-3 py-2 text-xs text-[#8D95A6]">
+              {getFormatLabel(platform, format)}
+            </span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const renderPostContentBody = (platform: Platform, result: GeneratedContent) => {
+    const format = inferPostFormat(platform, result.content, result.format)
+    const content = result.content
+    const hashtags = ensureHashtags(readStringArray(content.hashtags))
+
+    if (platform === 'instagram' && format === 'carousel') {
+      const slides = readInstagramSlides(content.slides)
+      const suggestions = readInstagramAudioSuggestions(
+        isRecord(result.export_metadata) ? result.export_metadata.audio_suggestions : undefined
+      )
+
+      return (
+        <div className="space-y-5">
+          <InstagramCarouselPreview
+            slides={slides}
+            onSearchUnsplash={(query) => openVisualSearch(query)}
+          />
+          <div className="rounded-[24px] border border-white/10 bg-[#101417] p-4 text-sm leading-7 text-[#E0E5EB]">
+            <p className="whitespace-pre-wrap">{readString(content.caption)}</p>
+            {hashtags.length > 0 ? <p className="mt-4 text-[#8D95A6]">{joinHashtags(hashtags)}</p> : null}
+          </div>
+          {renderAudioSuggestionSection(suggestions)}
+        </div>
+      )
+    }
+
+    if (platform === 'instagram') {
+      const suggestions = readInstagramAudioSuggestions(
+        isRecord(result.export_metadata) ? result.export_metadata.audio_suggestions : undefined
+      )
+
+      return (
+        <div className="space-y-5">
+          <div className="rounded-[24px] border border-white/10 bg-[#101417] p-4 text-sm leading-7 text-[#E0E5EB]">
+            <p className="whitespace-pre-wrap">{readString(content.caption)}</p>
+            {hashtags.length > 0 ? <p className="mt-4 text-[#8D95A6]">{joinHashtags(hashtags)}</p> : null}
+          </div>
+          <div className="rounded-[24px] border border-white/10 bg-[#101417] p-4">
+            <div className="flex items-center gap-2">
+              <ImageIcon className="h-4 w-4 text-[#8D95A6]" />
+              <p className="text-sm font-medium text-[#E0E5EB]">Imagen sugerida</p>
+            </div>
+            <p className="mt-3 text-sm leading-6 text-[#B5BDCA]">{readString(content.visual_direction)}</p>
+            <button
+              type="button"
+              onClick={() => openVisualSearch(readString(content.visual_direction))}
+              className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5"
+            >
+              Buscar en Unsplash
+              <ExternalLink className="h-4 w-4" />
+            </button>
+          </div>
+          {renderAudioSuggestionSection(suggestions)}
+        </div>
+      )
+    }
+
+    if (platform === 'x' && format === 'tweet') {
+      const tweet = readString(content.tweet)
+      const charCount = tweet.length
+
+      return (
+        <div className="space-y-4">
+          <div className="rounded-[24px] border border-white/10 bg-[#101417] p-4">
+            <textarea
+              value={tweet}
+              onChange={(event) => handleSingleTweetEdit(event.target.value)}
+              className="min-h-[160px] w-full resize-none bg-transparent text-sm leading-7 text-[#E0E5EB] focus:outline-none"
+            />
+            <div className="mt-3 flex justify-end">
+              <span className="text-xs font-medium" style={{ color: getXTweetColor(charCount) }}>
+                {charCount} / 270
+              </span>
+            </div>
+          </div>
+        </div>
+      )
+    }
+
+    if (platform === 'x' && format === 'thread') {
+      const tweets = readXThreadTweets(content.tweets ?? content.thread)
+      const hookStrength = (
+        readString(content.hook_strength) ||
+        readString(isRecord(result.export_metadata) ? result.export_metadata.hook_strength : undefined)
+      ) as XHookStrength
+      const hookNote = readString(content.hook_note)
+
+      return (
+        <div className="space-y-4">
+          {(hookStrength === 'medium' || hookStrength === 'weak') && (
+            <div className="rounded-[24px] border border-[#78350F] bg-[#78350F]/10 p-4">
+              <p className="text-sm text-[#FCD34D]">
+                El hook podria ser mas fuerte. {hookNote}
+              </p>
+              <button
+                type="button"
+                onClick={() => void handleRegenerateHook()}
+                disabled={regeneratingHook}
+                className="mt-3 inline-flex items-center gap-2 rounded-full border border-[#FCD34D]/30 px-4 py-2 text-sm text-[#FCD34D] disabled:opacity-60"
+              >
+                {regeneratingHook ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
+                Regenerar solo el hook
+              </button>
+            </div>
+          )}
+
+          <div className="space-y-3">
+            {tweets.map((tweet) => (
+              <div key={`thread-${tweet.number}`} className="rounded-2xl border border-white/8 bg-[#101417] p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs uppercase tracking-[0.2em] text-[#4E576A]">Tweet {tweet.number}</p>
+                  <span className="text-xs" style={{ color: getXTweetColor(tweet.content.length) }}>
+                    {tweet.content.length} / 270
+                  </span>
+                </div>
+                <textarea
+                  value={tweet.content}
+                  onChange={(event) => handleThreadTweetEdit(tweet.number, event.target.value)}
+                  className="mt-3 min-h-[110px] w-full resize-none bg-transparent text-sm leading-7 text-[#E0E5EB] focus:outline-none"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )
+    }
+
+    if (platform === 'x' && format === 'article') {
+      return (
+        <article className="rounded-[28px] border border-white/10 bg-[#101417] p-6">
+          <div className="flex flex-wrap gap-2">
+            <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-[#8D95A6]">
+              {String(content.word_count ?? '')} palabras
+            </span>
+            <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-[#8D95A6]">
+              {String(content.read_time_minutes ?? '')} min de lectura
+            </span>
+          </div>
+          <p
+            className="mt-5 text-3xl font-medium text-[#E0E5EB]"
+            style={{ fontFamily: 'var(--font-brand-display)' }}
+          >
+            {readString(content.title)}
+          </p>
+          <p className="mt-3 text-base leading-7 text-[#8D95A6]">{readString(content.subtitle)}</p>
+          <div className="mt-8">{renderMarkdownBody(readString(content.body))}</div>
+        </article>
+      )
+    }
+
+    if (platform === 'linkedin' && (format === 'document' || format === 'carousel')) {
+      const slides = readLinkedInSlides(content.slides)
+
+      return (
+        <div className="space-y-5">
+          <div className="grid gap-3 md:grid-cols-2">
+            {slides.map((slide) => (
+              <div key={`linkedin-slide-${slide.number}`} className="rounded-[24px] border border-white/10 bg-[#101417] p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="rounded-full bg-white/5 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-[#B5BDCA]">
+                    {slide.type}
+                  </span>
+                  <span className="text-xs text-[#4E576A]">{slide.number}/{slides.length}</span>
+                </div>
+                <div className="mt-4 space-y-3">
+                  {slide.title ? (
+                    <p className="text-xl font-medium text-[#E0E5EB]" style={{ fontFamily: 'var(--font-brand-display)' }}>
+                      {slide.title}
+                    </p>
+                  ) : null}
+                  {slide.subtitle ? <p className="text-sm leading-6 text-[#8D95A6]">{slide.subtitle}</p> : null}
+                  {slide.headline ? (
+                    <p className="text-lg font-medium text-[#E0E5EB]" style={{ fontFamily: 'var(--font-brand-display)' }}>
+                      {slide.headline}
+                    </p>
+                  ) : null}
+                  {slide.content ? <p className="text-sm leading-6 text-[#D5DBE5]">{slide.content}</p> : null}
+                  {slide.stat_or_example ? (
+                    <div className="rounded-2xl border-l-4 border-[#462D6E] bg-[#212631] px-4 py-3 text-sm leading-6 text-[#E0E5EB]">
+                      {slide.stat_or_example}
+                    </div>
+                  ) : null}
+                  {slide.message ? <p className="text-base text-[#E0E5EB]">{slide.message}</p> : null}
+                  {slide.handle ? <p className="text-sm text-[#D3C2F1]">{slide.handle}</p> : null}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="rounded-[24px] border border-white/10 bg-[#101417] p-4">
+            <p className="text-xs uppercase tracking-[0.24em] text-[#4E576A]">Caption del post</p>
+            <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-[#E0E5EB]">{readString(content.post_caption)}</p>
+            {hashtags.length > 0 ? <p className="mt-4 text-[#8D95A6]">{joinHashtags(hashtags)}</p> : null}
+          </div>
+          <LinkedInPdfGenerator ref={linkedInPdfRef} slides={slides as LinkedInCarouselSlide[]} />
+        </div>
+      )
+    }
+
+    const caption = readString(content.caption)
+    const exportReadTime = isRecord(result.export_metadata) ? result.export_metadata.read_time_minutes : undefined
+    const readTime =
+      typeof exportReadTime === 'number'
+        ? exportReadTime
+        : estimateReadTime(caption)
+    const showImageShortcut = platform === 'linkedin' && format === 'image'
+
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-wrap gap-2">
+          <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-[#8D95A6]">
+            {readTime} min de lectura
+          </span>
+          {platform === 'linkedin' ? (
+            <button
+              type="button"
+              onClick={() => setShowLinkedInPreview((current) => !current)}
+              className="rounded-full border border-white/10 px-3 py-1 text-xs text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5"
+            >
+              {showLinkedInPreview ? 'Ocultar vista previa LinkedIn' : 'Vista previa LinkedIn'}
+            </button>
+          ) : null}
+        </div>
+
+        <div className="rounded-[24px] border border-white/10 bg-[#101417] p-4 text-sm leading-7 text-[#E0E5EB]">
+          {platform === 'linkedin' && showLinkedInPreview ? (
+            <div className="rounded-[24px] border border-white/10 bg-[#212631] p-5">
+              <p className="whitespace-pre-wrap">{caption}</p>
+            </div>
+          ) : (
+            <p className="whitespace-pre-wrap">{caption}</p>
+          )}
+          {hashtags.length > 0 ? <p className="mt-4 text-[#8D95A6]">{joinHashtags(hashtags)}</p> : null}
+        </div>
+
+        {showImageShortcut ? (
+          <div className="rounded-[24px] border border-white/10 bg-[#101417] p-4">
+            <div className="flex items-center gap-2">
+              <ImageIcon className="h-4 w-4 text-[#8D95A6]" />
+              <p className="text-sm font-medium text-[#E0E5EB]">Imagen sugerida</p>
+            </div>
+            <p className="mt-3 text-sm leading-6 text-[#B5BDCA]">{readString(content.visual_direction)}</p>
+            <button
+              type="button"
+              onClick={() => openVisualSearch(readString(content.visual_direction))}
+              className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5"
+            >
+              Buscar imagen
+              <ExternalLink className="h-4 w-4" />
+            </button>
+          </div>
+        ) : null}
+      </div>
+    )
+  }
+
   const renderGeneratedContent = (platform: Platform) => {
     const result = generatedResults[platform];
 
@@ -794,13 +2432,6 @@ export default function ComposePage() {
       );
     }
 
-    const hashtags = Array.isArray(result.content.hashtags)
-      ? result.content.hashtags.filter((item): item is string => typeof item === 'string')
-      : [];
-    const thread = Array.isArray(result.content.thread)
-      ? result.content.thread.filter((item): item is string => typeof item === 'string')
-      : [];
-    const caption = typeof result.content.caption === 'string' ? result.content.caption : '';
     const isCopied = copiedResultPlatform === platform;
 
     return (
@@ -808,9 +2439,22 @@ export default function ComposePage() {
         <div className="rounded-[28px] border border-white/10 bg-[#212631]/55 p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
+              {currentQuickGeneratedOutput?.sourceLabel && (
+                <div className="mb-3 inline-flex rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-[#E0E5EB]">
+                  {currentQuickGeneratedOutput.sourceLabel}
+                </div>
+              )}
               <div className="flex flex-wrap items-center gap-2">
                 <PlatformBadge platform={platform} />
                 <p className="text-xs uppercase tracking-[0.24em] text-[#4E576A]">{result.angle}</p>
+                <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] text-[#C9D0DB]">
+                  {getFormatLabel(platform, inferPostFormat(platform, result.content, result.format))}
+                </span>
+                {currentQuickGeneratedOutput?.stanceUsed && (
+                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] text-[#C9D0DB]">
+                    Postura usada: {currentQuickGeneratedOutput.stanceUsed}
+                  </span>
+                )}
               </div>
               <p
                 className="mt-2 text-2xl font-medium text-[#E0E5EB]"
@@ -858,20 +2502,11 @@ export default function ComposePage() {
             </button>
           </div>
 
-          <div className="mt-5 space-y-4 text-sm leading-7 text-[#E0E5EB]">
-            {caption && <p className="whitespace-pre-wrap">{caption}</p>}
-            {thread.length > 0 && (
-              <div className="space-y-3">
-                {thread.map((tweet, index) => (
-                  <div key={`${tweet.slice(0, 16)}-${index}`} className="rounded-2xl border border-white/8 bg-[#101417] p-4">
-                    <p className="text-xs uppercase tracking-[0.2em] text-[#4E576A]">Tweet {index + 1}</p>
-                    <p className="mt-2 whitespace-pre-wrap">{tweet}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-            {hashtags.length > 0 && <p className="text-[#8D95A6]">{hashtags.join(' ')}</p>}
-          </div>
+          <div className="mt-5">{renderPostContentBody(platform, result)}</div>
+
+          {currentQuickGeneratedOutput?.note && (
+            <p className="mt-4 text-xs text-[#4E576A]">{currentQuickGeneratedOutput.note}</p>
+          )}
 
           <div className="mt-6 flex flex-wrap gap-2">
             <button
@@ -886,6 +2521,8 @@ export default function ComposePage() {
           </div>
         </div>
 
+        {renderExportBar(platform, result)}
+
         {savedPostIds[platform] ? (
           <PostFeedback postId={savedPostIds[platform]!} />
         ) : (
@@ -896,6 +2533,17 @@ export default function ComposePage() {
       </div>
     );
   };
+
+  const shouldShowGeneratedOutput = !quickActionOutput || quickActionOutput.kind === 'generated';
+  const visibleGeneratedPlatforms = shouldShowGeneratedOutput
+    ? currentQuickGeneratedOutput
+      ? currentQuickGeneratedOutput.platformOrder.filter((platform) => Boolean(generatedResults[platform]))
+      : platforms.filter((platform) => Boolean(generatedResults[platform]))
+    : [];
+  const activeFaqPost =
+    quickActionOutput?.kind === 'faq' ? quickActionOutput.posts[faqActiveIndex] ?? null : null;
+  const hasOutputPanel =
+    Boolean(quickActionOutput) || Object.values(generatedResults).some((value) => Boolean(value));
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 space-y-6 pb-8 duration-300">
@@ -967,6 +2615,369 @@ export default function ComposePage() {
             </div>
           )}
         </div>
+      </section>
+
+      <section className="rounded-[32px] border border-white/10 bg-[#212631]/40 p-5 sm:p-6">
+        <div className="space-y-4">
+          <div>
+            <p className="text-[12px] font-medium uppercase tracking-[0.24em] text-[#4E576A]">
+              Acciones rápidas
+            </p>
+            <p className="mt-1 text-[11px] text-[#4E576A]">Genera contenido con un clic</p>
+          </div>
+
+          <div className="md:grid md:grid-cols-3 md:gap-3">
+            <div className="flex gap-3 overflow-x-auto pb-2 md:contents">
+              {[
+                { key: 'plan' as const, icon: Calendar, label: 'Planear contenido' },
+                { key: 'repurpose' as const, icon: RefreshCw, label: 'Repurpose' },
+                { key: 'viral' as const, icon: TrendingUp, label: 'Qué está viral' },
+                { key: 'caseStudy' as const, icon: Briefcase, label: 'Caso de estudio' },
+                { key: 'thoughtLeadership' as const, icon: Lightbulb, label: 'Thought leadership' },
+                { key: 'faq' as const, icon: MessageCircle, label: 'FAQ de clientes' },
+              ].map((chip) => {
+                const Icon = chip.icon;
+                const isRunning = runningQuickAction === chip.key;
+                const isOpen = openQuickAction === chip.key;
+
+                return (
+                  <button
+                    key={chip.key}
+                    type="button"
+                    onClick={() => handleQuickActionChipClick(chip.key)}
+                    disabled={isRunning}
+                    className={`flex min-w-[160px] shrink-0 items-center gap-2 rounded-[10px] border px-4 py-3 text-left transition-all md:min-w-0 ${
+                      isOpen || isRunning
+                        ? 'border-[#E0E5EB] bg-[#1A1F28] opacity-70'
+                        : 'border-[#2A3040] bg-[#212631] hover:border-[#4E576A] hover:bg-[#1A1F28]'
+                    }`}
+                  >
+                    {isRunning ? (
+                      <span className="h-4 w-4 rounded-full border-2 border-[#4E576A] border-t-[#E0E5EB] animate-spin" />
+                    ) : (
+                      <Icon className="h-4 w-4 text-[#E0E5EB]" />
+                    )}
+                    <span className="text-[13px] font-medium text-[#E0E5EB]">
+                      {isRunning ? 'Generando...' : chip.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <AnimatePresence initial={false}>
+            {openQuickAction && (
+              <motion.div
+                key={openQuickAction}
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
+                className="overflow-hidden"
+              >
+                <div className="rounded-[24px] border border-white/10 bg-[#101417]/80 p-4 sm:p-5">
+                  {openQuickAction === 'plan' && (
+                    <div className="space-y-4">
+                      <label className="grid gap-2">
+                        <span className="text-sm text-[#E0E5EB]">¿Cuántos días quieres planear?</span>
+                        <input
+                          type="number"
+                          min={3}
+                          max={30}
+                          value={planDays}
+                          onChange={(event) => setPlanDays(Math.min(30, Math.max(3, Number(event.target.value) || 7)))}
+                          className="w-full rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB] focus:outline-none focus:ring-2 focus:ring-white/10"
+                        />
+                      </label>
+                      <div className="space-y-2">
+                        <p className="text-sm text-[#E0E5EB]">Plataformas</p>
+                        <div className="flex flex-wrap gap-2">
+                          {platforms.map((platform) => {
+                            const isSelected = planPlatforms.includes(platform);
+
+                            return (
+                              <button
+                                key={platform}
+                                type="button"
+                                onClick={() =>
+                                  setPlanPlatforms((current) =>
+                                    isSelected
+                                      ? current.filter((item) => item !== platform)
+                                      : [...current, platform]
+                                  )
+                                }
+                                className={`rounded-full px-4 py-2 text-sm transition-colors ${
+                                  isSelected
+                                    ? 'bg-white text-black'
+                                    : 'border border-white/10 text-[#B5BDCA] hover:border-white/20 hover:text-white'
+                                }`}
+                              >
+                                {formatPlatformLabel(platform)}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void runPlanQuickAction()}
+                        disabled={planPlatforms.length === 0 || runningQuickAction === 'plan'}
+                        className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-50"
+                      >
+                        Generar plan
+                        <MoveRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+
+                  {openQuickAction === 'repurpose' && (
+                    <div className="space-y-4">
+                      {repurposePostsLoading ? (
+                        <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-[#171B22] px-4 py-4 text-sm text-[#B5BDCA]">
+                          <span className="h-4 w-4 rounded-full border-2 border-[#4E576A] border-t-[#E0E5EB] animate-spin" />
+                          Cargando tus posts recientes...
+                        </div>
+                      ) : repurposePostsLoaded && repurposePosts.length === 0 ? (
+                        <div className="rounded-2xl border border-white/10 bg-[#171B22] px-4 py-4 text-sm text-[#B5BDCA]">
+                          Aún no tienes posts guardados. Genera tu primer post primero.
+                        </div>
+                      ) : (
+                        <>
+                          {selectedRepurposePostId && (
+                            <div className="rounded-2xl border border-white/10 bg-[#171B22] p-4">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <PlatformBadge
+                                  platform={
+                                    repurposePosts.find((post) => post.id === selectedRepurposePostId)?.platform ??
+                                    'linkedin'
+                                  }
+                                />
+                                <span className="text-xs uppercase tracking-[0.22em] text-[#4E576A]">
+                                  ¿Adaptar este post?
+                                </span>
+                              </div>
+                              <p className="mt-3 text-sm leading-6 text-[#E0E5EB]">
+                                {getContentPreview(
+                                  repurposePosts.find((post) => post.id === selectedRepurposePostId)?.platform ?? 'linkedin',
+                                  getDefaultFormat(
+                                    repurposePosts.find((post) => post.id === selectedRepurposePostId)?.platform ?? 'linkedin'
+                                  ),
+                                  repurposePosts.find((post) => post.id === selectedRepurposePostId)?.content ?? null
+                                )}
+                              </p>
+                              <div className="mt-4 flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => void runRepurposeQuickAction()}
+                                  className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-black"
+                                >
+                                  Sí, adaptar
+                                  <MoveRight className="h-4 w-4" />
+                                </button>
+                                <select
+                                  value={selectedRepurposePostId}
+                                  onChange={(event) => setSelectedRepurposePostId(event.target.value)}
+                                  className="rounded-full border border-white/10 bg-[#101417] px-4 py-2 text-sm text-[#E0E5EB] focus:outline-none"
+                                >
+                                  {repurposePosts.map((post) => (
+                                    <option key={post.id} value={post.id}>
+                                      {formatPlatformLabel(post.platform)} · {getContentPreview(post.platform, getDefaultFormat(post.platform), post.content, 55)}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {openQuickAction === 'viral' && (
+                    <div className="space-y-4">
+                      <div className="flex flex-wrap gap-2">
+                        {platforms.map((platform) => (
+                          <button
+                            key={platform}
+                            type="button"
+                            onClick={() => setViralPlatform(platform)}
+                            className={`rounded-full px-4 py-2 text-sm transition-colors ${
+                              viralPlatform === platform
+                                ? 'bg-white text-black'
+                                : 'border border-white/10 text-[#B5BDCA] hover:border-white/20 hover:text-white'
+                            }`}
+                          >
+                            {formatPlatformLabel(platform)}
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void runViralQuickAction()}
+                        className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-black"
+                      >
+                        Buscar tendencias
+                        <MoveRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+
+                  {openQuickAction === 'caseStudy' && (
+                    <div className="grid gap-4">
+                      <input
+                        type="text"
+                        value={caseStudyClient}
+                        onChange={(event) => setCaseStudyClient(event.target.value)}
+                        placeholder="Cliente o proyecto — ej. Valtru Interiorismo"
+                        className="rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB] placeholder:text-[#667085] focus:outline-none"
+                      />
+                      <input
+                        type="text"
+                        value={caseStudyService}
+                        onChange={(event) => setCaseStudyService(event.target.value)}
+                        placeholder="Servicio entregado — ej. Sitio web + SEO"
+                        className="rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB] placeholder:text-[#667085] focus:outline-none"
+                      />
+                      <textarea
+                        value={caseStudyResult}
+                        onChange={(event) => setCaseStudyResult(event.target.value)}
+                        placeholder="Resultado concreto — ej. Aumentó visitas orgánicas 3x en 2 meses"
+                        className="min-h-[110px] rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB] placeholder:text-[#667085] focus:outline-none"
+                      />
+                      <div className="flex flex-wrap gap-2">
+                        {platforms.map((platform) => (
+                          <button
+                            key={platform}
+                            type="button"
+                            onClick={() => setCaseStudyPlatform(platform)}
+                            className={`rounded-full px-4 py-2 text-sm transition-colors ${
+                              caseStudyPlatform === platform
+                                ? 'bg-white text-black'
+                                : 'border border-white/10 text-[#B5BDCA] hover:border-white/20 hover:text-white'
+                            }`}
+                          >
+                            {formatPlatformLabel(platform)}
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void runCaseStudyQuickAction()}
+                        disabled={!caseStudyClient.trim() || !caseStudyService.trim() || !caseStudyResult.trim()}
+                        className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-50"
+                      >
+                        Generar caso de estudio
+                        <MoveRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+
+                  {openQuickAction === 'thoughtLeadership' && (
+                    <div className="grid gap-4">
+                      <input
+                        type="text"
+                        value={thoughtLeadershipTopic}
+                        onChange={(event) => setThoughtLeadershipTopic(event.target.value)}
+                        placeholder="Tema o área — ej. IA en agencias, SEO en 2026, diseño web en México"
+                        className="rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB] placeholder:text-[#667085] focus:outline-none"
+                      />
+                      <div className="space-y-2">
+                        <input
+                          type="text"
+                          value={thoughtLeadershipStance}
+                          onChange={(event) => setThoughtLeadershipStance(event.target.value)}
+                          placeholder="Tu postura (opcional) — ej. La mayoría lo hace mal porque..."
+                          className="w-full rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB] placeholder:text-[#667085] focus:outline-none"
+                        />
+                        <p className="text-xs text-[#4E576A]">
+                          Déjalo vacío y la IA tomará una postura por ti
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {platforms.map((platform) => (
+                          <button
+                            key={platform}
+                            type="button"
+                            onClick={() => setThoughtLeadershipPlatform(platform)}
+                            className={`rounded-full px-4 py-2 text-sm transition-colors ${
+                              thoughtLeadershipPlatform === platform
+                                ? 'bg-white text-black'
+                                : 'border border-white/10 text-[#B5BDCA] hover:border-white/20 hover:text-white'
+                            }`}
+                          >
+                            {formatPlatformLabel(platform)}
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void runThoughtLeadershipQuickAction()}
+                        disabled={!thoughtLeadershipTopic.trim()}
+                        className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-50"
+                      >
+                        Generar opinión
+                        <MoveRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+
+                  {openQuickAction === 'faq' && (
+                    <div className="grid gap-4">
+                      <div className="space-y-2">
+                        <textarea
+                          value={faqQuestions}
+                          onChange={(event) => setFaqQuestions(event.target.value)}
+                          placeholder="¿Qué te preguntan tus clientes? Pega varias preguntas, una por línea"
+                          className="min-h-[140px] w-full rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB] placeholder:text-[#667085] focus:outline-none"
+                        />
+                        <p className="text-xs text-[#4E576A]">Pega varias preguntas, una por línea</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {platforms.map((platform) => (
+                          <button
+                            key={platform}
+                            type="button"
+                            onClick={() => setFaqPlatform(platform)}
+                            className={`rounded-full px-4 py-2 text-sm transition-colors ${
+                              faqPlatform === platform
+                                ? 'bg-white text-black'
+                                : 'border border-white/10 text-[#B5BDCA] hover:border-white/20 hover:text-white'
+                            }`}
+                          >
+                            {formatPlatformLabel(platform)}
+                          </button>
+                        ))}
+                      </div>
+                      <label className="grid gap-2">
+                        <span className="text-sm text-[#E0E5EB]">¿Cuántos posts?</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={5}
+                          value={faqCount}
+                          onChange={(event) => setFaqCount(Math.min(5, Math.max(1, Number(event.target.value) || 3)))}
+                          className="w-full rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB] focus:outline-none"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => void runFaqQuickAction()}
+                        disabled={!faqQuestions.trim()}
+                        className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-50"
+                      >
+                        Convertir en contenido
+                        <MoveRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        <div className="mt-5 border-t border-white/10" />
       </section>
 
       <AnimatePresence mode="wait" initial={false}>
@@ -1063,6 +3074,61 @@ export default function ComposePage() {
 
               <div className="mt-5 space-y-5">
                 {renderPlatformTabs()}
+                {renderFormatSelector()}
+
+                {activePlatform === 'instagram' && selectedFormats.instagram === 'carousel' && (
+                  <div className="grid gap-4 rounded-[24px] border border-white/10 bg-[#101417] p-4 md:grid-cols-3">
+                    <label className="grid gap-2">
+                      <span className="text-sm text-[#E0E5EB]">¿Cuantos slides?</span>
+                      <input
+                        type="number"
+                        min={3}
+                        max={10}
+                        value={instagramSlideCount}
+                        onChange={(event) =>
+                          setInstagramSlideCount(Math.min(10, Math.max(3, Number(event.target.value) || 5)))
+                        }
+                        className="w-full rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB] focus:outline-none"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB]">
+                      <span>Incluir slide de portada</span>
+                      <input
+                        type="checkbox"
+                        checked={instagramIncludeCover}
+                        onChange={(event) => setInstagramIncludeCover(event.target.checked)}
+                        className="h-4 w-4 accent-white"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB]">
+                      <span>Incluir slide de CTA final</span>
+                      <input
+                        type="checkbox"
+                        checked={instagramIncludeCta}
+                        onChange={(event) => setInstagramIncludeCta(event.target.checked)}
+                        className="h-4 w-4 accent-white"
+                      />
+                    </label>
+                  </div>
+                )}
+
+                {activePlatform === 'linkedin' && (selectedFormats.linkedin === 'document' || selectedFormats.linkedin === 'carousel') && (
+                  <div className="grid gap-4 rounded-[24px] border border-white/10 bg-[#101417] p-4 md:max-w-sm">
+                    <label className="grid gap-2">
+                      <span className="text-sm text-[#E0E5EB]">¿Cuantas paginas?</span>
+                      <input
+                        type="number"
+                        min={5}
+                        max={15}
+                        value={linkedinSlideCount}
+                        onChange={(event) =>
+                          setLinkedinSlideCount(Math.min(15, Math.max(5, Number(event.target.value) || 8)))
+                        }
+                        className="w-full rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB] focus:outline-none"
+                      />
+                    </label>
+                  </div>
+                )}
 
                 {mode === 'explore' && (
                   <div className="space-y-4">
@@ -1184,6 +3250,7 @@ export default function ComposePage() {
                             </div>
                           </div>
                         </div>
+                        {renderPillarSelector()}
                         <div className="flex flex-wrap gap-3">
                           <AIButton
                             onClick={() => void requestAngles()}
@@ -1200,8 +3267,8 @@ export default function ComposePage() {
                             onClick={() => void generateContent()}
                             disabled={!canGenerate}
                             state={generateButtonState}
-                            idleLabel="Generar contenido"
-                            loadingLabel="Generando contenido"
+                            idleLabel={generationActionLabel}
+                            loadingLabel={`${generationActionLabel}...`}
                             successLabel="Contenido listo"
                             errorLabel="Reintentar generación"
                             icon={Sparkles}
@@ -1276,6 +3343,7 @@ export default function ComposePage() {
                             </div>
                           </div>
                         </div>
+                        {renderPillarSelector()}
                         <div
                           className="inline-flex"
                           title={!idea.trim() && !generating && !loadingIdea ? 'Escribe una idea primero' : undefined}
@@ -1284,8 +3352,8 @@ export default function ComposePage() {
                             onClick={() => void generateContent()}
                             disabled={!canGenerate}
                             state={generateButtonState}
-                            idleLabel="Generar contenido"
-                            loadingLabel="Generando contenido"
+                            idleLabel={generationActionLabel}
+                            loadingLabel={`${generationActionLabel}...`}
                             successLabel="Contenido listo"
                             errorLabel="Reintentar generación"
                             icon={Sparkles}
@@ -1305,30 +3373,228 @@ export default function ComposePage() {
               </div>
             </section>
 
-            {(Object.keys(generatedResults).length > 0 || currentResult) && (
-              <section className="space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  {platforms
-                    .filter((platform) => generatedResults[platform])
-                    .map((platform) => (
-                      <button
-                        key={platform}
-                        type="button"
-                        onClick={() => setActivePlatform(platform)}
-                        className={`rounded-full px-4 py-2 text-sm transition-colors ${
-                          platform === activePlatform
-                            ? 'bg-[#212631] text-[#E0E5EB]'
-                            : 'text-[#8D95A6] hover:bg-white/5 hover:text-[#E0E5EB]'
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {hasOutputPanel && (
+        <section ref={outputSectionRef} className="space-y-4">
+          {quickActionOutput?.kind === 'plan' && (
+            <div className="rounded-[28px] border border-white/10 bg-[#212631]/55 p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="inline-flex rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-[#E0E5EB]">
+                    {quickActionOutput.sourceLabel}
+                  </div>
+                  <p
+                    className="mt-3 text-2xl font-medium text-[#E0E5EB]"
+                    style={{ fontFamily: 'var(--font-brand-display)' }}
+                  >
+                    Plan listo para llevar al calendario
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    openCalendarForDay(
+                      Math.min(...quickActionOutput.plan.map((item) => item.day))
+                    )
+                  }
+                  className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5"
+                >
+                  Agregar todos
+                  <CalendarDays className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="mt-5 space-y-4">
+                {Array.from(
+                  quickActionOutput.plan.reduce((map, item) => {
+                    const currentItems = map.get(item.day) ?? [];
+                    currentItems.push(item);
+                    map.set(item.day, currentItems);
+                    return map;
+                  }, new Map<number, QuickActionPlanItem[]>())
+                ).map(([day, items]) => (
+                  <div key={day} className="rounded-[24px] border border-white/8 bg-[#101417] p-4">
+                    <div className="mb-4 inline-flex rounded-full bg-white/5 px-3 py-1 text-xs uppercase tracking-[0.22em] text-[#E0E5EB]">
+                      Día {day}
+                    </div>
+                    <div className="space-y-3">
+                      {items.map((item) => (
+                        <div key={item.savedIdeaId} className="rounded-2xl border border-white/8 bg-[#171B22] p-4">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <PlatformBadge platform={item.platform} />
+                            <span className="rounded-full bg-white/5 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-[#B5BDCA]">
+                              {item.angle}
+                            </span>
+                          </div>
+                          <p className="mt-3 text-sm leading-6 text-[#E0E5EB]">{item.hook}</p>
+                          <p className="mt-2 text-xs leading-5 text-[#8D95A6]">{item.why}</p>
+                          <button
+                            type="button"
+                            onClick={() => openCalendarForDay(item.day)}
+                            className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5"
+                          >
+                            Agregar al calendario
+                            <CalendarDays className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {quickActionOutput?.kind === 'viral' && (
+            <div className="rounded-[28px] border border-white/10 bg-[#212631]/55 p-5">
+              <div className="inline-flex rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-[#E0E5EB]">
+                {quickActionOutput.sourceLabel}
+              </div>
+              <p
+                className="mt-3 text-2xl font-medium text-[#E0E5EB]"
+                style={{ fontFamily: 'var(--font-brand-display)' }}
+              >
+                Ideas para subirte a la conversación de hoy
+              </p>
+
+              <div className="mt-5 space-y-3">
+                {quickActionOutput.trends.map((trend) => (
+                  <div key={trend.savedIdeaId} className="rounded-[24px] border border-white/8 bg-[#101417] p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${
+                          trend.urgency === 'high'
+                            ? 'bg-[#7F1D1D] text-[#FCA5A5]'
+                            : trend.urgency === 'medium'
+                              ? 'bg-[#78350F] text-[#FCD34D]'
+                              : 'bg-[#1A3A2A] text-[#4ADE80]'
                         }`}
                       >
-                        {formatPlatformLabel(platform)}
-                      </button>
-                    ))}
+                        {trend.urgency}
+                      </span>
+                      <PlatformBadge platform={trend.platform} />
+                      <span className="rounded-full bg-white/5 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-[#B5BDCA]">
+                        {trend.angle}
+                      </span>
+                    </div>
+                    <p className="mt-3 text-sm leading-6 text-[#B5BDCA]">{trend.trend_context}</p>
+                    <p className="mt-3 text-sm leading-6 text-[#E0E5EB]">{trend.hook}</p>
+                    <button
+                      type="button"
+                      onClick={() => developTrend(trend)}
+                      className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5"
+                    >
+                      Desarrollar este
+                      <MoveRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {quickActionOutput?.kind === 'faq' && activeFaqPost && (
+            <div className="space-y-4">
+              <div className="rounded-[28px] border border-white/10 bg-[#212631]/55 p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="inline-flex rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-[#E0E5EB]">
+                      {quickActionOutput.sourceLabel}
+                    </div>
+                    <p
+                      className="mt-3 text-2xl font-medium text-[#E0E5EB]"
+                      style={{ fontFamily: 'var(--font-brand-display)' }}
+                    >
+                      FAQ convertidas en posts listos
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled
+                    className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] opacity-70"
+                  >
+                    <Check className="h-4 w-4" />
+                    Guardar todos como borrador
+                  </button>
                 </div>
 
-                {renderGeneratedContent(activePlatform)}
-              </section>
-            )}
+                <div className="mt-5 flex flex-wrap gap-2">
+                  {quickActionOutput.posts.map((post, index) => (
+                    <button
+                      key={post.savedPostId}
+                      type="button"
+                      onClick={() => setFaqActiveIndex(index)}
+                      className={`rounded-full px-4 py-2 text-sm transition-colors ${
+                        faqActiveIndex === index
+                          ? 'bg-white text-black'
+                          : 'text-[#8D95A6] hover:bg-white/5 hover:text-[#E0E5EB]'
+                      }`}
+                    >
+                      Post {index + 1}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="mt-5 rounded-[24px] border border-white/8 bg-[#101417] p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <PlatformBadge platform={activeFaqPost.platform} />
+                    <span className="rounded-full bg-white/5 px-3 py-1 text-[11px] text-[#B5BDCA]">
+                      {activeFaqPost.question_used}
+                    </span>
+                  </div>
+                  <div className="mt-4">
+                    {renderPostContentBody(activeFaqPost.platform, {
+                      angle: 'FAQ',
+                      content: activeFaqPost.content,
+                      platform: activeFaqPost.platform,
+                      raw: activeFaqPost.question_used,
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <PostFeedback postId={activeFaqPost.savedPostId} />
+            </div>
+          )}
+
+          {visibleGeneratedPlatforms.length > 0 && (
+            <>
+              <div className="flex flex-wrap gap-2">
+                {visibleGeneratedPlatforms.map((platform) => (
+                  <button
+                    key={platform}
+                    type="button"
+                    onClick={() => setActivePlatform(platform)}
+                    className={`rounded-full px-4 py-2 text-sm transition-colors ${
+                      platform === activePlatform
+                        ? 'bg-[#212631] text-[#E0E5EB]'
+                        : 'text-[#8D95A6] hover:bg-white/5 hover:text-[#E0E5EB]'
+                    }`}
+                  >
+                    {formatPlatformLabel(platform)}
+                  </button>
+                ))}
+              </div>
+
+              {renderGeneratedContent(activePlatform)}
+            </>
+          )}
+        </section>
+      )}
+
+      <AnimatePresence>
+        {toastMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 12 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            className="fixed right-4 bottom-4 z-50 rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB] shadow-[0_12px_36px_rgba(0,0,0,0.32)]"
+          >
+            {toastMessage}
           </motion.div>
         )}
       </AnimatePresence>

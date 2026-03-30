@@ -4,7 +4,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarDays, Home, Lightbulb, Menu, SquarePen, X } from 'lucide-react'
+import { BookOpen, CalendarDays, Home, Lightbulb, Menu, SquarePen, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 const navigation = [
@@ -205,6 +205,17 @@ export function TopNavbar({ userAvatarUrl, userEmail, userName }: TopNavbarProps
 
                   <div className="my-2 h-px bg-[#2A3040]" />
 
+                  <Link
+                    href="/tutorial"
+                    onClick={closeMenus}
+                    className="flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm font-normal text-[#E0E5EB] transition-colors hover:bg-[#101417]"
+                  >
+                    <BookOpen className="h-4 w-4 text-[#8D95A6]" />
+                    <span>Tutorial &amp; Tips</span>
+                  </Link>
+
+                  <div className="my-2 h-px bg-[#2A3040]" />
+
                   <button
                     type="button"
                     onClick={() => void handleSignOut()}
@@ -295,6 +306,17 @@ export function TopNavbar({ userAvatarUrl, userEmail, userName }: TopNavbarProps
                   </Link>
                 ))}
               </div>
+
+              <div className="my-2 h-px bg-[#2A3040]" />
+
+              <Link
+                href="/tutorial"
+                onClick={closeMenus}
+                className="flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm font-normal text-[#E0E5EB] transition-colors hover:bg-[#101417]"
+              >
+                <BookOpen className="h-4 w-4 text-[#8D95A6]" />
+                <span>Tutorial &amp; Tips</span>
+              </Link>
 
               <div className="my-2 h-px bg-[#2A3040]" />
 
