@@ -1,7 +1,14 @@
 import { NextResponse } from 'next/server'
 import { anthropic } from '@/lib/anthropic'
 import { buildUserContext } from '@/lib/ai/build-user-context'
-import { getAudiencePrompt, getPillarPrompt, type BrandPillar, type PlatformAudience } from '@/lib/brand-strategy'
+import { withUserInputLanguageRule } from '@/lib/ai/language-rule'
+import {
+  getAudiencePrompt,
+  getPillarPrompt,
+  isMissingStrategyTablesError,
+  type BrandPillar,
+  type PlatformAudience,
+} from '@/lib/brand-strategy'
 import type { Platform } from '@/lib/product'
 import type { ExportMetadata, PostFormat } from '@/lib/social-content'
 import {
@@ -37,14 +44,14 @@ type GeneratedPayload = {
 
 function getInstagramSinglePrompt(idea: string, angle: string, brandVoice: string, strategyContext: string) {
   return {
-    system: `You are the lead content strategist for Noctra Studio, a boutique digital agency in Queretaro, Mexico.
+    system: withUserInputLanguageRule(`You are the lead content strategist for Noctra Studio, a boutique digital agency in Queretaro, Mexico.
 Brand voice:
 ${brandVoice}
 
 ${strategyContext}
 
 Language: Spanish (LATAM).
-Output only valid JSON.`,
+Output only valid JSON.`),
     prompt: `Create an Instagram single-image post.
 
 Idea: ${idea}
@@ -80,7 +87,7 @@ function getLinkedInPrompt(
       : ''
 
   return {
-    system: `You are writing for LinkedIn on behalf of Noctra Studio, a boutique digital agency in Queretaro, Mexico.
+    system: withUserInputLanguageRule(`You are writing for LinkedIn on behalf of Noctra Studio, a boutique digital agency in Queretaro, Mexico.
 Brand voice:
 ${brandVoice}
 
@@ -88,7 +95,7 @@ ${strategyContext}
 
 Language: Spanish (LATAM).
 Tone: practitioner, direct, useful, not corporate.
-Output only valid JSON.`,
+Output only valid JSON.`),
     prompt: `Write a LinkedIn post.
 
 Idea: ${idea}
@@ -112,14 +119,14 @@ Return ONLY valid JSON:
 
 function getXTweetPrompt(idea: string, angle: string, brandVoice: string, strategyContext: string) {
   return {
-    system: `You are writing a single tweet for Manu, founder of Noctra Studio in Queretaro, Mexico.
+    system: withUserInputLanguageRule(`You are writing a single tweet for Manu, founder of Noctra Studio in Queretaro, Mexico.
 Brand voice:
 ${brandVoice}
 
 ${strategyContext}
 
 Language: Spanish (LATAM).
-Output only valid JSON.`,
+Output only valid JSON.`),
     prompt: `Write one publication-ready tweet for X.
 
 Idea: ${idea}
@@ -237,6 +244,66 @@ export async function POST(req: Request) {
       ])
 
     if (pillarsError || audienceError) {
+      if (isMissingStrategyTablesError(pillarsError) || isMissingStrategyTablesError(audienceError)) {
+        const context = await buildUserContext(user.id, platform)
+        const learningInjection =
+          context.total_posts_generated >= 5
+            ? `
+Context from previous posts:
+- Top performing references: ${context.top_performing_posts
+                .map((post) => (typeof post.content === 'object' && post.content ? readString((post.content as Record<string, unknown>).caption) : ''))
+                .filter(Boolean)
+                .join(' | ') || 'none'}
+- Avoided patterns: ${context.avoided_patterns.join(', ') || 'none'}
+- Style notes: ${context.style_notes.join(', ') || 'none'}
+- Recent topics to avoid repeating: ${context.recent_topics.join(', ') || 'none'}`
+            : ''
+        const promptPayload = buildPlatformPrompt({
+          angle,
+          brandVoice: `${formatBrandVoice(customBrandVoice as never)}${learningInjection}`,
+          format,
+          idea,
+          platform,
+          strategyContext: `${getPillarPrompt(null)}
+
+${getAudiencePrompt(null, platform)}
+
+Calibra el lenguaje, ejemplos, y CTA del post para esta audiencia específica. Un post para LinkedIn (directores) debe sonar diferente al mismo tema en Instagram (dueños de PYME sin formación técnica).`,
+        })
+
+        const message = await anthropic.messages.create({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1400,
+          system: promptPayload.system,
+          messages: [{ role: 'user', content: promptPayload.prompt }],
+        })
+
+        const parsed = parseAnthropicJson<Record<string, unknown>>(message)
+        const normalized = normalizeGeneratedPayload(platform, format, parsed)
+        const postId = await saveGeneratedPost({
+          angle,
+          content: normalized.content,
+          exportMetadata: normalized.exportMetadata,
+          format: normalized.format,
+          idea,
+          pillarId: null,
+          platform,
+          postId: body.post_id,
+          userId: user.id,
+        })
+
+        return NextResponse.json({
+          angle,
+          content: normalized.content,
+          export_metadata: normalized.exportMetadata,
+          format: normalized.format,
+          platform,
+          pillar_id: null,
+          post_id: postId,
+          raw: idea,
+        })
+      }
+
       throw pillarsError || audienceError
     }
 

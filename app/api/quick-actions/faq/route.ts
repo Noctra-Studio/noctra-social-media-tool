@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { anthropic } from '@/lib/anthropic';
+import { withUserInputLanguageRule } from '@/lib/ai/language-rule';
 import {
   asPlatform,
   formatBrandVoice,
@@ -45,7 +46,7 @@ export async function POST(req: Request) {
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 2600,
-      system: `You are a content strategist for Noctra Studio, a boutique digital agency in Querétaro, Mexico. You convert real client FAQs into educational social media content that builds authority.
+      system: withUserInputLanguageRule(`You are a content strategist for Noctra Studio, a boutique digital agency in Querétaro, Mexico. You convert real client FAQs into educational social media content that builds authority.
 
 Brand voice:
 ${formatBrandVoice(brandVoice)}
@@ -72,7 +73,7 @@ LinkedIn: 180-220 words, professional, cite specific numbers if possible
 X: thread of 3-4 tweets per FAQ, punchy and direct
 
 Return ONLY valid JSON:
-{ "posts": [{ "question_used": "...", "platform": "${platform}", "content": { "caption": "..." } }] }`,
+{ "posts": [{ "question_used": "...", "platform": "${platform}", "content": { "caption": "..." } }] }`),
       messages: [{ role: 'user', content: 'Convert these FAQs into content now.' }],
     });
 

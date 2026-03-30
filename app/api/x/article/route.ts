@@ -1,6 +1,13 @@
 import { NextResponse } from 'next/server'
 import { anthropic } from '@/lib/anthropic'
-import { getAudiencePrompt, getPillarPrompt, type BrandPillar, type PlatformAudience } from '@/lib/brand-strategy'
+import { withUserInputLanguageRule } from '@/lib/ai/language-rule'
+import {
+  getAudiencePrompt,
+  getPillarPrompt,
+  isMissingStrategyTablesError,
+  type BrandPillar,
+  type PlatformAudience,
+} from '@/lib/brand-strategy'
 import type { Platform } from '@/lib/product'
 import type { ExportMetadata } from '@/lib/social-content'
 import { estimateReadTime, readString } from '@/lib/social-content'
@@ -59,7 +66,10 @@ export async function POST(req: Request) {
           .maybeSingle(),
       ])
 
-    if (pillarsError || audienceError) {
+    if (
+      (pillarsError && !isMissingStrategyTablesError(pillarsError)) ||
+      (audienceError && !isMissingStrategyTablesError(audienceError))
+    ) {
       throw pillarsError || audienceError
     }
 
@@ -75,7 +85,7 @@ Calibra el lenguaje, los ejemplos y el CTA para esta audiencia específica.`
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 2600,
-      system: `Write a long-form X Article for Noctra Studio.
+      system: withUserInputLanguageRule(`Write a long-form X Article for Noctra Studio.
 Brand voice:
 ${formatBrandVoice(brandVoice)}
 
@@ -83,7 +93,7 @@ ${strategyContext}
 
 Language: Spanish (LATAM).
 Use markdown formatting.
-Return only valid JSON.`,
+Return only valid JSON.`),
       messages: [
         {
           role: 'user',

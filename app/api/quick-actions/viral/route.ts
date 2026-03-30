@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { anthropic } from '@/lib/anthropic';
+import { withUserInputLanguageRule } from '@/lib/ai/language-rule';
 import {
   asPlatform,
   formatBrandVoice,
@@ -33,7 +34,7 @@ export async function POST(req: Request) {
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 2600,
-      system: `You are a content strategist for Noctra Studio, a digital agency in Querétaro, Mexico specializing in web dev, SEO, and AI automation.
+      system: withUserInputLanguageRule(`You are a content strategist for Noctra Studio, a digital agency in Querétaro, Mexico specializing in web dev, SEO, and AI automation.
 
 Based on current viral content trends on ${platform} in the LATAM/Mexico digital marketing space, generate 5 content ideas that Noctra Studio could create TODAY to tap into these trends.
 
@@ -47,7 +48,7 @@ Brand voice:
 ${formatBrandVoice(brandVoice)}
 
 Return ONLY valid JSON:
-{ "trends": [{ "trend_context": "...", "hook": "...", "angle": "opinion", "urgency": "high", "platform": "${platform}" }] }`,
+{ "trends": [{ "trend_context": "...", "hook": "...", "angle": "opinion", "urgency": "high", "platform": "${platform}" }] }`),
       messages: [
         {
           role: 'user',

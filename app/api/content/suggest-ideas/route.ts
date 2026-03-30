@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { anthropic } from '@/lib/anthropic'
+import { withUserInputLanguageRule } from '@/lib/ai/language-rule'
 import { getUser } from '@/lib/auth/get-user'
 import { createClient } from '@/lib/supabase/server'
 import type { Platform, SuggestedIdea } from '@/lib/product'
@@ -107,7 +108,7 @@ Return ONLY JSON with this structure:
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 1200,
-      system: 'You output only pure JSON.',
+      system: withUserInputLanguageRule('You output only pure JSON.'),
       messages: [{ role: 'user', content: prompt }],
     })
 

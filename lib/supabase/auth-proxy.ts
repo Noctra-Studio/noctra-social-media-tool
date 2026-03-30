@@ -2,15 +2,18 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { getSupabasePublicConfig } from '@/lib/supabase/config'
 
+const publicRoutes = new Set(['/', '/login', '/es/terminos', '/es/privacidad'])
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
   })
-  const isLoginRoute = request.nextUrl.pathname.startsWith('/login')
+  const pathname = request.nextUrl.pathname
+  const isPublicRoute = publicRoutes.has(pathname)
   const config = getSupabasePublicConfig()
 
   if (!config.isConfigured || !config.url || !config.anonKey) {
-    if (isLoginRoute || request.nextUrl.pathname.startsWith('/api')) {
+    if (isPublicRoute || pathname.startsWith('/api')) {
       return supabaseResponse
     }
 
@@ -19,9 +22,6 @@ export async function updateSession(request: NextRequest) {
     url.searchParams.set('setup', 'supabase')
     return NextResponse.redirect(url)
   }
-
-  // Exclude auth endpoints or static assets here if needed, 
-  // but middleware matcher typically handles it.
 
   const supabase = createServerClient(
     config.url,
@@ -48,24 +48,9 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  if (!user && !isLoginRoute && request.nextUrl.pathname.startsWith('/app')) {
+  if (!user && !isPublicRoute && !pathname.startsWith('/api')) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
-    return NextResponse.redirect(url)
-  }
-
-  // NOTE: since this is an internal tool, all paths other than /login are essentially protected.
-  // We'll protect everything except /login and /api/auth.
-  if (!user && !isLoginRoute && !request.nextUrl.pathname.startsWith('/api')) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/login'
-    return NextResponse.redirect(url)
-  }
-
-  // If user is logged in and visits /login, redirect to the dashboard home
-  if (user && isLoginRoute) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/'
     return NextResponse.redirect(url)
   }
 

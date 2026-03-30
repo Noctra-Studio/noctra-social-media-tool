@@ -1,0 +1,48 @@
+{
+  "metadata": {
+    "root": {
+      "title": "Noctra Social",
+      "description": "Sistema de contenido de marca nativo en IA para Instagram, LinkedIn y X."
+    },
+    "tutorial": {
+      "title": "Tutorial — social.noctra.studio",
+      "description": "Guía interactiva para aprender a usar Noctra Social paso a paso."
+    }
+  },
+  "landing": {
+    "nav": {
+      "howItWorks": "Cómo funciona",
+      "features": "Capacidades",
+      "forWho": "Para quién",
+      "pricing": "Precios",
+      "login": "Iniciar sesión",
+      "wordmark": "Social",
+      "openMenu": "Abrir menú"
+    },
+    "hero": {
+      "label": "NOCTRA SOCIAL — CONTENT SYSTEM",
+      "headline": "Contenido de marca que construye autoridad.",
+      "subheadline": "Genera, organiza y exporta contenido para Instagram, LinkedIn y X con IA entrenada en tu voz de marca. Sin prompts. Sin fricción. Con criterio.",
+      "ctaPrimary": "Iniciar sesión",
+      "ctaSecondary": "Ver cómo funciona",
+      "trustLine": "✦ Anthropic · ✦ Gemini · ✦ Unsplash — tres motores, una sola interfaz"
+    }
+  },
+  "dashboard": {
+    "nav": {
+      "home": "Inicio",
+      "compose": "Crear",
+      "calendar": "Calendario",
+      "ideas": "Ideas",
+      "settings": "Cuenta",
+      "tutorial": "Tutorial & Tips",
+      "logout": "Cerrar sesión",
+      "loggingOut": "Cerrando sesión...",
+      "openMenu": "Abrir menú",
+      "closeMenu": "Cerrar menú"
+    },
+    "locale": {
+      "label": "Idioma de la interfaz"
+    }
+  }
+}

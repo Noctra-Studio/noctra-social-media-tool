@@ -61,6 +61,15 @@ export function getLanguageLevelLabel(level: LanguageLevel | null | undefined) {
   }
 }
 
+export function isMissingStrategyTablesError(error: unknown) {
+  if (!error || typeof error !== 'object') {
+    return false
+  }
+
+  const candidate = error as { code?: string; message?: string }
+  return candidate.code === '42P01' || candidate.message?.toLowerCase().includes('relation') || false
+}
+
 export function getAudiencePrompt(audience: PlatformAudience | null, platform: Platform) {
   if (!audience) {
     return `AUDIENCIA EN ${platform.toUpperCase()}:

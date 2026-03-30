@@ -1,10 +1,12 @@
 'use client'
 
 import Image from 'next/image'
+import { useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { Check, Loader2, Save } from 'lucide-react'
+import { LocaleToggle } from '@/components/landing/locale-toggle'
 import { createClient } from '@/lib/supabase/client'
 import { getSupabasePublicConfig } from '@/lib/supabase/config'
 
@@ -56,6 +58,7 @@ export function AccountSettingsForm({
   initialEmail,
   initialName,
 }: AccountSettingsFormProps) {
+  const t = useTranslations('dashboard.locale')
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
   const avatarInputRef = useRef<HTMLInputElement | null>(null)
@@ -252,6 +255,13 @@ export function AccountSettingsForm({
         <p className="mt-2 max-w-2xl text-sm leading-6 text-[#8D95A6]">
           Gestiona tus datos personales, la imagen visible de tu cuenta y el acceso al estudio.
         </p>
+      </div>
+
+      <div className="rounded-[28px] border border-white/10 p-5">
+        <p className="text-xs font-semibold tracking-[0.16em] text-zinc-400">{t('label').toUpperCase()}</p>
+        <div className="mt-4">
+          <LocaleToggle />
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">

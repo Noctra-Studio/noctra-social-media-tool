@@ -1,6 +1,7 @@
 import { getUser } from '@/lib/auth/get-user';
 import { NextResponse } from 'next/server';
 import { anthropic } from '@/lib/anthropic';
+import { withUserInputLanguageRule } from '@/lib/ai/language-rule';
 
 export async function POST(req: Request) {
   try {
@@ -39,7 +40,7 @@ Return ONLY a JSON object (no markdown, no backticks, no extra text) with this s
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 1024,
-      system: "You output only pure JSON.",
+      system: withUserInputLanguageRule("You output only pure JSON."),
       messages: [
         { role: 'user', content: prompt }
       ]

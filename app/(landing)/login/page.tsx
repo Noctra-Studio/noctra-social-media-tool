@@ -1,10 +1,11 @@
 "use client";
 
 import Image from 'next/image';
+import Link from 'next/link';
 import { useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { getSupabasePublicConfig } from '@/lib/supabase/config';
-import { Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -45,7 +46,7 @@ export default function LoginPage() {
         return;
       }
 
-      window.location.assign('/');
+      window.location.assign('/compose');
     } catch (error) {
       setErrorMsg(
         error instanceof Error
@@ -64,9 +65,16 @@ export default function LoginPage() {
 
       <div className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-6 sm:px-10 lg:px-12">
         <header className="flex items-center justify-between gap-4">
-          <p className="text-[10px] uppercase tracking-[0.4em] text-[#4E576A]">
-            Noctra Social OS
-          </p>
+          <div className="flex items-start">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[11px] text-[#E0E5EB] transition hover:border-white/20 hover:bg-white/[0.05]"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              <span>Volver a la landing</span>
+            </Link>
+          </div>
+
           <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] uppercase tracking-[0.24em] text-[#E0E5EB]">
             <span className="h-1.5 w-1.5 rounded-full bg-[#462D6E]" />
             White-label ready

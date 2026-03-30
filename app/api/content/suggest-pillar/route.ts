@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { anthropic } from '@/lib/anthropic'
+import { isMissingStrategyTablesError } from '@/lib/brand-strategy'
 import { getUser } from '@/lib/auth/get-user'
 import { parseAnthropicJson } from '@/lib/social-server'
 import { createClient } from '@/lib/supabase/server'
@@ -32,6 +33,14 @@ export async function POST(req: Request) {
       .order('sort_order', { ascending: true })
 
     if (error) {
+      if (isMissingStrategyTablesError(error)) {
+        return NextResponse.json({
+          confidence: 'low',
+          pillar_id: null,
+          reason: 'La capa de estrategia aún no está disponible en la base.',
+        } satisfies SuggestPillarResponse)
+      }
+
       throw error
     }
 

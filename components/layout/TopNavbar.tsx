@@ -2,21 +2,12 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
+import { useTranslations } from 'next-intl'
 import { usePathname, useRouter } from 'next/navigation'
 import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
 import { BookOpen, CalendarDays, Home, Lightbulb, Menu, SquarePen, X } from 'lucide-react'
+import { LocaleToggle } from '@/components/landing/locale-toggle'
 import { createClient } from '@/lib/supabase/client'
-
-const navigation = [
-  { href: '/', icon: Home, label: 'Inicio' },
-  { href: '/compose', icon: SquarePen, label: 'Crear' },
-  { href: '/calendar', icon: CalendarDays, label: 'Calendario' },
-  { href: '/ideas', icon: Lightbulb, label: 'Ideas' },
-]
-
-const settingsLinks = [
-  { href: '/settings?section=account', label: 'Cuenta' },
-]
 
 type TopNavbarProps = {
   userAvatarUrl: string
@@ -38,6 +29,7 @@ function isNavigationActive(pathname: string, href: string) {
 }
 
 export function TopNavbar({ userAvatarUrl, userEmail, userName }: TopNavbarProps) {
+  const t = useTranslations('dashboard.nav')
   const pathname = usePathname()
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
@@ -47,6 +39,13 @@ export function TopNavbar({ userAvatarUrl, userEmail, userName }: TopNavbarProps
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
   const profileMenuRef = useRef<HTMLDivElement | null>(null)
+  const navigation = [
+    { href: '/home', icon: Home, label: t('home') },
+    { href: '/compose', icon: SquarePen, label: t('compose') },
+    { href: '/calendar', icon: CalendarDays, label: t('calendar') },
+    { href: '/ideas', icon: Lightbulb, label: t('ideas') },
+  ]
+  const settingsLinks = [{ href: '/settings?section=account', label: t('settings') }]
 
   useEffect(() => {
     function handlePointerDown(event: MouseEvent) {
@@ -90,7 +89,7 @@ export function TopNavbar({ userAvatarUrl, userEmail, userName }: TopNavbarProps
       <div className="mx-auto max-w-[1440px]">
         <div className="flex h-16 items-center justify-between px-8">
           <Link
-            href="/"
+            href="/compose"
             onClick={closeMenus}
             className="group flex min-w-0 items-center gap-3 md:w-[220px]"
           >
@@ -185,6 +184,9 @@ export function TopNavbar({ userAvatarUrl, userEmail, userName }: TopNavbarProps
                     <div className="min-w-0">
                       <p className="truncate text-sm text-[#E0E5EB]">{displayName}</p>
                       <p className="truncate text-xs text-[#8D95A6]">{userEmail}</p>
+                      <div className="mt-2">
+                        <LocaleToggle compact />
+                      </div>
                     </div>
                   </div>
 
@@ -211,7 +213,7 @@ export function TopNavbar({ userAvatarUrl, userEmail, userName }: TopNavbarProps
                     className="flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm font-normal text-[#E0E5EB] transition-colors hover:bg-[#101417]"
                   >
                     <BookOpen className="h-4 w-4 text-[#8D95A6]" />
-                    <span>Tutorial &amp; Tips</span>
+                    <span>{t('tutorial')}</span>
                   </Link>
 
                   <div className="my-2 h-px bg-[#2A3040]" />
@@ -222,7 +224,7 @@ export function TopNavbar({ userAvatarUrl, userEmail, userName }: TopNavbarProps
                     disabled={isSigningOut}
                     className="w-full rounded-lg px-4 py-2.5 text-left text-sm font-normal text-[#EF4444] transition-colors hover:bg-[#101417] disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {isSigningOut ? 'Cerrando sesión...' : 'Cerrar sesión'}
+                    {isSigningOut ? t('loggingOut') : t('logout')}
                   </button>
                 </div>
               )}
@@ -236,7 +238,7 @@ export function TopNavbar({ userAvatarUrl, userEmail, userName }: TopNavbarProps
               className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-200 transition-colors hover:border-white/20 hover:bg-white/5 hover:text-white"
               aria-expanded={isMobileMenuOpen}
               aria-controls="mobile-navigation"
-              aria-label={isMobileMenuOpen ? 'Cerrar menú' : 'Abrir menú'}
+              aria-label={isMobileMenuOpen ? t('closeMenu') : t('openMenu')}
             >
               {isMobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
@@ -289,6 +291,9 @@ export function TopNavbar({ userAvatarUrl, userEmail, userName }: TopNavbarProps
                 <div className="min-w-0">
                   <p className="truncate text-sm text-[#E0E5EB]">{displayName}</p>
                   <p className="truncate text-xs text-[#8D95A6]">{userEmail}</p>
+                  <div className="mt-2">
+                    <LocaleToggle compact />
+                  </div>
                 </div>
               </div>
 
@@ -315,7 +320,7 @@ export function TopNavbar({ userAvatarUrl, userEmail, userName }: TopNavbarProps
                 className="flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm font-normal text-[#E0E5EB] transition-colors hover:bg-[#101417]"
               >
                 <BookOpen className="h-4 w-4 text-[#8D95A6]" />
-                <span>Tutorial &amp; Tips</span>
+                <span>{t('tutorial')}</span>
               </Link>
 
               <div className="my-2 h-px bg-[#2A3040]" />
@@ -326,7 +331,7 @@ export function TopNavbar({ userAvatarUrl, userEmail, userName }: TopNavbarProps
                 disabled={isSigningOut}
                 className="w-full rounded-lg px-4 py-2.5 text-left text-sm font-normal text-[#EF4444] transition-colors hover:bg-[#101417] disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isSigningOut ? 'Cerrando sesión...' : 'Cerrar sesión'}
+                {isSigningOut ? t('loggingOut') : t('logout')}
               </button>
             </div>
           </div>

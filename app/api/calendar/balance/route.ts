@@ -1,4 +1,5 @@
 import { getUser } from '@/lib/auth/get-user';
+import { isMissingStrategyTablesError } from '@/lib/brand-strategy';
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { startOfMonth, endOfMonth, parseISO, format, getDaysInMonth } from 'date-fns';
@@ -50,7 +51,8 @@ export async function GET(req: Request) {
         .order('sort_order', { ascending: true }),
     ]);
 
-    if (error || pillarsError) throw error || pillarsError;
+    if (error) throw error;
+    if (pillarsError && !isMissingStrategyTablesError(pillarsError)) throw pillarsError;
 
     const by_platform: Record<string, number> = { instagram: 0, linkedin: 0, x: 0 };
     const by_angle: Record<string, number> = {};

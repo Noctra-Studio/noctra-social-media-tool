@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { anthropic } from '@/lib/anthropic';
+import { withUserInputLanguageRule } from '@/lib/ai/language-rule';
 import {
   asPlatform,
   formatBrandVoice,
@@ -38,7 +39,7 @@ export async function POST(req: Request) {
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 1900,
-      system: `You are writing a thought leadership post for Manu, founder of Noctra Studio — a boutique digital agency in Querétaro, Mexico specializing in web development, SEO, branding, and AI automation for LATAM SMBs.
+      system: withUserInputLanguageRule(`You are writing a thought leadership post for Manu, founder of Noctra Studio — a boutique digital agency in Querétaro, Mexico specializing in web development, SEO, branding, and AI automation for LATAM SMBs.
 
 Brand voice:
 ${formatBrandVoice(brandVoice)}
@@ -61,7 +62,7 @@ X: thread of 4-6 tweets, each tweet a standalone argument
 Instagram: 120-150 words, hook + 3 punchy points + CTA
 
 Return ONLY valid JSON:
-{ "post": { "platform": "${platform}", "content": { "caption": "..." } }, "stance_used": "..." }`,
+{ "post": { "platform": "${platform}", "content": { "caption": "..." } }, "stance_used": "..." }`),
       messages: [{ role: 'user', content: 'Write the thought leadership post now.' }],
     });
 

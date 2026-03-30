@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { anthropic } from '@/lib/anthropic';
+import { withUserInputLanguageRule } from '@/lib/ai/language-rule';
 import { platforms, type Platform } from '@/lib/product';
 import {
   asPlatform,
@@ -65,7 +66,7 @@ export async function POST(req: Request) {
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 2200,
-      system: `You are adapting a social media post for Noctra Studio across platforms.
+      system: withUserInputLanguageRule(`You are adapting a social media post for Noctra Studio across platforms.
 Brand voice:
 ${formatBrandVoice(brandVoice)}
 
@@ -79,7 +80,7 @@ LinkedIn: 150-250 words, thought leadership angle, short paragraphs, max 5 hasht
 X: if > 270 chars create a thread (array of tweets), each tweet max 270 chars, punchy and direct.
 
 Return ONLY valid JSON:
-{ "adaptations": [{ "platform": "linkedin", "content": { "caption": "...", "hashtags": ["#uno"] } }] }`,
+{ "adaptations": [{ "platform": "linkedin", "content": { "caption": "...", "hashtags": ["#uno"] } }] }`),
       messages: [{ role: 'user', content: `Adapt the post for ${targetPlatforms.join(', ')}.` }],
     });
 

@@ -1,6 +1,13 @@
 import { NextResponse } from 'next/server'
 import { anthropic } from '@/lib/anthropic'
-import { getAudiencePrompt, getPillarPrompt, type BrandPillar, type PlatformAudience } from '@/lib/brand-strategy'
+import { withUserInputLanguageRule } from '@/lib/ai/language-rule'
+import {
+  getAudiencePrompt,
+  getPillarPrompt,
+  isMissingStrategyTablesError,
+  type BrandPillar,
+  type PlatformAudience,
+} from '@/lib/brand-strategy'
 import type { Platform } from '@/lib/product'
 import type { ExportMetadata } from '@/lib/social-content'
 import { readInstagramSlides, readString, readStringArray } from '@/lib/social-content'
@@ -64,7 +71,10 @@ export async function POST(req: Request) {
           .maybeSingle(),
       ])
 
-    if (pillarsError || audienceError) {
+    if (
+      (pillarsError && !isMissingStrategyTablesError(pillarsError)) ||
+      (audienceError && !isMissingStrategyTablesError(audienceError))
+    ) {
       throw pillarsError || audienceError
     }
 
@@ -80,14 +90,14 @@ Calibra el lenguaje, los ejemplos y el CTA para esta audiencia específica.`
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 2200,
-      system: `You are creating an Instagram carousel for Noctra Studio, a boutique digital agency in Queretaro, Mexico.
+      system: withUserInputLanguageRule(`You are creating an Instagram carousel for Noctra Studio, a boutique digital agency in Queretaro, Mexico.
 Brand voice:
 ${formatBrandVoice(brandVoice)}
 
 ${strategyContext}
 
 Language: Spanish (LATAM).
-Return only valid JSON.`,
+Return only valid JSON.`),
       messages: [
         {
           role: 'user',

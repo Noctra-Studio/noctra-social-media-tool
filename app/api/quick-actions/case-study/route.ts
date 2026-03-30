@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { anthropic } from '@/lib/anthropic';
+import { withUserInputLanguageRule } from '@/lib/ai/language-rule';
 import {
   asPlatform,
   formatBrandVoice,
@@ -47,7 +48,7 @@ export async function POST(req: Request) {
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 1800,
-      system: `You are writing a case study post for Noctra Studio, a boutique digital agency in Querétaro, Mexico.
+      system: withUserInputLanguageRule(`You are writing a case study post for Noctra Studio, a boutique digital agency in Querétaro, Mexico.
 Brand voice:
 ${formatBrandVoice(brandVoice)}
 
@@ -72,7 +73,7 @@ IMPORTANT: Never mention client names without placeholder approval.
 Use 'un cliente de [industry]' format unless client field explicitly contains a public brand name.
 
 Return ONLY valid JSON:
-{ "post": { "platform": "${platform}", "content": { "caption": "...", "hashtags": ["#uno"] } } }`,
+{ "post": { "platform": "${platform}", "content": { "caption": "...", "hashtags": ["#uno"] } } }`),
       messages: [{ role: 'user', content: 'Write the case study now.' }],
     });
 

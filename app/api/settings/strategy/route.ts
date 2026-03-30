@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getUser } from '@/lib/auth/get-user'
 import { createClient } from '@/lib/supabase/server'
 import {
+  isMissingStrategyTablesError,
   languageLevelOptions,
   normalizePillarColor,
   sanitizeStrategyText,
@@ -48,6 +49,16 @@ async function loadStrategy(userId: string): Promise<StrategyResponse> {
     ])
 
   if (pillarsError || audiencesError || postsError) {
+    if (
+      isMissingStrategyTablesError(pillarsError) ||
+      isMissingStrategyTablesError(audiencesError)
+    ) {
+      return {
+        audiences: [],
+        pillars: [],
+      }
+    }
+
     throw pillarsError || audiencesError || postsError
   }
 
@@ -128,6 +139,13 @@ export async function POST(req: Request) {
       .eq('user_id', user.id)
 
     if (existingPillarsError) {
+      if (isMissingStrategyTablesError(existingPillarsError)) {
+        return NextResponse.json(
+          { error: 'Falta aplicar la migración de estrategia en Supabase.' },
+          { status: 503 }
+        )
+      }
+
       throw existingPillarsError
     }
 
