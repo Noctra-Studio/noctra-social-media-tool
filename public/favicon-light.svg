@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="dark_logo" data-name="dark logo" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 749.99 749.99">
+  <defs>
+    <radialGradient id="radial-gradient" cx="389.3" cy="374.73" fx="389.3" fy="374.73" r="559.95" gradientTransform="translate(7.34 725.5) scale(.94 -.94)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#a9b2c8"/>
+      <stop offset=".5" stop-color="#d8dbe0"/>
+      <stop offset="1" stop-color="#e8e9ea"/>
+    </radialGradient>
+  </defs>
+  <path d="M680.13,0H69.87C31.28,0,0,31.28,0,69.87v610.25c0,38.59,31.28,69.87,69.87,69.87h610.25c38.59,0,69.87-31.28,69.87-69.87V69.87c0-38.59-31.28-69.87-69.87-69.87h.01ZM209.37,474.42c-78.11-120.74-43.56-281.95,77.18-360.06l282.88,437.24c-120.74,78.11-281.95,43.56-360.06-77.18h0Z" fill="url(#radial-gradient)"/>
+</svg>
