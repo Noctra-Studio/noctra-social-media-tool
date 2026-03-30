@@ -245,7 +245,7 @@ export function BrandVoiceSettingsForm() {
         </div>
       </div>
 
-      <div className="sticky bottom-4 z-10 rounded-[24px] bg-transparent p-3">
+      <div className="mt-2 rounded-[24px] border-t border-white/8 pt-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-h-5 text-sm">
             {message ? (

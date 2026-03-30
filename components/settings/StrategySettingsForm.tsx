@@ -18,12 +18,16 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import dynamic from 'next/dynamic'
 import { Check, GripVertical, Loader2, Plus, Save, X } from 'lucide-react'
-import { TagInput } from '@/components/ui/tag-input'
+
+const RichTextEditor = dynamic(
+  () => import('@/components/ui/rich-text-editor'),
+  { ssr: false }
+)
 import {
   getLanguageLevelLabel,
   pillarColorOptions,
-  sanitizeStringArray,
   type LanguageLevel,
   type PlatformAudience,
   type StrategyResponse,
@@ -41,9 +45,9 @@ type EditablePillar = {
 
 type EditableAudience = {
   audience_description: string
-  desired_outcomes: string[]
+  desired_outcomes: string
   language_level: LanguageLevel
-  pain_points: string[]
+  pain_points: string
   platform: Platform
 }
 
@@ -72,9 +76,9 @@ function buildAudienceState(audiences: PlatformAudience[]) {
 
     accumulator[platform] = {
       audience_description: audience?.audience_description || '',
-      desired_outcomes: sanitizeStringArray(audience?.desired_outcomes),
+      desired_outcomes: audience?.desired_outcomes || '',
       language_level: audience?.language_level || 'mixed',
-      pain_points: sanitizeStringArray(audience?.pain_points),
+      pain_points: audience?.pain_points || '',
       platform,
     }
 
@@ -151,7 +155,6 @@ function SortablePillarCard({
           <span className="text-xs font-semibold tracking-[0.16em] text-zinc-400">DESCRIPCIÓN</span>
           <textarea
             value={pillar.description}
-            maxLength={220}
             onChange={(event) => onChange({ ...pillar, description: event.target.value })}
             placeholder="Desmitificamos lo técnico y lo volvemos útil para tomar decisiones."
             className="min-h-28 rounded-2xl border border-white/10 bg-transparent px-4 py-3 text-sm text-[#E0E5EB] placeholder:text-[#4E576A] focus:outline-none focus:ring-2 focus:ring-[#E0E5EB]/10"
@@ -464,56 +467,58 @@ export function StrategySettingsForm() {
         </div>
 
         <div className="grid gap-4">
-          <label className="grid gap-2">
+          <div className="grid gap-2">
             <span className="text-xs font-semibold tracking-[0.16em] text-zinc-400">
               ¿QUIÉN TE LEE AQUÍ?
             </span>
-            <textarea
+            <RichTextEditor
               value={activeAudience.audience_description}
-              onChange={(event) =>
+              placeholder="Dueños de PYME, líderes de marketing, directores comerciales..."
+              minHeight={120}
+              onChange={(html) =>
                 updateAudience(activeAudiencePlatform, {
                   ...activeAudience,
-                  audience_description: event.target.value,
+                  audience_description: html,
                 })
               }
-              placeholder="Dueños de PYME, líderes de marketing, directores comerciales..."
-              className="min-h-28 rounded-2xl border border-white/10 bg-transparent px-4 py-3 text-sm text-[#E0E5EB] placeholder:text-[#4E576A] focus:outline-none focus:ring-2 focus:ring-[#E0E5EB]/10"
             />
-          </label>
+          </div>
 
-          <label className="grid gap-2">
+          <div className="grid gap-2">
             <span className="text-xs font-semibold tracking-[0.16em] text-zinc-400">
               ¿QUÉ PROBLEMA TIENEN?
             </span>
-            <TagInput
+            <RichTextEditor
               value={activeAudience.pain_points}
-              placeholder="no saben qué priorizar, sienten que marketing no les devuelve claridad"
-              maxTags={10}
-              onChange={(nextValue) =>
+              placeholder="Describe los problemas que enfrentan..."
+              minHeight={120}
+              onChange={(html) =>
                 updateAudience(activeAudiencePlatform, {
                   ...activeAudience,
-                  pain_points: nextValue,
+                  pain_points: html,
                 })
               }
             />
-          </label>
+            <p className="text-xs text-[#4E576A]">Puedes usar listas, negritas e itálicas.</p>
+          </div>
 
-          <label className="grid gap-2">
+          <div className="grid gap-2">
             <span className="text-xs font-semibold tracking-[0.16em] text-zinc-400">
               ¿QUÉ BUSCAN LOGRAR?
             </span>
-            <TagInput
+            <RichTextEditor
               value={activeAudience.desired_outcomes}
-              placeholder="entender mejor su web, vender más, sonar más claros"
-              maxTags={10}
-              onChange={(nextValue) =>
+              placeholder="Describe qué quieren lograr..."
+              minHeight={120}
+              onChange={(html) =>
                 updateAudience(activeAudiencePlatform, {
                   ...activeAudience,
-                  desired_outcomes: nextValue,
+                  desired_outcomes: html,
                 })
               }
             />
-          </label>
+            <p className="text-xs text-[#4E576A]">Puedes usar listas, negritas e itálicas.</p>
+          </div>
 
           <div className="grid gap-2">
             <span className="text-xs font-semibold tracking-[0.16em] text-zinc-400">
@@ -544,7 +549,7 @@ export function StrategySettingsForm() {
         </div>
       </section>
 
-      <div className="sticky bottom-4 z-10 rounded-[24px] bg-transparent p-3">
+      <div className="mt-2 rounded-[24px] border-t border-white/8 pt-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-h-5 text-sm">
             {message ? (

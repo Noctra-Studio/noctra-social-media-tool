@@ -6,7 +6,6 @@ import {
   languageLevelOptions,
   normalizePillarColor,
   sanitizeStrategyText,
-  sanitizeStringArray,
   type BrandPillar,
   type LanguageLevel,
   type PlatformAudience,
@@ -17,9 +16,9 @@ import { platforms, type Platform } from '@/lib/product'
 type StrategyBody = {
   audiences?: Array<{
     audience_description?: string | null
-    desired_outcomes?: string[] | null
+    desired_outcomes?: string | null
     language_level?: string | null
-    pain_points?: string[] | null
+    pain_points?: string | null
     platform?: string | null
   }>
   pillars?: Array<{
@@ -131,16 +130,16 @@ export async function POST(req: Request) {
     const audiences = rawAudiences
       .map((audience) => ({
         audience_description: sanitizeStrategyText(audience.audience_description),
-        desired_outcomes: sanitizeStringArray(audience.desired_outcomes),
+        desired_outcomes: sanitizeStrategyText(audience.desired_outcomes),
         language_level: isLanguageLevel(audience.language_level) ? audience.language_level : 'mixed',
-        pain_points: sanitizeStringArray(audience.pain_points),
+        pain_points: sanitizeStrategyText(audience.pain_points),
         platform: isPlatform(audience.platform) ? audience.platform : null,
       }))
       .filter((audience): audience is {
         audience_description: string
-        desired_outcomes: string[]
+        desired_outcomes: string
         language_level: LanguageLevel
-        pain_points: string[]
+        pain_points: string
         platform: Platform
       } => Boolean(audience.platform))
 

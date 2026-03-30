@@ -1,0 +1,143 @@
+.editorWrapper {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.editorWrapper:focus-within {
+  border-color: #E0E5EB;
+}
+
+/* Toolbar */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #1a1f28;
+  border: 1px solid #4E576A;
+  border-bottom: 1px solid #2a3040;
+  border-radius: 8px 8px 0 0;
+  padding: 6px 12px;
+}
+
+.toolbarButton {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #4E576A;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: 'Inter', sans-serif;
+  line-height: 1;
+  padding: 0;
+}
+
+.toolbarButton:hover {
+  background: #212631;
+  color: #E0E5EB;
+}
+
+.toolbarButtonActive {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: 'Inter', sans-serif;
+  line-height: 1;
+  padding: 0;
+  background: #212631;
+  color: #E0E5EB;
+  border: 1px solid #4E576A;
+}
+
+.separator {
+  width: 1px;
+  height: 16px;
+  background: #2a3040;
+  margin: 0 4px;
+}
+
+/* Content area */
+.contentArea {
+  background: #212631;
+  border: 1px solid #4E576A;
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  padding: 12px 14px;
+  cursor: text;
+}
+
+/* Tiptap scoped styles */
+.contentArea :global(.tiptap),
+.contentArea :global(.ProseMirror) {
+  outline: none;
+  border: none;
+  box-shadow: none;
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  color: #E0E5EB;
+  line-height: 1.6;
+}
+
+.contentArea :global(.ProseMirror-focused) {
+  outline: none;
+  border: none;
+  box-shadow: none;
+}
+
+.contentArea :global(.tiptap p.is-editor-empty:first-child::before) {
+  content: attr(data-placeholder);
+  float: left;
+  color: #4E576A;
+  pointer-events: none;
+  height: 0;
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+}
+
+.contentArea :global(.tiptap p) {
+  margin-bottom: 8px;
+}
+
+.contentArea :global(.tiptap p:last-child) {
+  margin-bottom: 0;
+}
+
+.contentArea :global(.tiptap strong) {
+  color: #E0E5EB;
+  font-weight: 600;
+}
+
+.contentArea :global(.tiptap em) {
+  color: #E0E5EB;
+  font-style: italic;
+}
+
+.contentArea :global(.tiptap ul) {
+  padding-left: 20px;
+  margin-bottom: 8px;
+  list-style-type: disc;
+}
+
+.contentArea :global(.tiptap ol) {
+  padding-left: 20px;
+  margin-bottom: 8px;
+  list-style-type: decimal;
+}
+
+.contentArea :global(.tiptap li) {
+  margin-bottom: 4px;
+  color: #E0E5EB;
+}
+
+.contentArea :global(.tiptap li p) {
+  margin-bottom: 0;
+}

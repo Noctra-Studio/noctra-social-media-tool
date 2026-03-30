@@ -18,10 +18,10 @@ export type BrandPillar = {
 
 export type PlatformAudience = {
   audience_description: string | null
-  desired_outcomes: string[] | null
+  desired_outcomes: string | null
   id: string
   language_level: LanguageLevel | null
-  pain_points: string[] | null
+  pain_points: string | null
   platform: Platform
   updated_at: string | null
 }
@@ -37,6 +37,10 @@ export function sanitizeStrategyText(value: string | null | undefined) {
 
 export function sanitizeStringArray(value: string[] | null | undefined) {
   return (value || []).map((item) => item.trim()).filter(Boolean)
+}
+
+export function stripHtml(html: string | null | undefined) {
+  return (html || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
 export function normalizePillarColor(value: string | null | undefined) {
@@ -90,8 +94,8 @@ Nivel técnico: mixed`
 
   return `AUDIENCIA EN ${platform.toUpperCase()}:
 Quiénes son: ${sanitizeStrategyText(audience.audience_description) || 'no definida todavía'}
-Problemas que tienen: ${sanitizeStringArray(audience.pain_points).join(', ') || 'none'}
-Lo que buscan lograr: ${sanitizeStringArray(audience.desired_outcomes).join(', ') || 'none'}
+Problemas que tienen: ${stripHtml(audience.pain_points) || 'none'}
+Lo que buscan lograr: ${stripHtml(audience.desired_outcomes) || 'none'}
 Nivel técnico: ${audience.language_level || 'mixed'}`
 }
 

@@ -32,6 +32,7 @@ import {
 import { createClient } from '@/lib/supabase/client';
 import {
   getLanguageLevelLabel,
+  stripHtml,
   type BrandPillar,
   type PlatformAudience,
   type StrategyResponse,
@@ -1744,7 +1745,7 @@ export default function ComposePage() {
           ) : null}
           {activeAudience ? (
             <p>
-              Esta audiencia en {formatPlatformLabel(activePlatform)} busca {activeAudience.desired_outcomes?.join(', ') || 'claridad útil'} y tiene problemas como {activeAudience.pain_points?.join(', ') || 'falta de contexto'}.
+              Esta audiencia en {formatPlatformLabel(activePlatform)} busca {stripHtml(activeAudience.desired_outcomes) || 'claridad útil'} y tiene problemas como {stripHtml(activeAudience.pain_points) || 'falta de contexto'}.
             </p>
           ) : (
             <p>
