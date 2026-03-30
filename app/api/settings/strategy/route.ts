@@ -43,12 +43,19 @@ async function loadStrategy(userId: string): Promise<StrategyResponse> {
   const supabase = await createClient()
   const [{ data: pillars, error: pillarsError }, { data: audiences, error: audiencesError }, { data: posts, error: postsError }] =
     await Promise.all([
-      supabase.from('brand_pillars').select('id, name, description, color, post_count, sort_order').order('sort_order', { ascending: true }),
-      supabase.from('platform_audiences').select('id, platform, audience_description, pain_points, desired_outcomes, language_level, updated_at'),
+      supabase
+        .from('brand_pillars')
+        .select('id, name, description, color, post_count, sort_order')
+        .eq('user_id', userId)
+        .order('sort_order', { ascending: true }),
+      supabase
+        .from('platform_audiences')
+        .select('id, platform, audience_description, pain_points, desired_outcomes, language_level, updated_at')
+        .eq('user_id', userId),
       supabase.from('posts').select('pillar_id').eq('user_id', userId).not('pillar_id', 'is', null),
     ])
 
-  if (pillarsError || audiencesError || postsError) {
+  if (pillarsError || audiencesError) {
     if (
       isMissingStrategyTablesError(pillarsError) ||
       isMissingStrategyTablesError(audiencesError)
@@ -59,12 +66,17 @@ async function loadStrategy(userId: string): Promise<StrategyResponse> {
       }
     }
 
-    throw pillarsError || audiencesError || postsError
+    throw pillarsError || audiencesError
   }
 
   const postCountByPillar = new Map<string, number>()
+  const safePosts = isMissingStrategyTablesError(postsError) ? [] : posts
 
-  for (const post of posts || []) {
+  if (postsError && !isMissingStrategyTablesError(postsError)) {
+    throw postsError
+  }
+
+  for (const post of safePosts || []) {
     if (!post.pillar_id) {
       continue
     }
@@ -149,6 +161,22 @@ export async function POST(req: Request) {
       throw existingPillarsError
     }
 
+    const { data: existingAudiences, error: existingAudiencesError } = await supabase
+      .from('platform_audiences')
+      .select('id, platform')
+      .eq('user_id', user.id)
+
+    if (existingAudiencesError) {
+      if (isMissingStrategyTablesError(existingAudiencesError)) {
+        return NextResponse.json(
+          { error: 'Falta aplicar la migración de estrategia en Supabase.' },
+          { status: 503 }
+        )
+      }
+
+      throw existingAudiencesError
+    }
+
     const incomingIds = new Set(pillars.map((pillar) => pillar.id).filter(Boolean) as string[])
     const removableIds = ((existingPillars as Array<{ id: string }> | null) || [])
       .map((pillar) => pillar.id)
@@ -207,20 +235,37 @@ export async function POST(req: Request) {
         continue
       }
 
-      const { error } = await supabase.from('platform_audiences').upsert(
-        {
-          audience_description: audience.audience_description,
-          desired_outcomes: audience.desired_outcomes,
-          language_level: audience.language_level,
-          pain_points: audience.pain_points,
-          platform,
-          updated_at: new Date().toISOString(),
-          user_id: user.id,
-        },
-        { onConflict: 'user_id,platform' }
-      )
+      const existingAudienceRow = ((existingAudiences as Array<{ id: string; platform: Platform }> | null) || [])
+        .find((item) => item.platform === platform)
+
+      const payload = {
+        audience_description: audience.audience_description,
+        desired_outcomes: audience.desired_outcomes,
+        language_level: audience.language_level,
+        pain_points: audience.pain_points,
+        platform,
+        updated_at: new Date().toISOString(),
+        user_id: user.id,
+      }
+
+      const { error } = existingAudienceRow
+        ? await supabase
+            .from('platform_audiences')
+            .update(payload)
+            .eq('id', existingAudienceRow.id)
+            .eq('user_id', user.id)
+        : await supabase
+            .from('platform_audiences')
+            .insert(payload)
 
       if (error) {
+        if (isMissingStrategyTablesError(error)) {
+          return NextResponse.json(
+            { error: 'Falta aplicar la migración de estrategia en Supabase.' },
+            { status: 503 }
+          )
+        }
+
         throw error
       }
     }

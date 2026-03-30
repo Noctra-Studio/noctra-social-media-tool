@@ -67,7 +67,16 @@ export function isMissingStrategyTablesError(error: unknown) {
   }
 
   const candidate = error as { code?: string; message?: string }
-  return candidate.code === '42P01' || candidate.message?.toLowerCase().includes('relation') || false
+  const message = candidate.message?.toLowerCase() || ''
+
+  return (
+    candidate.code === '42P01' ||
+    candidate.code === '42703' ||
+    message.includes('relation') ||
+    message.includes('column') ||
+    message.includes('does not exist') ||
+    false
+  )
 }
 
 export function getAudiencePrompt(audience: PlatformAudience | null, platform: Platform) {
