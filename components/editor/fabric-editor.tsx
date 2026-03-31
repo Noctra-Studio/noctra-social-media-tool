@@ -25,6 +25,8 @@ import {
   Textbox,
   ActiveSelection,
 } from 'fabric'
+import { ExportModal } from './export-modal'
+import { quickExportCurrentSlide } from '@/lib/editor/export'
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -68,6 +70,11 @@ import {
   AlignCenter,
   AlignRight,
   MoveRight,
+  Download,
+  Send,
+  Camera,
+  Briefcase,
+  Zap,
 } from 'lucide-react'
 import { AlignmentToolbar } from './alignment-toolbar'
 import { CanvasRuler } from './canvas-ruler'
@@ -127,6 +134,7 @@ type FabricEditorProps = {
   onClose: () => void
   onSave: (payload: CarouselEditorSavePayload) => void
   slides: InstagramCarouselSlide[]
+  postId?: string
 }
 
 type FabricCanvasRef = Canvas | null
@@ -781,6 +789,7 @@ export function FabricEditor({
   onClose,
   onSave,
   slides,
+  postId,
 }: FabricEditorProps) {
   const canvasElementRef = useRef<HTMLCanvasElement | null>(null)
   const canvasRef = useRef<FabricCanvasRef>(null)
@@ -818,6 +827,32 @@ export function FabricEditor({
   )
   const [isBootstrapping, setIsBootstrapping] = useState(true)
   const [isSavingAll, setIsSavingAll] = useState(false)
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false)
+  const [exportStats, setExportStats] = useState<{ count: number; lastExport: string | null }>({ count: 0, lastExport: null })
+
+  const handleExportSuccess = useCallback(async (pId: string, platform: string, format: string) => {
+    try {
+      await fetch('/api/editor/export-log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId: pId, platform, format }),
+      })
+      const res = await fetch(`/api/editor/export-log?postId=${pId}`)
+      const data = await res.json()
+      setExportStats(data)
+    } catch (error) {
+      console.error('Error logging export:', error)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (postId) {
+      fetch(`/api/editor/export-log?postId=${postId}`)
+        .then(res => res.json())
+        .then(data => setExportStats(data))
+        .catch(console.error)
+    }
+  }, [postId])
   const [unsplashModal, setUnsplashModal] = useState<UnsplashModalState>({ mode: 'background', open: false })
   const [unsplashQuery, setUnsplashQuery] = useState('')
   const [unsplashResults, setUnsplashResults] = useState<UnsplashPhoto[]>([])
@@ -2371,8 +2406,39 @@ export function FabricEditor({
               disabled={isSavingAll}
               className="rounded-xl bg-[#E0E5EB] px-3 py-2 text-sm font-medium text-[#101417] transition-opacity hover:opacity-90 disabled:opacity-60"
             >
-              Guardar todo y cerrar
+              Guardar todo
             </button>
+            <div className="mx-1 h-6 w-px bg-white/8" />
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setIsExportModalOpen(true)}
+                className="flex items-center gap-2 rounded-xl bg-[#462D6E] px-4 py-2 text-sm font-bold text-white transition-all hover:bg-[#5A3B8E] active:scale-95"
+              >
+                <Download className="h-4 w-4" />
+                Exportar
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const currentSlide = editorState.slides[editorState.activeSlideIndex]
+                  if (currentSlide) {
+                    await quickExportCurrentSlide(currentSlide, `noctra-slide-${editorState.activeSlideIndex + 1}`)
+                    if (postId) handleExportSuccess(postId, 'quick_png', 'png')
+                  }
+                }}
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-[#E0E5EB] transition-colors hover:bg-white/10"
+                title="Exportación rápida (PNG 2x)"
+              >
+                <Download className="h-4 w-4" />
+              </button>
+              {exportStats.count > 0 && (
+                <div className="ml-2 flex items-center gap-1.5 rounded-full bg-white/5 px-2.5 py-1 text-[10px] text-[#4E576A]">
+                  <CheckCircle2 className="h-3 w-3 text-green-500" />
+                  <span>Exportado {exportStats.count} {exportStats.count === 1 ? 'vez' : 'veces'}</span>
+                </div>
+              )}
+            </div>
             <button
               type="button"
               onClick={() => setRulerEnabled(!rulerEnabled)}
@@ -2783,6 +2849,15 @@ export function FabricEditor({
           </div>
         </div>
       )}
+
+      <ExportModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        slides={editorState.slides}
+        postId={postId}
+        onExportSuccess={handleExportSuccess}
+      />
     </div>
   )
 }
+

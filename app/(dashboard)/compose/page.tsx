@@ -4319,6 +4319,7 @@ export default function ComposePage() {
               }}
               onSave={handleCarouselEditorSave}
               slides={editorPayload.slides}
+              postId={generatedResults.instagram?.post_id ?? undefined}
             />
           );
         })()}
