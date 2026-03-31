@@ -3,8 +3,9 @@
 import { useState, useEffect, useRef, Suspense, useCallback } from 'react';
 import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
-import { Loader2, Search, Wand2, Image as ImageIcon, Save, Check, LayoutPanelLeft } from 'lucide-react';
+import { Loader2, Search, Wand2, Image as ImageIcon, Save, Check, LayoutPanelLeft, ChevronLeft } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
+import { consumeVisualEditorDraft } from '@/lib/visual-editor-draft';
 
 type ImageObj = {
   id: string;
@@ -53,6 +54,35 @@ function VisualEditorContent() {
 
   // Canvas
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const draft = consumeVisualEditorDraft();
+
+    if (!draft) {
+      return;
+    }
+
+    setPlatform(draft.platform);
+    setKeywords(draft.query);
+    setPrompt(draft.slide.visual_direction || draft.query);
+    setOverlayText(draft.slide.headline || draft.slide.body || '');
+    setTextColor('#ffffff');
+    setTextPlacement(
+      draft.slide.type === 'cover' ? 'bottom' : draft.slide.type === 'content' ? 'top' : 'center'
+    );
+    setMode(draft.background.type === 'image' || draft.background.imageUrl ? 'unsplash' : 'generate');
+    setBgNeeded(Boolean(draft.background.imageUrl));
+
+    if (draft.background.imageUrl) {
+      setSelectedImage({
+        id: `draft_${draft.slide.slide_number}`,
+        url: draft.background.imageUrl,
+        thumb_url: draft.background.imageThumb || draft.background.imageUrl,
+        photographer: draft.background.photographer,
+        on_brand_score: 1,
+      });
+    }
+  }, []);
 
   const searchUnsplash = async () => {
     if (!keywords.trim()) return;
@@ -253,24 +283,23 @@ function VisualEditorContent() {
     <div className="animate-in fade-in slide-in-from-bottom-4 flex h-[calc(100vh-4rem)] duration-300">
       {/* LEFT PANEL */}
       <div className="w-1/2 overflow-y-auto pr-6 border-r border-zinc-800">
+        <div className="mb-6 flex items-center gap-4 border-b border-zinc-800 pb-4">
+          <button 
+            onClick={() => window.history.back()}
+            className="flex items-center gap-2 text-xs text-zinc-500 hover:text-white transition-colors"
+          >
+            <ChevronLeft size={14} /> Volver a tu post
+          </button>
+          <div className="h-4 w-[1px] bg-zinc-800" />
+          <h1 className="text-sm font-bold text-zinc-300">Explorador Visual</h1>
+        </div>
         
-        <div className="flex gap-4 mb-6 pt-2">
+        <div className="flex gap-4 mb-6">
           <button onClick={() => setMode("unsplash")} className={`px-4 py-2 rounded-lg font-semibold ${mode==="unsplash"?'bg-zinc-800 text-white':'text-zinc-500'}`}>Unsplash Search</button>
           <button onClick={() => setMode("generate")} className={`px-4 py-2 rounded-lg font-semibold ${mode==="generate"?'bg-zinc-800 text-white':'text-zinc-500'}`}>Gemini Generate</button>
         </div>
 
-        {/* Platform selection */}
-        <div className="flex gap-2 mb-6">
-          {(["instagram", "linkedin", "x"] as const).map(p => (
-             <button 
-               key={p} 
-               onClick={() => { setPlatform(p); setUnsplashImages([]); }} 
-               className={`px-3 py-1 text-sm rounded-full capitalize ${platform===p?'bg-green-500/20 text-green-400 border border-green-500/50':'bg-zinc-900 border border-zinc-700'}`}
-             >
-               {p}
-             </button>
-          ))}
-        </div>
+        {/* Platform selection removed */}
 
         {mode === "unsplash" ? (
           <div className="space-y-6">

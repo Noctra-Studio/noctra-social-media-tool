@@ -7,6 +7,8 @@ const unsplash = createApi({
   fetch: fetch,
 });
 
+import { generateVisualQuery } from '@/lib/unsplash/generate-query';
+
 export async function POST(req: Request) {
   try {
     let user;
@@ -15,13 +17,26 @@ export async function POST(req: Request) {
     } catch {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    const { keywords, platform, count } = await req.json();
+    const { keywords, platform, context, count } = await req.json();
 
-    if (!keywords || !Array.isArray(keywords)) {
-      return NextResponse.json({ error: 'Missing keywords array' }, { status: 400 });
+    let query = '';
+    
+    // If we have a full context (caption, angle), prefer generating a smart query
+    if (context && context.caption && context.angle) {
+      query = generateVisualQuery(context.caption, context.angle, platform || 'instagram');
+    } else if (keywords && Array.isArray(keywords)) {
+      // If keywords are too long/literal, refine them
+      const rawQuery = keywords.join(' ');
+      if (rawQuery.split(' ').length > 4) {
+        query = generateVisualQuery(rawQuery, 'editorial', platform || 'instagram');
+      } else {
+        query = rawQuery;
+      }
     }
 
-    const query = keywords.join(' ');
+    if (!query) {
+      return NextResponse.json({ error: 'Missing search context' }, { status: 400 });
+    }
     const isX = platform === 'x';
     const numToFetch = count || (isX ? 6 : 12);
     const orientation = isX ? 'landscape' : undefined;

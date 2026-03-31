@@ -5,6 +5,7 @@ import { Check, Loader2 } from 'lucide-react'
 import { AccountSettingsForm } from '@/components/settings/AccountSettingsForm'
 import { BrandVoiceSettingsForm } from '@/components/settings/BrandVoiceSettingsForm'
 import { StrategySettingsForm } from '@/components/settings/StrategySettingsForm'
+import { TextStylesSettings } from '@/components/settings/TextStylesSettings'
 import type { Platform } from '@/lib/product'
 import type { AssistanceLevel } from '@/lib/product'
 
@@ -15,7 +16,7 @@ type SettingsWorkspaceProps = {
   initialName: string
   initialSocialHandles: Partial<Record<Platform, string>>
   initialSection?: 'account' | 'studio'
-  initialTab?: 'assistance' | 'platforms' | 'strategy' | 'voice'
+  initialTab?: 'assistance' | 'platforms' | 'strategy' | 'voice' | 'text-styles'
 }
 
 const sections = [
@@ -28,6 +29,7 @@ const tabs = [
   { key: 'assistance', label: 'Nivel de asistencia' },
   { key: 'platforms', label: 'Plataformas' },
   { key: 'strategy', label: 'Estrategia' },
+  { key: 'text-styles', label: 'Estilos de texto' },
 ] as const
 
 const assistanceOptions: Array<{
@@ -397,6 +399,12 @@ export function SettingsWorkspace({
         {activeSection === 'studio' && activeTab === 'strategy' && (
           <div className="mx-auto w-full max-w-[1080px]">
             <StrategySettingsForm />
+          </div>
+        )}
+
+        {activeSection === 'studio' && activeTab === 'text-styles' && (
+          <div className="mx-auto w-full max-w-[1080px]">
+            <TextStylesSettings />
           </div>
         )}
       </section>

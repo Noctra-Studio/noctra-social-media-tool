@@ -1,11 +1,16 @@
 import type { Metadata } from "next";
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages, getTranslations } from 'next-intl/server';
-import { Geist_Mono, Inter } from "next/font/google";
+import { DM_Sans, Geist_Mono, Inter } from "next/font/google";
 import "./globals.css";
 
 const inter = Inter({
   variable: "--font-inter",
+  subsets: ["latin"],
+});
+
+const dmSans = DM_Sans({
+  variable: "--font-dm-sans",
   subsets: ["latin"],
 });
 
@@ -23,12 +28,12 @@ export async function generateMetadata(): Promise<Metadata> {
     icons: {
       icon: [
         {
-          url: "/favicon-dark.svg",
+          url: "/brand/favicon-dark.svg",
           type: "image/svg+xml",
           media: "(prefers-color-scheme: light)",
         },
         {
-          url: "/favicon-light.svg",
+          url: "/brand/favicon-light.svg",
           type: "image/svg+xml",
           media: "(prefers-color-scheme: dark)",
         },
@@ -48,7 +53,7 @@ export default async function RootLayout({
   return (
     <html lang={locale} suppressHydrationWarning>
       <body
-        className={`${inter.variable} ${geistMono.variable} antialiased min-h-screen bg-zinc-950 text-zinc-50 relative`}
+        className={`${inter.variable} ${dmSans.variable} ${geistMono.variable} antialiased min-h-screen bg-zinc-950 text-zinc-50 relative`}
       >
         <NextIntlClientProvider locale={locale} messages={messages}>
           {children}

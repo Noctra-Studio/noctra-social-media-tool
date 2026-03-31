@@ -14,6 +14,12 @@ import {
   type SlideBackgroundSelection,
   type PostFormat,
 } from '@/lib/social-content'
+import type { CarouselEditorSlide } from '@/lib/instagram-carousel-editor'
+import {
+  getLogoVariantForResolvedBackground,
+  gradientConfigToCss,
+  resolveSlideBackground,
+} from '@/lib/carousel-backgrounds'
 
 export function downloadTextFile(filename: string, content: string) {
   const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
@@ -29,6 +35,11 @@ export async function exportInstagramPackage(args: {
   content: Record<string, unknown>
   exportMetadata?: Record<string, unknown> | null
   format: PostFormat
+  imageMetadata?: {
+    url: string
+    photographer: string
+    overlay: any
+  } | null
 }) {
   const { content, exportMetadata, format } = args
   const zip = new JSZip()
@@ -43,6 +54,20 @@ export async function exportInstagramPackage(args: {
   const hashtags = ensureHashtags(readStringArray(content.hashtags))
 
   const captionSections = [caption]
+
+  if (args.imageMetadata) {
+    captionSections.push(
+      '',
+      'IMAGEN SELECCIONADA:',
+      `URL: ${args.imageMetadata.url}`,
+      `Fotógrafo: ${args.imageMetadata.photographer} (Unsplash)`,
+      '',
+      'OVERLAY:',
+      `Texto: ${args.imageMetadata.overlay?.text || 'Sin texto'}`,
+      `Posición: ${args.imageMetadata.overlay?.placement || 'center'}`,
+      `Oscurecimiento: ${Math.round((args.imageMetadata.overlay?.dimming || 0) * 100)}%`
+    )
+  }
 
   if (hashtags.length > 0) {
     captionSections.push('---', `Hashtags: ${joinHashtags(hashtags)}`)
@@ -61,7 +86,19 @@ export async function exportInstagramPackage(args: {
     slides.forEach((slide) => {
       const indexLabel = String(slide.slide_number).padStart(2, '0')
       const bgSelections = exportMetadata?.slide_backgrounds as SlideBackgroundSelection[] | undefined
+      const editedSlides = exportMetadata?.edited_carousel_slides as CarouselEditorSlide[] | undefined
+      const editedSlide = editedSlides?.find((item) => item.originalData.slide_number === slide.slide_number)
       const selection = bgSelections?.find(s => s.slide_number === slide.slide_number)
+      const resolvedBackground = resolveSlideBackground(slide, {
+        gradientConfig: selection?.gradient_config,
+        imageUrl: selection?.image_url,
+        solidColor: selection?.solid_color,
+        type: selection?.bg_type ?? slide.bg_type,
+      })
+      const logoAsset =
+        getLogoVariantForResolvedBackground(resolvedBackground) === 'light'
+          ? 'favicon-light.svg'
+          : 'favicon-dark.svg'
       
       const bgType = selection?.bg_type || slide.bg_type
       const sections = [
@@ -79,20 +116,39 @@ export async function exportInstagramPackage(args: {
           `INSTRUCCIÓN: Descarga la foto del link y úsala como fondo en Canva. Agrega un overlay oscuro de 50-60% opacidad antes de agregar el texto.`
         )
       } else if (bgType === 'gradient') {
-        const style = selection?.gradient_style || slide.gradient_style || 'brand_dark'
+        const gradientCss = selection?.gradient_config
+          ? gradientConfigToCss(selection.gradient_config)
+          : slide.color_suggestion
+            ? `Sugerencia IA: ${slide.color_suggestion}`
+            : selection?.gradient_style || slide.gradient_style || 'linear-gradient(145deg, #101417, #1C2028)'
         sections.push(
-          `GRADIENTE: ${style}`,
+          `GRADIENTE: ${gradientCss}`,
           `INSTRUCCIÓN: En Canva, usa un rectángulo con el estilo de gradiente indicado como fondo.`
         )
       } else if (bgType === 'solid') {
-        const color = selection?.solid_color || (slide.slide_number % 2 !== 0 ? '#101417' : '#212631')
+        const color =
+          selection?.solid_color ||
+          slide.color_suggestion ||
+          (slide.slide_number % 2 !== 0 ? '#101417' : '#212631')
         sections.push(
           `COLOR: ${color}`,
           `INSTRUCCIÓN: Usa este color sólido como fondo en Canva.`
         )
       }
 
-      sections.push(`LOGO: Agrega favicon-light.svg en esquina inferior derecha, 24px, opacidad 75%`)
+      sections.push(`LOGO: Agrega ${logoAsset} en esquina inferior derecha, 24px, opacidad 75%`)
+
+      if (editedSlide?.previewDataURL) {
+        const pngBase64 = editedSlide.previewDataURL.split(',')[1]
+
+        if (pngBase64) {
+          slidesFolder.file(`slide-${indexLabel}-${slide.type}.png`, pngBase64, { base64: true })
+          sections.push(
+            'NOTA: Este slide fue diseñado en el editor.',
+            'USA_DIRECTAMENTE: Usa el archivo .png directamente para publicar este slide.'
+          )
+        }
+      }
 
       slidesFolder.file(
         `slide-${indexLabel}-${slide.type}.txt`,
@@ -117,7 +173,7 @@ export async function exportInstagramPackage(args: {
         '   - Cuerpo: Inter Regular',
         '',
         '3. LOGO',
-        '   - Agrega favicon-light.svg en la esquina inferior derecha.',
+        '   - Usa favicon-light.svg sobre fondos oscuros y favicon-dark.svg sobre fondos claros.',
         '   - Tamaño: 24x24px, Opacidad: 75%.',
         '',
         '4. PUBLICACIÓN',
@@ -146,6 +202,11 @@ export async function exportLinkedInPackage(args: {
   content: Record<string, unknown>
   format: PostFormat
   pdfBlob?: Blob | null
+  imageMetadata?: {
+    url: string
+    photographer: string
+    overlay: any
+  } | null
 }) {
   const { content, format, pdfBlob } = args
   const zip = new JSZip()
@@ -168,7 +229,18 @@ export async function exportLinkedInPackage(args: {
         '1. Sube el archivo carousel.pdf a LinkedIn',
         '2. Copia este texto como descripcion del post',
         '3. Agrega una imagen de portada si lo deseas',
-      ].join('\n')
+        '',
+        args.imageMetadata ? [
+          'IMAGEN SELECCIONADA:',
+          `URL: ${args.imageMetadata.url}`,
+          `Fotógrafo: ${args.imageMetadata.photographer} (Unsplash)`,
+          '',
+          'OVERLAY:',
+          `Texto: ${args.imageMetadata.overlay?.text || 'Sin texto'}`,
+          `Posición: ${args.imageMetadata.overlay?.placement || 'center'}`,
+          `Oscurecimiento: ${Math.round((args.imageMetadata.overlay?.dimming || 0) * 100)}%`
+        ].join('\n') : ''
+      ].filter(Boolean).join('\n')
     )
 
     if (!pdfBlob) {
@@ -211,6 +283,11 @@ export function exportXPackage(args: {
   content: Record<string, unknown>
   format: PostFormat
   idea: string
+  imageMetadata?: {
+    url: string
+    photographer: string
+    overlay: any
+  } | null
 }) {
   const { content, format, idea } = args
   const date = formatExportDate()

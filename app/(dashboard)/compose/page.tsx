@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
-import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import dynamic from "next/dynamic";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowRight,
   Briefcase,
@@ -26,24 +27,27 @@ import {
   Save,
   Sparkles,
   TrendingUp,
+  X,
   type LucideIcon,
-} from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { createClient } from "@/lib/supabase/client";
 import {
   getLanguageLevelLabel,
   stripHtml,
   type BrandPillar,
   type PlatformAudience,
   type StrategyResponse,
-} from '@/lib/brand-strategy';
-import { InstagramCarouselPreview } from '@/components/instagram/carousel-preview';
+} from "@/lib/brand-strategy";
+import { InstagramCarouselPreview } from "@/components/instagram/carousel-preview";
+import { EditorSkeleton } from "@/components/editor/editor-skeleton";
 import {
   LinkedInPdfGenerator,
   type LinkedInPdfGeneratorHandle,
-} from '@/components/linkedin/pdf-generator';
-import { PostFeedback } from '@/components/post-feedback';
-import { AIButton, type AIButtonState } from '@/components/ui/AIButton';
-import { PlatformBadge } from '@/components/ui/PlatformBadge';
+} from "@/components/linkedin/pdf-generator";
+import { PostFeedback } from "@/components/post-feedback";
+import { AIButton, type AIButtonState } from "@/components/ui/AIButton";
+import { PlatformBadge } from "@/components/ui/PlatformBadge";
 import {
   formatPlatformLabel,
   getPlatformGuidance,
@@ -54,7 +58,7 @@ import {
   type GeneratedContent,
   type Platform,
   type SuggestedIdea,
-} from '@/lib/product';
+} from "@/lib/product";
 import {
   ensureHashtags,
   estimateReadTime,
@@ -75,158 +79,185 @@ import {
   readStringArray,
   readXThreadTweets,
   toVisualSearchHref,
-  type SlideBackgroundSelection,
   type XThreadTweet,
   type LinkedInCarouselSlide,
   type PostFormat,
+  type SlideBackgroundSelection,
   type SocialFormatOption,
   type XHookStrength,
-} from '@/lib/social-content';
+} from "@/lib/social-content";
+import {
+  type CarouselEditorSavePayload,
+  type CarouselEditorSlide,
+} from "@/lib/instagram-carousel-editor";
 import {
   exportInstagramPackage,
   exportLinkedInPackage,
   exportXPackage,
-} from '@/lib/social-export';
+} from "@/lib/social-export";
 import type {
   QuickActionFaqPost,
   QuickActionPlanItem,
   QuickActionThoughtLeadershipPost,
   QuickActionViralTrend,
-} from '@/lib/quick-actions/types';
+} from "@/lib/quick-actions/types";
 
-const assistanceStateKey = 'noctra:compose:assistance'
+const assistanceStateKey = "noctra:compose:assistance";
+
+const FabricEditor = dynamic(
+  () =>
+    import("@/components/editor/fabric-editor").then((mod) => mod.FabricEditor),
+  {
+    loading: () => <EditorSkeleton />,
+    ssr: false,
+  },
+);
+
+import { TemplateSelector } from "@/components/editor/template-selector";
+import { SlideTemplate } from "@/lib/editor/templates";
+import { ImageDrawer, type SelectedImage, type OverlayConfig } from "@/components/compose/image-drawer";
+import { ImageTipsCard } from "@/components/compose/image-tips-card";
+import type { VisualBrief } from "@/lib/social-content";
 
 const modeCards: Array<{
-  description: string
-  eyebrow: string
-  icon: LucideIcon
-  key: ComposeMode
-  label: string
-  stepLabel: string
-  title: string
+  description: string;
+  eyebrow: string;
+  icon: LucideIcon;
+  key: ComposeMode;
+  label: string;
+  stepLabel: string;
+  title: string;
 }> = [
   {
-    key: 'explore',
-    label: 'Explora',
-    stepLabel: 'Modo 1',
+    key: "explore",
+    label: "Explora",
+    stepLabel: "Modo 1",
     icon: Sparkles,
-    title: 'No sé qué publicar',
-    eyebrow: 'La IA sugiere ideas para ti',
-    description: 'Empieza por exploración guiada según plataforma y contexto.',
+    title: "No sé qué publicar",
+    eyebrow: "La IA sugiere ideas para ti",
+    description: "Empieza por exploración guiada según plataforma y contexto.",
   },
   {
-    key: 'idea',
-    label: 'Desarrolla',
-    stepLabel: 'Modo 2',
+    key: "idea",
+    label: "Desarrolla",
+    stepLabel: "Modo 2",
     icon: Layers3,
-    title: 'Tengo una idea',
-    eyebrow: 'La desarrollo contigo',
-    description: 'Trae una intuición cruda y conviértela en una pieza lista para publicar.',
+    title: "Tengo una idea",
+    eyebrow: "La desarrollo contigo",
+    description:
+      "Trae una intuición cruda y conviértela en una pieza lista para publicar.",
   },
   {
-    key: 'direct',
-    label: 'Ejecuta',
-    stepLabel: 'Modo 3',
+    key: "direct",
+    label: "Ejecuta",
+    stepLabel: "Modo 3",
     icon: PenSquare,
-    title: 'Sé lo que quiero',
-    eyebrow: 'Editor directo',
-    description: 'Elige plataforma, ángulo y ejecuta sin pasos intermedios.',
+    title: "Sé lo que quiero",
+    eyebrow: "Editor directo",
+    description: "Elige plataforma, ángulo y ejecuta sin pasos intermedios.",
   },
-]
+];
 
-const directAngles = ['Tutorial', 'Opinión', 'Historia', 'Caso de estudio', 'Behind the scenes', 'Contrarian']
+const directAngles = [
+  "Tutorial",
+  "Opinión",
+  "Historia",
+  "Caso de estudio",
+  "Behind the scenes",
+  "Contrarian",
+];
 
 type StoredIdeaRow = {
-  id: string
-  platform: Platform | null
-  raw_idea: string
-}
+  id: string;
+  platform: Platform | null;
+  raw_idea: string;
+};
 
 type ProfileRow = {
-  assistance_level: AssistanceLevel | null
-}
+  assistance_level: AssistanceLevel | null;
+};
 
 type QuickActionKey =
-  | 'plan'
-  | 'repurpose'
-  | 'viral'
-  | 'caseStudy'
-  | 'thoughtLeadership'
-  | 'faq'
+  | "plan"
+  | "repurpose"
+  | "viral"
+  | "caseStudy"
+  | "thoughtLeadership"
+  | "faq";
 
 type RepurposePostOption = {
-  content: Record<string, unknown> | null
-  created_at: string
-  id: string
-  platform: Platform
-  status: string
-}
+  content: Record<string, unknown> | null;
+  created_at: string;
+  id: string;
+  platform: Platform;
+  status: string;
+};
 
 type QuickActionOutput =
   | {
-      kind: 'generated'
-      note?: string
-      platformOrder: Platform[]
-      sourceLabel: string
-      stanceUsed?: string
+      kind: "generated";
+      note?: string;
+      platformOrder: Platform[];
+      sourceLabel: string;
+      stanceUsed?: string;
     }
   | {
-      kind: 'plan'
-      plan: QuickActionPlanItem[]
-      sourceLabel: string
+      kind: "plan";
+      plan: QuickActionPlanItem[];
+      sourceLabel: string;
     }
   | {
-      kind: 'viral'
-      platform: Platform
-      sourceLabel: string
-      trends: QuickActionViralTrend[]
+      kind: "viral";
+      platform: Platform;
+      sourceLabel: string;
+      trends: QuickActionViralTrend[];
     }
   | {
-      kind: 'faq'
-      platform: Platform
-      posts: QuickActionFaqPost[]
-      sourceLabel: string
-    }
+      kind: "faq";
+      platform: Platform;
+      posts: QuickActionFaqPost[];
+      sourceLabel: string;
+    };
 
 type AssistanceState = {
-  dismissed: boolean
-  usageCount: number
-}
+  dismissed: boolean;
+  usageCount: number;
+};
 
 type ExportStats = {
-  count: number
-  lastExportedAt: string | null
-}
+  count: number;
+  lastExportedAt: string | null;
+};
 
 function getSuggestedIdeaKey(suggestedIdea: SuggestedIdea) {
-  return `${suggestedIdea.title}-${suggestedIdea.angle}`
+  return `${suggestedIdea.title}-${suggestedIdea.angle}`;
 }
 
 function isPlatform(value: string | null): value is Platform {
-  return value === 'instagram' || value === 'linkedin' || value === 'x'
+  return value === "instagram" || value === "linkedin" || value === "x";
 }
 
 function readAssistanceState(): AssistanceState {
   try {
-    const raw = window.localStorage.getItem(assistanceStateKey)
+    const raw = window.localStorage.getItem(assistanceStateKey);
 
     if (!raw) {
-      return { dismissed: false, usageCount: 0 }
+      return { dismissed: false, usageCount: 0 };
     }
 
-    const parsed = JSON.parse(raw) as Partial<AssistanceState>
+    const parsed = JSON.parse(raw) as Partial<AssistanceState>;
 
     return {
       dismissed: Boolean(parsed.dismissed),
-      usageCount: typeof parsed.usageCount === 'number' ? parsed.usageCount : 0,
-    }
+      usageCount: typeof parsed.usageCount === "number" ? parsed.usageCount : 0,
+    };
   } catch {
-    return { dismissed: false, usageCount: 0 }
+    return { dismissed: false, usageCount: 0 };
   }
 }
 
 function writeAssistanceState(state: AssistanceState) {
-  window.localStorage.setItem(assistanceStateKey, JSON.stringify(state))
+  window.localStorage.setItem(assistanceStateKey, JSON.stringify(state));
 }
 
 function formatSuggestedIdeaForClipboard(suggestedIdea: SuggestedIdea) {
@@ -235,30 +266,42 @@ function formatSuggestedIdeaForClipboard(suggestedIdea: SuggestedIdea) {
     suggestedIdea.hook,
     `Angulo: ${suggestedIdea.angle}`,
     `Por que ahora: ${suggestedIdea.why_now}`,
-  ].join('\n\n')
+  ].join("\n\n");
 }
 
 function getContentPreview(
   platform: Platform,
   format: PostFormat,
   content: Record<string, unknown> | null,
-  maxLength = 100
+  maxLength = 100,
 ) {
   if (!content) {
-    return 'Sin preview disponible.'
+    return "Sin preview disponible.";
   }
 
-  return getPreviewText(platform, format, content, maxLength)
+  return getPreviewText(platform, format, content, maxLength);
 }
 
 function getQuickActionSourceLabel(label: string) {
-  return `✦ Generado con: ${label}`
+  return `✦ Generado con: ${label}`;
 }
 
-function PlatformIcon({ platform, className }: { platform: Platform; className?: string }) {
-  if (platform === 'instagram') {
+function PlatformIcon({
+  platform,
+  className,
+}: {
+  platform: Platform;
+  className?: string;
+}) {
+  if (platform === "instagram") {
     return (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={className} aria-hidden="true">
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        className={className}
+        aria-hidden="true">
         <rect x="3.75" y="3.75" width="16.5" height="16.5" rx="5.25" />
         <circle cx="12" cy="12" r="3.5" />
         <circle cx="17.3" cy="6.8" r="0.9" fill="currentColor" stroke="none" />
@@ -266,16 +309,24 @@ function PlatformIcon({ platform, className }: { platform: Platform; className?:
     );
   }
 
-  if (platform === 'linkedin') {
+  if (platform === "linkedin") {
     return (
-      <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
+      <svg
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        className={className}
+        aria-hidden="true">
         <path d="M6.26 8.28a1.52 1.52 0 1 0 0-3.04 1.52 1.52 0 0 0 0 3.04ZM4.96 9.84h2.6v8.35h-2.6V9.84Zm4.23 0h2.5v1.14h.04c.35-.66 1.2-1.35 2.48-1.35 2.66 0 3.15 1.75 3.15 4.02v4.54h-2.6v-4.03c0-.96-.02-2.2-1.34-2.2-1.35 0-1.56 1.05-1.56 2.13v4.1h-2.6V9.84Z" />
       </svg>
     );
   }
 
   return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className={className}
+      aria-hidden="true">
       <path d="m5.53 4.5 5.09 6.82L5.5 19.5h1.88l4.08-6.2 4.63 6.2h4.41l-5.38-7.2 4.76-7.8H18l-3.75 5.86L9.91 4.5H5.53Zm2.78 1.5h.87l8.01 12h-.87l-8-12Z" />
     </svg>
   );
@@ -285,7 +336,7 @@ const ideaPlaceholders = [
   "Ej: 'Quiero hablar de como el contexto cambia la calidad del contenido cuando pasas de publicar por publicar a publicar con una tesis clara...'",
   "Ej: 'Tengo una idea sobre por que muchas marcas suenan iguales en redes aunque tengan ofertas muy distintas...'",
   "Ej: 'Quiero convertir un insight de una reunion con clientes en un post util, no en una opinion vaga...'",
-]
+];
 
 export default function ComposePage() {
   const router = useRouter();
@@ -295,17 +346,21 @@ export default function ComposePage() {
   const outputSectionRef = useRef<HTMLElement | null>(null);
   const linkedInPdfRef = useRef<LinkedInPdfGeneratorHandle | null>(null);
   const [mode, setMode] = useState<ComposeMode | null>(null);
-  const [activePlatform, setActivePlatform] = useState<Platform>('instagram');
-  const [selectedFormats, setSelectedFormats] = useState<Record<Platform, PostFormat>>({
-    instagram: 'single',
-    linkedin: 'text',
-    x: 'tweet',
+  const [activePlatform, setActivePlatform] = useState<Platform>("instagram");
+  const [selectedFormats, setSelectedFormats] = useState<
+    Record<Platform, PostFormat>
+  >({
+    instagram: "single",
+    linkedin: "text",
+    x: "tweet",
   });
-  const [idea, setIdea] = useState('');
+  const [idea, setIdea] = useState("");
   const [sourceIdeaId, setSourceIdeaId] = useState<string | null>(null);
   const [angles, setAngles] = useState<AngleSuggestion[]>([]);
   const [selectedAngle, setSelectedAngle] = useState<string | null>(null);
-  const [generatedResults, setGeneratedResults] = useState<Partial<Record<Platform, GeneratedContent>>>({});
+  const [generatedResults, setGeneratedResults] = useState<
+    Partial<Record<Platform, GeneratedContent>>
+  >({});
   const [loadingAngles, setLoadingAngles] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [adapting, setAdapting] = useState(false);
@@ -315,46 +370,82 @@ export default function ComposePage() {
   const [suggestedIdeas, setSuggestedIdeas] = useState<SuggestedIdea[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
-  const [assistanceLevel, setAssistanceLevel] = useState<AssistanceLevel>('balanced');
+  const [assistanceLevel, setAssistanceLevel] =
+    useState<AssistanceLevel>("balanced");
   const [brandPillars, setBrandPillars] = useState<BrandPillar[]>([]);
-  const [platformAudiences, setPlatformAudiences] = useState<Partial<Record<Platform, PlatformAudience>>>({});
+  const [platformAudiences, setPlatformAudiences] = useState<
+    Partial<Record<Platform, PlatformAudience>>
+  >({});
   const [strategyLoading, setStrategyLoading] = useState(false);
   const [selectedPillarId, setSelectedPillarId] = useState<string | null>(null);
-  const [pillarSelectionMode, setPillarSelectionMode] = useState<'auto' | 'manual'>('auto');
+  const [pillarSelectionMode, setPillarSelectionMode] = useState<
+    "auto" | "manual"
+  >("auto");
   const [suggestingPillar, setSuggestingPillar] = useState(false);
-  const [pillarSuggestionReason, setPillarSuggestionReason] = useState<string | null>(null);
+  const [pillarSuggestionReason, setPillarSuggestionReason] = useState<
+    string | null
+  >(null);
   const [assistanceDismissed, setAssistanceDismissed] = useState(false);
   const [assistanceUsageCount, setAssistanceUsageCount] = useState(0);
   const [showGuidancePanel, setShowGuidancePanel] = useState(false);
-  const [savedPostIds, setSavedPostIds] = useState<Partial<Record<Platform, string>>>({});
-  const [copiedSuggestedIdeaKey, setCopiedSuggestedIdeaKey] = useState<string | null>(null);
-  const [savingSuggestedIdeaKey, setSavingSuggestedIdeaKey] = useState<string | null>(null);
-  const [savedSuggestedIdeaKeys, setSavedSuggestedIdeaKeys] = useState<Record<string, string>>({});
+  const [savedPostIds, setSavedPostIds] = useState<
+    Partial<Record<Platform, string>>
+  >({});
+  const [copiedSuggestedIdeaKey, setCopiedSuggestedIdeaKey] = useState<
+    string | null
+  >(null);
+  const [savingSuggestedIdeaKey, setSavingSuggestedIdeaKey] = useState<
+    string | null
+  >(null);
+  const [savedSuggestedIdeaKeys, setSavedSuggestedIdeaKeys] = useState<
+    Record<string, string>
+  >({});
   const [ideaPlaceholderIndex, setIdeaPlaceholderIndex] = useState(0);
-  const [copiedResultPlatform, setCopiedResultPlatform] = useState<Platform | null>(null);
-  const [ideasButtonState, setIdeasButtonState] = useState<AIButtonState>('idle');
-  const [anglesButtonState, setAnglesButtonState] = useState<AIButtonState>('idle');
-  const [generateButtonState, setGenerateButtonState] = useState<AIButtonState>('idle');
-  const [openQuickAction, setOpenQuickAction] = useState<QuickActionKey | null>(null);
-  const [runningQuickAction, setRunningQuickAction] = useState<QuickActionKey | null>(null);
-  const [quickActionOutput, setQuickActionOutput] = useState<QuickActionOutput | null>(null);
+  const [copiedResultPlatform, setCopiedResultPlatform] =
+    useState<Platform | null>(null);
+  const [ideasButtonState, setIdeasButtonState] =
+    useState<AIButtonState>("idle");
+  const [anglesButtonState, setAnglesButtonState] =
+    useState<AIButtonState>("idle");
+  const [generateButtonState, setGenerateButtonState] =
+    useState<AIButtonState>("idle");
+  const [openQuickAction, setOpenQuickAction] = useState<QuickActionKey | null>(
+    null,
+  );
+  const [runningQuickAction, setRunningQuickAction] =
+    useState<QuickActionKey | null>(null);
+  const [quickActionOutput, setQuickActionOutput] =
+    useState<QuickActionOutput | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isCarouselEditorOpen, setIsCarouselEditorOpen] = useState(false);
+  const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
+  const [carouselEditorActiveIndex, setCarouselEditorActiveIndex] = useState(0);
+  const [preSelectedTemplate, setPreSelectedTemplate] = useState<SlideTemplate | null>(null);
+  const [applyTemplateToAll, setApplyTemplateToAll] = useState(false);
   const [planDays, setPlanDays] = useState(7);
-  const [planPlatforms, setPlanPlatforms] = useState<Platform[]>([...platforms]);
-  const [repurposePosts, setRepurposePosts] = useState<RepurposePostOption[]>([]);
+  const [planPlatforms, setPlanPlatforms] = useState<Platform[]>([
+    ...platforms,
+  ]);
+  const [repurposePosts, setRepurposePosts] = useState<RepurposePostOption[]>(
+    [],
+  );
   const [repurposePostsLoading, setRepurposePostsLoading] = useState(false);
   const [repurposePostsLoaded, setRepurposePostsLoaded] = useState(false);
-  const [selectedRepurposePostId, setSelectedRepurposePostId] = useState<string | null>(null);
-  const [viralPlatform, setViralPlatform] = useState<Platform>('linkedin');
-  const [caseStudyClient, setCaseStudyClient] = useState('');
-  const [caseStudyService, setCaseStudyService] = useState('');
-  const [caseStudyResult, setCaseStudyResult] = useState('');
-  const [caseStudyPlatform, setCaseStudyPlatform] = useState<Platform>('linkedin');
-  const [thoughtLeadershipTopic, setThoughtLeadershipTopic] = useState('');
-  const [thoughtLeadershipStance, setThoughtLeadershipStance] = useState('');
-  const [thoughtLeadershipPlatform, setThoughtLeadershipPlatform] = useState<Platform>('linkedin');
-  const [faqQuestions, setFaqQuestions] = useState('');
-  const [faqPlatform, setFaqPlatform] = useState<Platform>('linkedin');
+  const [selectedRepurposePostId, setSelectedRepurposePostId] = useState<
+    string | null
+  >(null);
+  const [viralPlatform, setViralPlatform] = useState<Platform>("linkedin");
+  const [caseStudyClient, setCaseStudyClient] = useState("");
+  const [caseStudyService, setCaseStudyService] = useState("");
+  const [caseStudyResult, setCaseStudyResult] = useState("");
+  const [caseStudyPlatform, setCaseStudyPlatform] =
+    useState<Platform>("linkedin");
+  const [thoughtLeadershipTopic, setThoughtLeadershipTopic] = useState("");
+  const [thoughtLeadershipStance, setThoughtLeadershipStance] = useState("");
+  const [thoughtLeadershipPlatform, setThoughtLeadershipPlatform] =
+    useState<Platform>("linkedin");
+  const [faqQuestions, setFaqQuestions] = useState("");
+  const [faqPlatform, setFaqPlatform] = useState<Platform>("linkedin");
   const [faqCount, setFaqCount] = useState(3);
   const [faqActiveIndex, setFaqActiveIndex] = useState(0);
   const [instagramSlideCount, setInstagramSlideCount] = useState(5);
@@ -362,31 +453,97 @@ export default function ComposePage() {
   const [instagramIncludeCta, setInstagramIncludeCta] = useState(true);
   const [linkedinSlideCount, setLinkedinSlideCount] = useState(8);
   const [showLinkedInPreview, setShowLinkedInPreview] = useState(false);
-  const [expandedAudioSuggestion, setExpandedAudioSuggestion] = useState<number | null>(null);
+  
+  // Image Drawer State
+  const [selectedImage, setSelectedImage] = useState<SelectedImage | null>(null);
+  const [overlayConfig, setOverlayConfig] = useState<OverlayConfig | null>(null);
+  const [isImageDrawerOpen, setIsImageDrawerOpen] = useState(false);
   const [regeneratingHook, setRegeneratingHook] = useState(false);
-  const [exportingPlatform, setExportingPlatform] = useState<Platform | null>(null);
-  const [exportStatsByPostId, setExportStatsByPostId] = useState<Record<string, ExportStats>>({});
+  const [exportingPlatform, setExportingPlatform] = useState<Platform | null>(
+    null,
+  );
+  const [exportStatsByPostId, setExportStatsByPostId] = useState<
+    Record<string, ExportStats>
+  >({});
+  
+  // AI visual brief
+  const [visualBrief, setVisualBrief] = useState<VisualBrief | null>(null);
+  const [briefLoading, setBriefLoading] = useState(false);
 
   const assistanceVisible =
-    assistanceLevel !== 'expert' && !assistanceDismissed && assistanceUsageCount < 10;
+    assistanceLevel !== "expert" &&
+    !assistanceDismissed &&
+    assistanceUsageCount < 10;
   const currentGuidance = getPlatformGuidance(activePlatform);
-  const currentModeCard = mode ? modeCards.find((card) => card.key === mode) ?? null : null;
+  const currentModeCard = mode
+    ? (modeCards.find((card) => card.key === mode) ?? null)
+    : null;
   const currentResult = generatedResults[activePlatform];
-  const activePillar = brandPillars.find((pillar) => pillar.id === selectedPillarId) || null;
+  const activePillar =
+    brandPillars.find((pillar) => pillar.id === selectedPillarId) || null;
   const activeAudience = platformAudiences[activePlatform] || null;
-  const currentQuickGeneratedOutput = quickActionOutput?.kind === 'generated' ? quickActionOutput : null;
+  const currentQuickGeneratedOutput =
+    quickActionOutput?.kind === "generated" ? quickActionOutput : null;
   const canGenerate =
-    Boolean(idea.trim()) && Boolean(selectedAngle) && !generating && !loadingIdea;
+    Boolean(idea.trim()) &&
+    Boolean(selectedAngle) &&
+    !generating &&
+    !loadingIdea;
   const generationActionLabel =
-    activePlatform === 'instagram' && selectedFormats.instagram === 'carousel'
-      ? 'Generar carrusel'
-      : activePlatform === 'x' && selectedFormats.x === 'thread'
-        ? 'Generar hilo'
-        : activePlatform === 'x' && selectedFormats.x === 'article'
-          ? 'Generar articulo'
-          : activePlatform === 'linkedin' && (selectedFormats.linkedin === 'document' || selectedFormats.linkedin === 'carousel')
-            ? 'Generar documento'
-            : 'Generar contenido';
+    activePlatform === "instagram" && selectedFormats.instagram === "carousel"
+      ? "Generar carrusel"
+      : activePlatform === "x" && selectedFormats.x === "thread"
+        ? "Generar hilo"
+        : activePlatform === "x" && selectedFormats.x === "article"
+          ? "Generar articulo"
+          : activePlatform === "linkedin" &&
+              (selectedFormats.linkedin === "document" ||
+                selectedFormats.linkedin === "carousel")
+            ? "Generar documento"
+            : "Generar contenido";
+
+  const getCarouselEditorMeta = (result: GeneratedContent | undefined) => {
+    const metadata = isRecord(result?.export_metadata)
+      ? result?.export_metadata
+      : null;
+
+    return {
+      editedSlides: Array.isArray(metadata?.edited_carousel_slides)
+        ? (metadata.edited_carousel_slides as CarouselEditorSlide[])
+        : [],
+      slideBackgrounds: Array.isArray(metadata?.slide_backgrounds)
+        ? (metadata.slide_backgrounds as SlideBackgroundSelection[])
+        : [],
+    };
+  };
+
+  const getInstagramCarouselEditorPayload = () => {
+    const instagramResult = generatedResults.instagram;
+
+    if (!instagramResult) {
+      return null;
+    }
+
+    const format = inferPostFormat(
+      "instagram",
+      instagramResult.content,
+      instagramResult.format,
+    );
+
+    if (format !== "carousel") {
+      return null;
+    }
+
+    const slides = readInstagramSlides(instagramResult.content.slides);
+    const metadata = getCarouselEditorMeta(instagramResult);
+
+    return {
+      angle: readString(instagramResult.angle),
+      editedSlides: metadata.editedSlides,
+      slideBackgrounds: metadata.slideBackgrounds,
+      slides,
+    };
+  };
 
   useEffect(() => {
     let isActive = true;
@@ -410,9 +567,9 @@ export default function ComposePage() {
       setUserId(user.id);
 
       const { data } = await supabase
-        .from('profiles')
-        .select('assistance_level')
-        .eq('id', user.id)
+        .from("profiles")
+        .select("assistance_level")
+        .eq("id", user.id)
         .maybeSingle();
 
       const profile = data as ProfileRow | null;
@@ -436,11 +593,13 @@ export default function ComposePage() {
       setStrategyLoading(true);
 
       try {
-        const response = await fetch('/api/settings/strategy');
-        const data = (await response.json()) as StrategyResponse & { error?: string };
+        const response = await fetch("/api/settings/strategy");
+        const data = (await response.json()) as StrategyResponse & {
+          error?: string;
+        };
 
         if (!response.ok) {
-          throw new Error(data.error || 'No fue posible cargar la estrategia.');
+          throw new Error(data.error || "No fue posible cargar la estrategia.");
         }
 
         if (!isActive) {
@@ -449,17 +608,21 @@ export default function ComposePage() {
 
         setBrandPillars(data.pillars || []);
         setPlatformAudiences(
-          (data.audiences || []).reduce<Partial<Record<Platform, PlatformAudience>>>((accumulator, audience) => {
+          (data.audiences || []).reduce<
+            Partial<Record<Platform, PlatformAudience>>
+          >((accumulator, audience) => {
             accumulator[audience.platform] = audience;
             return accumulator;
-          }, {})
+          }, {}),
         );
         setSelectedPillarId((current) =>
-          (data.pillars || []).some((pillar) => pillar.id === current) ? current : null
+          (data.pillars || []).some((pillar) => pillar.id === current)
+            ? current
+            : null,
         );
       } catch (error) {
         if (isActive) {
-          console.error('Failed to load strategy', error);
+          console.error("Failed to load strategy", error);
         }
       } finally {
         if (isActive) {
@@ -476,15 +639,15 @@ export default function ComposePage() {
   }, []);
 
   useEffect(() => {
-    setIdeasButtonState('idle');
+    setIdeasButtonState("idle");
   }, [activePlatform]);
 
   useEffect(() => {
-    setAnglesButtonState('idle');
+    setAnglesButtonState("idle");
   }, [activePlatform, idea]);
 
   useEffect(() => {
-    setGenerateButtonState('idle');
+    setGenerateButtonState("idle");
   }, [activePlatform, idea, selectedAngle, selectedPillarId]);
 
   useEffect(() => {
@@ -495,7 +658,7 @@ export default function ComposePage() {
       return;
     }
 
-    if (pillarSelectionMode === 'manual') {
+    if (pillarSelectionMode === "manual") {
       return;
     }
 
@@ -513,20 +676,20 @@ export default function ComposePage() {
       setSuggestingPillar(true);
 
       try {
-        const response = await fetch('/api/content/suggest-pillar', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        const response = await fetch("/api/content/suggest-pillar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ idea: trimmedIdea }),
         });
         const data = (await response.json()) as {
-          confidence?: 'high' | 'low' | 'medium'
-          error?: string
-          pillar_id?: string | null
-          reason?: string
+          confidence?: "high" | "low" | "medium";
+          error?: string;
+          pillar_id?: string | null;
+          reason?: string;
         };
 
         if (!response.ok) {
-          throw new Error(data.error || 'No fue posible sugerir un pilar.');
+          throw new Error(data.error || "No fue posible sugerir un pilar.");
         }
 
         if (!cancelled) {
@@ -535,7 +698,7 @@ export default function ComposePage() {
         }
       } catch (error) {
         if (!cancelled) {
-          console.error('Failed to suggest pillar', error);
+          console.error("Failed to suggest pillar", error);
         }
       } finally {
         if (!cancelled) {
@@ -551,24 +714,28 @@ export default function ComposePage() {
   }, [brandPillars, idea, pillarSelectionMode]);
 
   useEffect(() => {
-    const modeParam = searchParams.get('mode');
-    const ideaId = searchParams.get('idea');
-    const draftIdea = searchParams.get('draftIdea');
-    const platformParam = searchParams.get('platform');
+    const modeParam = searchParams.get("mode");
+    const ideaId = searchParams.get("idea");
+    const draftIdea = searchParams.get("draftIdea");
+    const platformParam = searchParams.get("platform");
 
     if (isPlatform(platformParam)) {
       setActivePlatform(platformParam);
     }
 
-    if (modeParam === 'explore' || modeParam === 'idea' || modeParam === 'direct') {
+    if (
+      modeParam === "explore" ||
+      modeParam === "idea" ||
+      modeParam === "direct"
+    ) {
       setMode(modeParam);
     }
 
     if (draftIdea) {
       setIdea(draftIdea);
-      setPillarSelectionMode('auto');
+      setPillarSelectionMode("auto");
       setSourceIdeaId(null);
-      setMode('idea');
+      setMode("idea");
       return;
     }
 
@@ -584,9 +751,9 @@ export default function ComposePage() {
 
       try {
         const { data, error } = await supabase
-          .from('content_ideas')
-          .select('id, raw_idea, platform')
-          .eq('id', ideaId)
+          .from("content_ideas")
+          .select("id, raw_idea, platform")
+          .eq("id", ideaId)
           .maybeSingle();
 
         const storedIdea = data as StoredIdeaRow | null;
@@ -597,17 +764,19 @@ export default function ComposePage() {
 
         if (!cancelled && storedIdea) {
           setIdea(storedIdea.raw_idea);
-          setPillarSelectionMode('auto');
+          setPillarSelectionMode("auto");
           setSourceIdeaId(storedIdea.id);
           if (storedIdea.platform) {
             setActivePlatform(storedIdea.platform);
           }
-          setMode('idea');
+          setMode("idea");
         }
       } catch (error) {
         if (!cancelled) {
           setErrorMessage(
-            error instanceof Error ? error.message : 'No fue posible cargar la idea seleccionada.'
+            error instanceof Error
+              ? error.message
+              : "No fue posible cargar la idea seleccionada.",
           );
         }
       } finally {
@@ -625,12 +794,14 @@ export default function ComposePage() {
   }, [searchParams, supabase]);
 
   useEffect(() => {
-    if (mode !== 'idea' && mode !== 'direct') {
+    if (mode !== "idea" && mode !== "direct") {
       return;
     }
 
     const intervalId = window.setInterval(() => {
-      setIdeaPlaceholderIndex((current) => (current + 1) % ideaPlaceholders.length);
+      setIdeaPlaceholderIndex(
+        (current) => (current + 1) % ideaPlaceholders.length,
+      );
     }, 3600);
 
     return () => {
@@ -645,7 +816,7 @@ export default function ComposePage() {
       return;
     }
 
-    textarea.style.height = '0px';
+    textarea.style.height = "0px";
     textarea.style.height = `${Math.max(textarea.scrollHeight, 120)}px`;
   }, [idea, mode]);
 
@@ -680,26 +851,28 @@ export default function ComposePage() {
         postIds.map(async (postId) => {
           const [{ count }, { data: lastRows }] = await Promise.all([
             supabase
-              .from('exports')
-              .select('*', { count: 'exact', head: true })
-              .eq('post_id', postId),
+              .from("exports")
+              .select("*", { count: "exact", head: true })
+              .eq("post_id", postId),
             supabase
-              .from('exports')
-              .select('exported_at')
-              .eq('post_id', postId)
-              .order('exported_at', { ascending: false })
+              .from("exports")
+              .select("exported_at")
+              .eq("post_id", postId)
+              .order("exported_at", { ascending: false })
               .limit(1),
-          ])
+          ]);
 
           return [
             postId,
             {
               count: count ?? 0,
-              lastExportedAt: (lastRows as Array<{ exported_at: string }> | null)?.[0]?.exported_at ?? null,
+              lastExportedAt:
+                (lastRows as Array<{ exported_at: string }> | null)?.[0]
+                  ?.exported_at ?? null,
             },
-          ] as const
-        })
-      )
+          ] as const;
+        }),
+      );
 
       if (cancelled) {
         return;
@@ -708,10 +881,10 @@ export default function ComposePage() {
       setExportStatsByPostId((current) => ({
         ...current,
         ...Object.fromEntries(entries),
-      }))
+      }));
     }
 
-    void loadStats()
+    void loadStats();
 
     return () => {
       cancelled = true;
@@ -725,34 +898,70 @@ export default function ComposePage() {
   };
 
   const setFormatForPlatform = (platform: Platform, format: PostFormat) => {
-    setSelectedFormats((current) => ({ ...current, [platform]: format }))
-    setExpandedAudioSuggestion(null)
-  }
+    setSelectedFormats((current) => ({ ...current, [platform]: format }));
+  };
 
   const updateGeneratedResult = (
     platform: Platform,
-    updater: (result: GeneratedContent) => GeneratedContent
+    updater: (result: GeneratedContent) => GeneratedContent,
   ) => {
     setGeneratedResults((current) => {
-      const existing = current[platform]
+      const existing = current[platform];
 
       if (!existing) {
-        return current
+        return current;
       }
 
       return {
         ...current,
         [platform]: updater(existing),
-      }
-    })
-  }
+      };
+    });
+  };
 
   const openVisualSearch = (query: string) => {
-    router.push(toVisualSearchHref(query))
-  }
+    setIsImageDrawerOpen(true);
+  };
+
+  const handleImageConfirm = (image: SelectedImage, config: OverlayConfig) => {
+    setSelectedImage(image);
+    setOverlayConfig(config);
+    setIsImageDrawerOpen(false);
+  };
+
+  const removeImage = () => {
+    setSelectedImage(null);
+    setOverlayConfig(null);
+  };
+
+  const openCarouselEditor = (activeIndex: number) => {
+    setCarouselEditorActiveIndex(activeIndex);
+    setIsTemplateModalOpen(true);
+  };
+
+  const handleCarouselEditorSave = (payload: CarouselEditorSavePayload) => {
+    updateGeneratedResult("instagram", (current) => ({
+      ...current,
+      content: {
+        ...current.content,
+        slides: payload.slides,
+      },
+      export_metadata: {
+        ...(isRecord(current.export_metadata) ? current.export_metadata : {}),
+        edited_carousel_slides: payload.editorSlides,
+        slide_backgrounds: payload.slideBackgrounds,
+      },
+    }));
+
+    setIsCarouselEditorOpen(false);
+    setToastMessage("Editor del carrusel guardado.");
+  };
 
   const dismissAssistance = () => {
-    persistAssistanceState({ dismissed: true, usageCount: assistanceUsageCount });
+    persistAssistanceState({
+      dismissed: true,
+      usageCount: assistanceUsageCount,
+    });
   };
 
   const incrementAssistanceUsage = () => {
@@ -778,12 +987,15 @@ export default function ComposePage() {
 
   const scrollToOutput = () => {
     window.requestAnimationFrame(() => {
-      outputSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      outputSectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
     });
   };
 
   const showQuickActionToast = () => {
-    setToastMessage('Error al generar. Intenta de nuevo.');
+    setToastMessage("Error al generar. Intenta de nuevo.");
   };
 
   const toggleQuickAction = (action: QuickActionKey) => {
@@ -796,28 +1008,33 @@ export default function ComposePage() {
 
   const requestSuggestedIdeas = async () => {
     setSuggestingIdeas(true);
-    setIdeasButtonState('loading');
+    setIdeasButtonState("loading");
     setErrorMessage(null);
 
     try {
-      const response = await fetch('/api/content/suggest-ideas', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/content/suggest-ideas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ platform: activePlatform }),
       });
-      const data = (await response.json()) as { error?: string; ideas?: SuggestedIdea[] };
+      const data = (await response.json()) as {
+        error?: string;
+        ideas?: SuggestedIdea[];
+      };
 
       if (!response.ok) {
-        throw new Error(data.error || 'No fue posible sugerir ideas');
+        throw new Error(data.error || "No fue posible sugerir ideas");
       }
 
       setSuggestedIdeas(data.ideas || []);
       setCopiedSuggestedIdeaKey(null);
       setSavedSuggestedIdeaKeys({});
-      setIdeasButtonState('success');
+      setIdeasButtonState("success");
     } catch (error) {
-      setIdeasButtonState('error');
-      setErrorMessage(error instanceof Error ? error.message : 'No fue posible sugerir ideas');
+      setIdeasButtonState("error");
+      setErrorMessage(
+        error instanceof Error ? error.message : "No fue posible sugerir ideas",
+      );
     } finally {
       setSuggestingIdeas(false);
     }
@@ -829,27 +1046,34 @@ export default function ComposePage() {
     }
 
     setLoadingAngles(true);
-    setAnglesButtonState('loading');
+    setAnglesButtonState("loading");
     setErrorMessage(null);
 
     try {
-      const response = await fetch('/api/content/angles', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/content/angles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ idea, platform: activePlatform }),
       });
-      const data = (await response.json()) as { angles?: AngleSuggestion[]; error?: string };
+      const data = (await response.json()) as {
+        angles?: AngleSuggestion[];
+        error?: string;
+      };
 
       if (!response.ok) {
-        throw new Error(data.error || 'No fue posible sugerir ángulos');
+        throw new Error(data.error || "No fue posible sugerir ángulos");
       }
 
       setAngles(data.angles || []);
       setSelectedAngle(null);
-      setAnglesButtonState('success');
+      setAnglesButtonState("success");
     } catch (error) {
-      setAnglesButtonState('error');
-      setErrorMessage(error instanceof Error ? error.message : 'No fue posible sugerir ángulos');
+      setAnglesButtonState("error");
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "No fue posible sugerir ángulos",
+      );
     } finally {
       setLoadingAngles(false);
     }
@@ -861,27 +1085,36 @@ export default function ComposePage() {
     }
 
     setGenerating(true);
-    setGenerateButtonState('loading');
+    setGenerateButtonState("loading");
     setErrorMessage(null);
     setQuickActionOutput(null);
     clearSavedPostIds([activePlatform]);
 
     try {
-      const { data: brandVoice } = await supabase.from('brand_voice').select('*').limit(1).maybeSingle();
-      const selectedFormat = selectedFormats[activePlatform] ?? getDefaultFormat(activePlatform)
+      const { data: brandVoice } = await supabase
+        .from("brand_voice")
+        .select("*")
+        .limit(1)
+        .maybeSingle();
+
+      const selectedFormat =
+        selectedFormats[activePlatform] ?? getDefaultFormat(activePlatform);
+
       const route =
-        activePlatform === 'instagram' && selectedFormat === 'carousel'
-          ? '/api/instagram/carousel'
-          : activePlatform === 'x' && selectedFormat === 'thread'
-            ? '/api/x/thread'
-            : activePlatform === 'x' && selectedFormat === 'article'
-              ? '/api/x/article'
-              : activePlatform === 'linkedin' && (selectedFormat === 'document' || selectedFormat === 'carousel')
-                ? '/api/linkedin/carousel'
-                : '/api/content/generate'
+        activePlatform === "instagram" && selectedFormat === "carousel"
+          ? "/api/instagram/carousel"
+          : activePlatform === "x" && selectedFormat === "thread"
+            ? "/api/x/thread"
+            : activePlatform === "x" && selectedFormat === "article"
+              ? "/api/x/article"
+              : activePlatform === "linkedin" &&
+                  (selectedFormat === "document" ||
+                    selectedFormat === "carousel")
+                ? "/api/linkedin/carousel"
+                : "/api/content/generate";
 
       const payload =
-        route === '/api/instagram/carousel'
+        route === "/api/instagram/carousel"
           ? {
               angle: selectedAngle,
               brand_voice: brandVoice || {},
@@ -891,7 +1124,7 @@ export default function ComposePage() {
               pillar_id: selectedPillarId,
               slide_count: instagramSlideCount,
             }
-          : route === '/api/linkedin/carousel'
+          : route === "/api/linkedin/carousel"
             ? {
                 angle: selectedAngle,
                 brand_voice: brandVoice || {},
@@ -906,34 +1139,85 @@ export default function ComposePage() {
                 idea,
                 pillar_id: selectedPillarId,
                 platform: activePlatform,
-              }
+              };
 
       const response = await fetch(route, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      const data = (await response.json()) as GeneratedContent & { error?: string };
+      const data = (await response.json()) as GeneratedContent & {
+        error?: string;
+      };
 
       if (!response.ok) {
-        throw new Error(data.error || 'No fue posible generar contenido');
+        throw new Error(data.error || "No fue posible generar contenido");
       }
 
-      setGeneratedResults((current) => ({ ...current, [activePlatform]: data }));
+      setGeneratedResults((current) => ({
+        ...current,
+        [activePlatform]: data,
+      }));
       setSelectedFormats((current) => ({
         ...current,
-        [activePlatform]: inferPostFormat(activePlatform, data.content, data.format),
-      }))
+        [activePlatform]: inferPostFormat(
+          activePlatform,
+          data.content,
+          data.format,
+        ),
+      }));
       incrementAssistanceUsage();
-      setGenerateButtonState('success');
+      setGenerateButtonState("success");
       scrollToOutput();
 
+      // Trigger Stage 1: Visual Brief Generation
+      void requestVisualBrief(data);
     } catch (error) {
-      setGenerateButtonState('error');
-      setErrorMessage(error instanceof Error ? error.message : 'No fue posible generar contenido');
+      setGenerateButtonState("error");
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "No fue posible generar contenido",
+      );
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const requestVisualBrief = async (generatedPost: GeneratedContent) => {
+    if (activePlatform === 'x' && generatedPost.format !== 'article') return;
+    
+    setBriefLoading(true);
+    try {
+      const { data: brandVoice } = await supabase
+        .from("brand_voice")
+        .select("*")
+        .limit(1)
+        .maybeSingle();
+
+      const response = await fetch('/api/images/brief', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          post_content: {
+            caption: getCaptionText(activePlatform, (generatedPost.format || "single") as PostFormat, generatedPost.content),
+            platform: activePlatform,
+            angle: generatedPost.angle,
+          },
+          brand_voice: brandVoice,
+          post_id: generatedPost.post_id
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setVisualBrief(data);
+      }
+    } catch (err) {
+      console.error('Failed to generate visual brief', err);
+    } finally {
+      setBriefLoading(false);
     }
   };
 
@@ -947,11 +1231,13 @@ export default function ComposePage() {
     setQuickActionOutput(null);
 
     try {
-      const targetPlatforms = platforms.filter((platform) => platform !== activePlatform);
+      const targetPlatforms = platforms.filter(
+        (platform) => platform !== activePlatform,
+      );
       clearSavedPostIds(targetPlatforms);
-      const response = await fetch('/api/content/adapt', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/content/adapt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           source_platform: activePlatform,
           source_post: JSON.stringify(currentResult.content, null, 2),
@@ -960,12 +1246,15 @@ export default function ComposePage() {
       });
 
       const data = (await response.json()) as {
-        adaptations?: Array<{ content: Record<string, unknown>; platform: Platform }>
-        error?: string
+        adaptations?: Array<{
+          content: Record<string, unknown>;
+          platform: Platform;
+        }>;
+        error?: string;
       };
 
       if (!response.ok) {
-        throw new Error(data.error || 'No fue posible adaptar contenido');
+        throw new Error(data.error || "No fue posible adaptar contenido");
       }
 
       setGeneratedResults((current) => {
@@ -973,7 +1262,7 @@ export default function ComposePage() {
 
         data.adaptations?.forEach((adaptation) => {
           nextResults[adaptation.platform] = {
-            angle: selectedAngle || 'Adaptación',
+            angle: selectedAngle || "Adaptación",
             content: adaptation.content,
             platform: adaptation.platform,
             pillar_id: selectedPillarId,
@@ -985,7 +1274,11 @@ export default function ComposePage() {
       });
       scrollToOutput();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'No fue posible adaptar contenido');
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "No fue posible adaptar contenido",
+      );
     } finally {
       setAdapting(false);
     }
@@ -995,7 +1288,7 @@ export default function ComposePage() {
     const result = generatedResults[platform];
     const inferredFormat = result
       ? inferPostFormat(platform, result.content, result.format)
-      : getDefaultFormat(platform)
+      : getDefaultFormat(platform);
 
     if (!result) {
       return null;
@@ -1017,7 +1310,7 @@ export default function ComposePage() {
         } = await supabase.auth.getUser();
 
         if (!user) {
-          throw new Error('Necesitas iniciar sesión para guardar el borrador.');
+          throw new Error("Necesitas iniciar sesión para guardar el borrador.");
         }
 
         nextUserId = user.id;
@@ -1028,25 +1321,32 @@ export default function ComposePage() {
 
       if (ideaId) {
         const { error } = await supabase
-          .from('content_ideas')
-          .update({ platform, raw_idea: idea, status: 'drafted' })
-          .eq('id', ideaId)
-          .eq('user_id', nextUserId);
+          .from("content_ideas")
+          .update({ platform, raw_idea: idea, status: "drafted" })
+          .eq("id", ideaId)
+          .eq("user_id", nextUserId);
 
         if (error) {
           throw error;
         }
       } else {
         const { data, error } = await supabase
-          .from('content_ideas')
-          .insert([{ platform, raw_idea: idea, status: 'drafted', user_id: nextUserId }])
-          .select('id')
+          .from("content_ideas")
+          .insert([
+            {
+              platform,
+              raw_idea: idea,
+              status: "drafted",
+              user_id: nextUserId,
+            },
+          ])
+          .select("id")
           .single();
 
         const createdIdea = data as { id: string } | null;
 
         if (error || !createdIdea) {
-          throw error || new Error('No fue posible crear la idea base');
+          throw error || new Error("No fue posible crear la idea base");
         }
 
         ideaId = createdIdea.id;
@@ -1055,7 +1355,7 @@ export default function ComposePage() {
 
       if (result.post_id) {
         const { error: updateError } = await supabase
-          .from('posts')
+          .from("posts")
           .update({
             angle: result.angle,
             content: result.content,
@@ -1064,22 +1364,25 @@ export default function ComposePage() {
             idea_id: ideaId,
             pillar_id: result.pillar_id || selectedPillarId,
             platform,
-            status: 'draft',
+            status: "draft",
             user_id: nextUserId,
           })
-          .eq('id', result.post_id)
-          .eq('user_id', nextUserId);
+          .eq("id", result.post_id)
+          .eq("user_id", nextUserId);
 
         if (updateError) {
           throw updateError;
         }
 
-        setSavedPostIds((current) => ({ ...current, [platform]: result.post_id! }));
+        setSavedPostIds((current) => ({
+          ...current,
+          [platform]: result.post_id!,
+        }));
         return result.post_id;
       }
 
       const { data: postData, error: postError } = await supabase
-        .from('posts')
+        .from("posts")
         .insert([
           {
             angle: result.angle,
@@ -1089,23 +1392,30 @@ export default function ComposePage() {
             idea_id: ideaId,
             pillar_id: result.pillar_id || selectedPillarId,
             platform,
-            status: 'draft',
+            status: "draft",
             user_id: nextUserId,
           },
         ])
-        .select('id')
+        .select("id")
         .single();
 
       const createdPost = postData as { id: string } | null;
 
       if (postError || !createdPost) {
-        throw postError || new Error('No fue posible guardar el borrador');
+        throw postError || new Error("No fue posible guardar el borrador");
       }
 
-      setSavedPostIds((current) => ({ ...current, [platform]: createdPost.id }));
+      setSavedPostIds((current) => ({
+        ...current,
+        [platform]: createdPost.id,
+      }));
       return createdPost.id;
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'No fue posible guardar el borrador');
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "No fue posible guardar el borrador",
+      );
       return null;
     } finally {
       setSavingDraft(false);
@@ -1119,31 +1429,39 @@ export default function ComposePage() {
       return;
     }
 
-    const format = inferPostFormat(platform, result.content, result.format)
-    await navigator.clipboard.writeText(getCopyText(platform, format, result.content));
+    const format = inferPostFormat(platform, result.content, result.format);
+    await navigator.clipboard.writeText(
+      getCopyText(platform, format, result.content),
+    );
     setCopiedResultPlatform(platform);
 
     window.setTimeout(() => {
-      setCopiedResultPlatform((current) => (current === platform ? null : current));
+      setCopiedResultPlatform((current) =>
+        current === platform ? null : current,
+      );
     }, 1800);
   };
 
   const selectSuggestedIdea = (suggestedIdea: SuggestedIdea) => {
     setIdea(`${suggestedIdea.title}. ${suggestedIdea.hook}`);
-    setPillarSelectionMode('auto');
+    setPillarSelectionMode("auto");
     setSelectedAngle(null);
     setAngles([]);
-    setMode('idea');
+    setMode("idea");
   };
 
   const copySuggestedIdea = async (suggestedIdea: SuggestedIdea) => {
     const suggestionKey = getSuggestedIdeaKey(suggestedIdea);
 
-    await navigator.clipboard.writeText(formatSuggestedIdeaForClipboard(suggestedIdea));
+    await navigator.clipboard.writeText(
+      formatSuggestedIdeaForClipboard(suggestedIdea),
+    );
     setCopiedSuggestedIdeaKey(suggestionKey);
 
     window.setTimeout(() => {
-      setCopiedSuggestedIdeaKey((current) => (current === suggestionKey ? null : current));
+      setCopiedSuggestedIdeaKey((current) =>
+        current === suggestionKey ? null : current,
+      );
     }, 1800);
   };
 
@@ -1166,7 +1484,7 @@ export default function ComposePage() {
         } = await supabase.auth.getUser();
 
         if (!user) {
-          throw new Error('Necesitas iniciar sesión para guardar ideas.');
+          throw new Error("Necesitas iniciar sesión para guardar ideas.");
         }
 
         nextUserId = user.id;
@@ -1175,29 +1493,38 @@ export default function ComposePage() {
 
       const rawIdea = `${suggestedIdea.title}. ${suggestedIdea.hook}`;
       const { data, error } = await supabase
-        .from('content_ideas')
+        .from("content_ideas")
         .insert([
           {
             platform: activePlatform,
             raw_idea: rawIdea,
-            status: 'raw',
+            status: "raw",
             user_id: nextUserId,
           },
         ])
-        .select('id')
+        .select("id")
         .single();
 
       const createdIdea = data as { id: string } | null;
 
       if (error || !createdIdea) {
-        throw error || new Error('No fue posible guardar la idea sugerida.');
+        throw error || new Error("No fue posible guardar la idea sugerida.");
       }
 
-      setSavedSuggestedIdeaKeys((current) => ({ ...current, [suggestionKey]: createdIdea.id }));
+      setSavedSuggestedIdeaKeys((current) => ({
+        ...current,
+        [suggestionKey]: createdIdea.id,
+      }));
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'No fue posible guardar la idea sugerida.');
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "No fue posible guardar la idea sugerida.",
+      );
     } finally {
-      setSavingSuggestedIdeaKey((current) => (current === suggestionKey ? null : current));
+      setSavingSuggestedIdeaKey((current) =>
+        current === suggestionKey ? null : current,
+      );
     }
   };
 
@@ -1209,17 +1536,17 @@ export default function ComposePage() {
     sourceLabel,
     stanceUsed,
   }: {
-    note?: string
-    platformOrder: Platform[]
-    results: Partial<Record<Platform, GeneratedContent>>
-    savedIds: Partial<Record<Platform, string>>
-    sourceLabel: string
-    stanceUsed?: string
+    note?: string;
+    platformOrder: Platform[];
+    results: Partial<Record<Platform, GeneratedContent>>;
+    savedIds: Partial<Record<Platform, string>>;
+    sourceLabel: string;
+    stanceUsed?: string;
   }) => {
     setGeneratedResults((current) => ({ ...current, ...results }));
     setSavedPostIds((current) => ({ ...current, ...savedIds }));
     setQuickActionOutput({
-      kind: 'generated',
+      kind: "generated",
       note,
       platformOrder,
       sourceLabel,
@@ -1235,10 +1562,10 @@ export default function ComposePage() {
 
     try {
       const { data, error } = await supabase
-        .from('posts')
-        .select('id, platform, status, created_at, content')
-        .in('status', ['published', 'draft'])
-        .order('created_at', { ascending: false })
+        .from("posts")
+        .select("id, platform, status, created_at, content")
+        .in("status", ["published", "draft"])
+        .order("created_at", { ascending: false })
         .limit(5);
 
       if (error) {
@@ -1247,7 +1574,9 @@ export default function ComposePage() {
 
       const posts = ((data as RepurposePostOption[] | null) ?? []).filter(
         (post): post is RepurposePostOption =>
-          post.platform === 'instagram' || post.platform === 'linkedin' || post.platform === 'x'
+          post.platform === "instagram" ||
+          post.platform === "linkedin" ||
+          post.platform === "x",
       );
 
       setRepurposePosts(posts);
@@ -1263,28 +1592,35 @@ export default function ComposePage() {
   const handleQuickActionChipClick = (action: QuickActionKey) => {
     toggleQuickAction(action);
 
-    if (action === 'repurpose' && openQuickAction !== 'repurpose') {
+    if (action === "repurpose" && openQuickAction !== "repurpose") {
       void fetchRepurposePosts();
     }
   };
 
   const runPlanQuickAction = async () => {
-    setRunningQuickAction('plan');
+    setRunningQuickAction("plan");
 
     try {
-      const response = await fetch('/api/quick-actions/plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ days: planDays, platforms: planPlatforms, user_id: userId }),
+      const response = await fetch("/api/quick-actions/plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          days: planDays,
+          platforms: planPlatforms,
+          user_id: userId,
+        }),
       });
-      const data = (await response.json()) as { error?: string; plan?: QuickActionPlanItem[] };
+      const data = (await response.json()) as {
+        error?: string;
+        plan?: QuickActionPlanItem[];
+      };
 
       if (!response.ok || !data.plan) {
-        throw new Error(data.error || 'No fue posible generar el plan');
+        throw new Error(data.error || "No fue posible generar el plan");
       }
 
       setQuickActionOutput({
-        kind: 'plan',
+        kind: "plan",
         plan: data.plan,
         sourceLabel: getQuickActionSourceLabel(`Planear ${planDays} días`),
       });
@@ -1298,46 +1634,54 @@ export default function ComposePage() {
   };
 
   const runRepurposeQuickAction = async () => {
-    const selectedPost = repurposePosts.find((post) => post.id === selectedRepurposePostId);
+    const selectedPost = repurposePosts.find(
+      (post) => post.id === selectedRepurposePostId,
+    );
 
     if (!selectedPost) {
       return;
     }
 
-    setRunningQuickAction('repurpose');
+    setRunningQuickAction("repurpose");
 
     try {
-      const response = await fetch('/api/quick-actions/repurpose', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/quick-actions/repurpose", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           post_id: selectedPost.id,
           source_platform: selectedPost.platform,
         }),
       });
       const data = (await response.json()) as {
-        adaptations?: Array<{ content: Record<string, unknown>; platform: Platform; savedPostId: string }>
-        error?: string
+        adaptations?: Array<{
+          content: Record<string, unknown>;
+          platform: Platform;
+          savedPostId: string;
+        }>;
+        error?: string;
       };
 
       if (!response.ok || !data.adaptations?.length) {
-        throw new Error(data.error || 'No fue posible adaptar el post');
+        throw new Error(data.error || "No fue posible adaptar el post");
       }
 
       const results: Partial<Record<Platform, GeneratedContent>> = {};
       const savedIds: Partial<Record<Platform, string>> = {};
-      const platformOrder = data.adaptations.map((adaptation) => adaptation.platform);
+      const platformOrder = data.adaptations.map(
+        (adaptation) => adaptation.platform,
+      );
 
       data.adaptations.forEach((adaptation) => {
         results[adaptation.platform] = {
-          angle: 'Repurpose',
+          angle: "Repurpose",
           content: adaptation.content,
           platform: adaptation.platform,
           raw: getContentPreview(
             selectedPost.platform,
             getDefaultFormat(selectedPost.platform),
             selectedPost.content,
-            180
+            180,
           ),
         };
         savedIds[adaptation.platform] = adaptation.savedPostId;
@@ -1347,7 +1691,7 @@ export default function ComposePage() {
         platformOrder,
         results,
         savedIds,
-        sourceLabel: getQuickActionSourceLabel('Repurpose'),
+        sourceLabel: getQuickActionSourceLabel("Repurpose"),
       });
     } catch {
       handleQuickActionError();
@@ -1357,24 +1701,27 @@ export default function ComposePage() {
   };
 
   const runViralQuickAction = async () => {
-    setRunningQuickAction('viral');
+    setRunningQuickAction("viral");
 
     try {
-      const response = await fetch('/api/quick-actions/viral', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/quick-actions/viral", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ platform: viralPlatform }),
       });
-      const data = (await response.json()) as { error?: string; trends?: QuickActionViralTrend[] };
+      const data = (await response.json()) as {
+        error?: string;
+        trends?: QuickActionViralTrend[];
+      };
 
       if (!response.ok || !data.trends?.length) {
-        throw new Error(data.error || 'No fue posible buscar tendencias');
+        throw new Error(data.error || "No fue posible buscar tendencias");
       }
 
       setQuickActionOutput({
-        kind: 'viral',
+        kind: "viral",
         platform: viralPlatform,
-        sourceLabel: getQuickActionSourceLabel('Qué está viral'),
+        sourceLabel: getQuickActionSourceLabel("Qué está viral"),
         trends: data.trends,
       });
       setOpenQuickAction(null);
@@ -1387,12 +1734,12 @@ export default function ComposePage() {
   };
 
   const runCaseStudyQuickAction = async () => {
-    setRunningQuickAction('caseStudy');
+    setRunningQuickAction("caseStudy");
 
     try {
-      const response = await fetch('/api/quick-actions/case-study', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/quick-actions/case-study", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           client: caseStudyClient,
           platform: caseStudyPlatform,
@@ -1401,20 +1748,26 @@ export default function ComposePage() {
         }),
       });
       const data = (await response.json()) as {
-        error?: string
-        post?: { content: Record<string, unknown>; platform: Platform; savedPostId: string }
+        error?: string;
+        post?: {
+          content: Record<string, unknown>;
+          platform: Platform;
+          savedPostId: string;
+        };
       };
 
       if (!response.ok || !data.post) {
-        throw new Error(data.error || 'No fue posible generar el caso de estudio');
+        throw new Error(
+          data.error || "No fue posible generar el caso de estudio",
+        );
       }
 
       applyQuickGeneratedOutput({
-        note: 'Recuerda validar con el cliente antes de publicar.',
+        note: "Recuerda validar con el cliente antes de publicar.",
         platformOrder: [data.post.platform],
         results: {
           [data.post.platform]: {
-            angle: 'Caso de estudio',
+            angle: "Caso de estudio",
             content: data.post.content,
             platform: data.post.platform,
             raw: `Caso de estudio: ${caseStudyClient} · ${caseStudyService}`,
@@ -1423,7 +1776,7 @@ export default function ComposePage() {
         savedIds: {
           [data.post.platform]: data.post.savedPostId,
         },
-        sourceLabel: getQuickActionSourceLabel('Caso de estudio'),
+        sourceLabel: getQuickActionSourceLabel("Caso de estudio"),
       });
     } catch {
       handleQuickActionError();
@@ -1433,12 +1786,12 @@ export default function ComposePage() {
   };
 
   const runThoughtLeadershipQuickAction = async () => {
-    setRunningQuickAction('thoughtLeadership');
+    setRunningQuickAction("thoughtLeadership");
 
     try {
-      const response = await fetch('/api/quick-actions/thought-leadership', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/quick-actions/thought-leadership", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           platform: thoughtLeadershipPlatform,
           stance: thoughtLeadershipStance,
@@ -1446,19 +1799,19 @@ export default function ComposePage() {
         }),
       });
       const data = (await response.json()) as {
-        error?: string
-        post?: QuickActionThoughtLeadershipPost
+        error?: string;
+        post?: QuickActionThoughtLeadershipPost;
       };
 
       if (!response.ok || !data.post) {
-        throw new Error(data.error || 'No fue posible generar la opinión');
+        throw new Error(data.error || "No fue posible generar la opinión");
       }
 
       applyQuickGeneratedOutput({
         platformOrder: [data.post.platform],
         results: {
           [data.post.platform]: {
-            angle: 'Thought leadership',
+            angle: "Thought leadership",
             content: data.post.content,
             platform: data.post.platform,
             raw: `Thought leadership: ${thoughtLeadershipTopic}`,
@@ -1467,7 +1820,7 @@ export default function ComposePage() {
         savedIds: {
           [data.post.platform]: data.post.savedPostId,
         },
-        sourceLabel: getQuickActionSourceLabel('Thought leadership'),
+        sourceLabel: getQuickActionSourceLabel("Thought leadership"),
         stanceUsed: data.post.stance_used,
       });
     } catch {
@@ -1478,30 +1831,33 @@ export default function ComposePage() {
   };
 
   const runFaqQuickAction = async () => {
-    setRunningQuickAction('faq');
+    setRunningQuickAction("faq");
 
     try {
-      const response = await fetch('/api/quick-actions/faq', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/quick-actions/faq", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           count: faqCount,
           platform: faqPlatform,
           questions: faqQuestions,
         }),
       });
-      const data = (await response.json()) as { error?: string; posts?: QuickActionFaqPost[] };
+      const data = (await response.json()) as {
+        error?: string;
+        posts?: QuickActionFaqPost[];
+      };
 
       if (!response.ok || !data.posts?.length) {
-        throw new Error(data.error || 'No fue posible generar contenido FAQ');
+        throw new Error(data.error || "No fue posible generar contenido FAQ");
       }
 
       setFaqActiveIndex(0);
       setQuickActionOutput({
-        kind: 'faq',
+        kind: "faq",
         platform: faqPlatform,
         posts: data.posts,
-        sourceLabel: getQuickActionSourceLabel('FAQ de clientes'),
+        sourceLabel: getQuickActionSourceLabel("FAQ de clientes"),
       });
       setOpenQuickAction(null);
       scrollToOutput();
@@ -1516,8 +1872,8 @@ export default function ComposePage() {
     const targetDate = new Date();
     targetDate.setDate(targetDate.getDate() + day - 1);
     const year = targetDate.getFullYear();
-    const month = String(targetDate.getMonth() + 1).padStart(2, '0');
-    const date = String(targetDate.getDate()).padStart(2, '0');
+    const month = String(targetDate.getMonth() + 1).padStart(2, "0");
+    const date = String(targetDate.getDate()).padStart(2, "0");
     const dateString = `${year}-${month}-${date}`;
 
     router.push(`/calendar?date=${dateString}`);
@@ -1526,17 +1882,17 @@ export default function ComposePage() {
   const developTrend = (trend: QuickActionViralTrend) => {
     setActivePlatform(trend.platform);
     setIdea(trend.hook);
-    setPillarSelectionMode('auto');
+    setPillarSelectionMode("auto");
     setSelectedAngle(trend.angle);
     setAngles([]);
-    setMode('idea');
+    setMode("idea");
     focusIdeaTextarea();
   };
 
   const enterMode = (nextMode: ComposeMode) => {
     setMode(nextMode);
 
-    if (nextMode === 'direct' && !selectedAngle) {
+    if (nextMode === "direct" && !selectedAngle) {
       setSelectedAngle(directAngles[0]);
     }
   };
@@ -1551,7 +1907,7 @@ export default function ComposePage() {
 
       textarea.focus();
       textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-      textarea.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      textarea.scrollIntoView({ behavior: "smooth", block: "center" });
     });
   };
 
@@ -1564,9 +1920,9 @@ export default function ComposePage() {
 
     setActivePlatform(platform);
     setSelectedPillarId(result.pillar_id || null);
-    setPillarSelectionMode(result.pillar_id ? 'manual' : 'auto');
+    setPillarSelectionMode(result.pillar_id ? "manual" : "auto");
     setSelectedAngle(result.angle);
-    setMode(mode === 'direct' ? 'direct' : 'idea');
+    setMode(mode === "direct" ? "direct" : "idea");
     setIdea(result.raw);
     focusIdeaTextarea();
   };
@@ -1578,12 +1934,12 @@ export default function ComposePage() {
       return;
     }
 
-    router.push('/calendar');
+    router.push("/calendar");
   };
 
   const handlePillarSelection = (pillarId: string | null) => {
     setSelectedPillarId(pillarId);
-    setPillarSelectionMode('manual');
+    setPillarSelectionMode("manual");
     setPillarSuggestionReason(null);
   };
 
@@ -1600,15 +1956,16 @@ export default function ComposePage() {
     if (brandPillars.length === 0) {
       return (
         <div className="rounded-[24px] border border-dashed border-white/10 bg-[#101417]/50 p-4">
-          <p className="text-sm text-[#E0E5EB]">¿A qué pilar pertenece este post?</p>
+          <p className="text-sm text-[#E0E5EB]">
+            ¿A qué pilar pertenece este post?
+          </p>
           <p className="mt-2 text-sm leading-6 text-[#8D95A6]">
-            Primero define tus pilares y audiencias en estrategia para que la generación salga
-            calibrada por territorio y plataforma.
+            Primero define tus pilares y audiencias en estrategia para que la
+            generación salga calibrada por territorio y plataforma.
           </p>
           <Link
             href="/settings?section=studio&tab=strategy"
-            className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5"
-          >
+            className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5">
             Abrir estrategia
             <ArrowRight className="h-4 w-4" />
           </Link>
@@ -1620,12 +1977,17 @@ export default function ComposePage() {
       <div className="rounded-[24px] border border-white/10 bg-[#101417]/70 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs uppercase tracking-[0.24em] text-[#4E576A]">Pilar</p>
-            <p className="mt-2 text-sm text-[#E0E5EB]">¿A qué pilar pertenece este post?</p>
+            <p className="text-xs uppercase tracking-[0.24em] text-[#4E576A]">
+              Pilar
+            </p>
+            <p className="mt-2 text-sm text-[#E0E5EB]">
+              ¿A qué pilar pertenece este post?
+            </p>
           </div>
           {activeAudience ? (
             <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-[#8D95A6]">
-              Audiencia {formatPlatformLabel(activePlatform)}: {getLanguageLevelLabel(activeAudience.language_level)}
+              Audiencia {formatPlatformLabel(activePlatform)}:{" "}
+              {getLanguageLevelLabel(activeAudience.language_level)}
             </span>
           ) : null}
         </div>
@@ -1638,18 +2000,17 @@ export default function ComposePage() {
               onClick={() => handlePillarSelection(pillar.id)}
               className={`rounded-full border px-4 py-2 text-sm transition-colors ${
                 selectedPillarId === pillar.id
-                  ? 'text-white'
-                  : 'border-white/10 text-[#B5BDCA] hover:border-white/20 hover:text-white'
+                  ? "text-white"
+                  : "border-white/10 text-[#B5BDCA] hover:border-white/20 hover:text-white"
               }`}
               style={
                 selectedPillarId === pillar.id
                   ? {
-                      backgroundColor: pillar.color || '#212631',
-                      borderColor: pillar.color || '#212631',
+                      backgroundColor: pillar.color || "#212631",
+                      borderColor: pillar.color || "#212631",
                     }
                   : undefined
-              }
-            >
+              }>
               {pillar.name}
             </button>
           ))}
@@ -1658,35 +2019,39 @@ export default function ComposePage() {
             onClick={() => handlePillarSelection(null)}
             className={`rounded-full border px-4 py-2 text-sm transition-colors ${
               selectedPillarId === null
-                ? 'border-white/40 bg-white text-black'
-                : 'border-white/10 text-[#B5BDCA] hover:border-white/20 hover:text-white'
-            }`}
-          >
+                ? "border-white/40 bg-white text-black"
+                : "border-white/10 text-[#B5BDCA] hover:border-white/20 hover:text-white"
+            }`}>
             Sin pilar
           </button>
         </div>
 
         <div className="mt-4 space-y-2 text-xs leading-5 text-[#8D95A6]">
-          {suggestingPillar && pillarSelectionMode === 'auto' ? (
+          {suggestingPillar && pillarSelectionMode === "auto" ? (
             <p>Sugiriendo pilar en función de tu idea...</p>
           ) : null}
           {activePillar ? (
             <p>
-              Pilar activo: <span className="text-[#E0E5EB]">{activePillar.name}</span>
-              {activePillar.description ? ` · ${activePillar.description}` : ''}
+              Pilar activo:{" "}
+              <span className="text-[#E0E5EB]">{activePillar.name}</span>
+              {activePillar.description ? ` · ${activePillar.description}` : ""}
             </p>
           ) : null}
-          {pillarSuggestionReason && pillarSelectionMode === 'auto' ? (
+          {pillarSuggestionReason && pillarSelectionMode === "auto" ? (
             <p>{pillarSuggestionReason}</p>
           ) : null}
           {activeAudience ? (
             <p>
-              Esta audiencia en {formatPlatformLabel(activePlatform)} busca {stripHtml(activeAudience.desired_outcomes) || 'claridad útil'} y tiene problemas como {stripHtml(activeAudience.pain_points) || 'falta de contexto'}.
+              Esta audiencia en {formatPlatformLabel(activePlatform)} busca{" "}
+              {stripHtml(activeAudience.desired_outcomes) || "claridad útil"} y
+              tiene problemas como{" "}
+              {stripHtml(activeAudience.pain_points) || "falta de contexto"}.
             </p>
           ) : (
             <p>
-              Aún no definiste audiencia para {formatPlatformLabel(activePlatform)}. La generación usará
-              solo la voz de marca.
+              Aún no definiste audiencia para{" "}
+              {formatPlatformLabel(activePlatform)}. La generación usará solo la
+              voz de marca.
             </p>
           )}
         </div>
@@ -1695,44 +2060,52 @@ export default function ComposePage() {
   };
 
   const handleCopyCaption = async (platform: Platform) => {
-    const result = generatedResults[platform]
+    const result = generatedResults[platform];
 
     if (!result) {
-      return
+      return;
     }
 
-    const format = inferPostFormat(platform, result.content, result.format)
-    await navigator.clipboard.writeText(getCaptionText(platform, format, result.content))
-    setToastMessage('Caption copiado al portapapeles.')
-  }
+    const format = inferPostFormat(platform, result.content, result.format);
+    await navigator.clipboard.writeText(
+      getCaptionText(platform, format, result.content),
+    );
+    setToastMessage("Caption copiado al portapapeles.");
+  };
 
-  const recordExport = async (postId: string, platform: Platform, format: PostFormat) => {
-    let nextUserId = userId
+  const recordExport = async (
+    postId: string,
+    platform: Platform,
+    format: PostFormat,
+  ) => {
+    let nextUserId = userId;
 
     if (!nextUserId) {
       const {
         data: { user },
-      } = await supabase.auth.getUser()
+      } = await supabase.auth.getUser();
 
       if (!user) {
-        throw new Error('Necesitas iniciar sesion para registrar la exportacion.')
+        throw new Error(
+          "Necesitas iniciar sesion para registrar la exportacion.",
+        );
       }
 
-      nextUserId = user.id
-      setUserId(user.id)
+      nextUserId = user.id;
+      setUserId(user.id);
     }
 
-    await supabase.from('exports').insert([
+    await supabase.from("exports").insert([
       {
         format,
         platform,
         post_id: postId,
         user_id: nextUserId,
       },
-    ])
+    ]);
 
     setExportStatsByPostId((current) => {
-      const previous = current[postId] ?? { count: 0, lastExportedAt: null }
+      const previous = current[postId] ?? { count: 0, lastExportedAt: null };
 
       return {
         ...current,
@@ -1740,117 +2113,142 @@ export default function ComposePage() {
           count: previous.count + 1,
           lastExportedAt: new Date().toISOString(),
         },
-      }
-    })
-  }
+      };
+    });
+  };
 
   const ensureExportPostId = async (platform: Platform) => {
-    const result = generatedResults[platform]
+    const result = generatedResults[platform];
 
     if (!result) {
-      return null
+      return null;
     }
 
     if (result.post_id) {
-      return result.post_id
+      return result.post_id;
     }
 
     if (savedPostIds[platform]) {
-      return savedPostIds[platform] ?? null
+      return savedPostIds[platform] ?? null;
     }
 
-    return saveAsDraft(platform)
-  }
+    return saveAsDraft(platform);
+  };
 
   const handleExport = async (platform: Platform) => {
-    const result = generatedResults[platform]
+    const result = generatedResults[platform];
 
     if (!result) {
-      return
+      return;
     }
 
-    const format = inferPostFormat(platform, result.content, result.format)
-    setExportingPlatform(platform)
-    setErrorMessage(null)
+    const format = inferPostFormat(platform, result.content, result.format);
+    setExportingPlatform(platform);
+    setErrorMessage(null);
 
     try {
-      const postId = await ensureExportPostId(platform)
+      const postId = await ensureExportPostId(platform);
 
       if (!postId) {
-        throw new Error('No fue posible preparar el post para exportacion')
+        throw new Error("No fue posible preparar el post para exportacion");
       }
 
-      if (platform === 'instagram') {
+      if (platform === "instagram") {
         await exportInstagramPackage({
           content: result.content,
-          exportMetadata: isRecord(result.export_metadata) ? result.export_metadata : null,
+          exportMetadata: isRecord(result.export_metadata)
+            ? result.export_metadata
+            : null,
           format,
-        })
-      } else if (platform === 'linkedin') {
+          imageMetadata: selectedImage ? {
+            url: selectedImage.url,
+            photographer: selectedImage.photographer,
+            overlay: overlayConfig
+          } : null
+        });
+      } else if (platform === "linkedin") {
         const pdfBlob =
-          format === 'document' || format === 'carousel'
+          format === "document" || format === "carousel"
             ? await linkedInPdfRef.current?.generatePdf()
-            : null
+            : null;
 
         await exportLinkedInPackage({
           content: result.content,
           format,
           pdfBlob: pdfBlob ?? null,
-        })
+          imageMetadata: selectedImage ? {
+            url: selectedImage.url,
+            photographer: selectedImage.photographer,
+            overlay: overlayConfig
+          } : null
+        });
 
         if (pdfBlob && result.post_id) {
           const exportMetadata = {
             ...(isRecord(result.export_metadata) ? result.export_metadata : {}),
             pdf_generated: true,
-          }
+          };
 
           await supabase
-            .from('posts')
+            .from("posts")
             .update({ export_metadata: exportMetadata })
-            .eq('id', result.post_id)
+            .eq("id", result.post_id);
 
           updateGeneratedResult(platform, (current) => ({
             ...current,
             export_metadata: exportMetadata,
-          }))
+          }));
         }
       } else {
         exportXPackage({
           content: result.content,
           format,
           idea: result.raw,
-        })
+          imageMetadata: selectedImage ? {
+            url: selectedImage.url,
+            photographer: selectedImage.photographer,
+            overlay: overlayConfig
+          } : null
+        });
       }
 
-      await recordExport(postId, platform, format)
-      setToastMessage(`${getExportActionLabel(platform)} listo.`)
+      await recordExport(postId, platform, format);
+      setToastMessage(`${getExportActionLabel(platform)} listo.`);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'No fue posible exportar el contenido')
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "No fue posible exportar el contenido",
+      );
     } finally {
-      setExportingPlatform(null)
+      setExportingPlatform(null);
     }
-  }
+  };
 
   const handleSingleTweetEdit = (value: string) => {
-    updateGeneratedResult('x', (result) => {
+    updateGeneratedResult("x", (result) => {
       const nextContent = {
         ...result.content,
         char_count: value.length,
         tweet: value,
-      }
+      };
 
       return {
         ...result,
         content: nextContent,
-      }
-    })
-  }
+      };
+    });
+  };
 
   const handleThreadTweetEdit = (tweetNumber: number, value: string) => {
-    updateGeneratedResult('x', (result) => {
-      const tweets = readXThreadTweets(result.content.tweets ?? result.content.thread).map((tweet) =>
-        tweet.number === tweetNumber ? { ...tweet, char_count: value.length, content: value } : tweet
-      )
+    updateGeneratedResult("x", (result) => {
+      const tweets = readXThreadTweets(
+        result.content.tweets ?? result.content.thread,
+      ).map((tweet) =>
+        tweet.number === tweetNumber
+          ? { ...tweet, char_count: value.length, content: value }
+          : tweet,
+      );
 
       return {
         ...result,
@@ -1858,64 +2256,72 @@ export default function ComposePage() {
           ...result.content,
           tweets,
         },
-      }
-    })
-  }
+      };
+    });
+  };
 
   const handleRegenerateHook = async () => {
     if (!currentResult?.post_id) {
-      return
+      return;
     }
 
-    const tweets = readXThreadTweets(currentResult.content.tweets ?? currentResult.content.thread)
-    const currentHook = tweets[0]?.content ?? ''
+    const tweets = readXThreadTweets(
+      currentResult.content.tweets ?? currentResult.content.thread,
+    );
+    const currentHook = tweets[0]?.content ?? "";
 
     if (!currentHook) {
-      return
+      return;
     }
 
-    setRegeneratingHook(true)
+    setRegeneratingHook(true);
 
     try {
-      const response = await fetch('/api/x/regenerate-hook', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/x/regenerate-hook", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           current_hook: currentHook,
           thread_id: currentResult.post_id,
         }),
-      })
+      });
       const data = (await response.json()) as {
-        error?: string
-        hook_note?: string
-        hook_strength?: XHookStrength
-        tweets?: Array<{ char_count: number; content: string; number: number }>
-      }
+        error?: string;
+        hook_note?: string;
+        hook_strength?: XHookStrength;
+        tweets?: Array<{ char_count: number; content: string; number: number }>;
+      };
 
       if (!response.ok) {
-        throw new Error(data.error || 'No fue posible regenerar el hook')
+        throw new Error(data.error || "No fue posible regenerar el hook");
       }
 
-      updateGeneratedResult('x', (result) => ({
+      updateGeneratedResult("x", (result) => ({
         ...result,
         content: {
           ...result.content,
-          hook_note: data.hook_note ?? '',
-          hook_strength: data.hook_strength ?? 'strong',
+          hook_note: data.hook_note ?? "",
+          hook_strength: data.hook_strength ?? "strong",
           tweets: data.tweets ?? [],
         },
         export_metadata: {
           ...(isRecord(result.export_metadata) ? result.export_metadata : {}),
-          hook_strength: data.hook_strength ?? 'strong',
-          tweet_count: data.tweets?.length ?? readXThreadTweets(result.content.tweets).length,
+          hook_strength: data.hook_strength ?? "strong",
+          tweet_count:
+            data.tweets?.length ??
+            readXThreadTweets(result.content.tweets).length,
         },
-      }))
+      }));
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'No fue posible regenerar el hook')
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "No fue posible regenerar el hook",
+      );
     } finally {
-      setRegeneratingHook(false)
+      setRegeneratingHook(false);
     }
-  }
+  };
 
   const renderPlatformTabs = () => (
     <div className="flex flex-wrap gap-2">
@@ -1926,10 +2332,9 @@ export default function ComposePage() {
           onClick={() => setActivePlatform(platform)}
           className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm transition-colors ${
             activePlatform === platform
-              ? 'bg-white text-black'
-              : 'text-zinc-400 hover:text-white'
-          }`}
-        >
+              ? "bg-white text-black"
+              : "text-zinc-400 hover:text-white"
+          }`}>
           <PlatformIcon platform={platform} className="h-4 w-4" />
           {formatPlatformLabel(platform)}
         </button>
@@ -1938,12 +2343,16 @@ export default function ComposePage() {
   );
 
   const renderFormatSelector = () => {
-    const options = platformFormatOptions[activePlatform] as SocialFormatOption[]
-    const activeFormat = selectedFormats[activePlatform]
+    const options = platformFormatOptions[
+      activePlatform
+    ] as SocialFormatOption[];
+    const activeFormat = selectedFormats[activePlatform];
 
     return (
       <div className="space-y-3">
-        <p className="text-xs uppercase tracking-[0.24em] text-[#4E576A]">Formato</p>
+        <p className="text-xs uppercase tracking-[0.24em] text-[#4E576A]">
+          Formato
+        </p>
         <div className="flex flex-wrap gap-2">
           {options.map((option) => (
             <button
@@ -1952,10 +2361,9 @@ export default function ComposePage() {
               onClick={() => setFormatForPlatform(activePlatform, option.value)}
               className={`rounded-full px-4 py-2 text-sm transition-colors ${
                 activeFormat === option.value
-                  ? 'bg-white text-black'
-                  : 'border border-white/10 text-[#B5BDCA] hover:border-white/20 hover:text-white'
-              }`}
-            >
+                  ? "bg-white text-black"
+                  : "border border-white/10 text-[#B5BDCA] hover:border-white/20 hover:text-white"
+              }`}>
               {option.label}
             </button>
           ))}
@@ -1964,78 +2372,86 @@ export default function ComposePage() {
           {options.find((option) => option.value === activeFormat)?.description}
         </p>
       </div>
-    )
-  }
-
+    );
+  };
 
   const renderMarkdownParagraph = (line: string, key: string) => {
-    const chunks = line.split(/(\*\*.*?\*\*)/g)
+    const chunks = line.split(/(\*\*.*?\*\*)/g);
 
     return (
       <p key={key} className="text-base leading-8 text-[#D5DBE5]">
         {chunks.map((chunk, index) =>
-          chunk.startsWith('**') && chunk.endsWith('**') ? (
-            <strong key={`${key}-${index}`} className="font-semibold text-[#E0E5EB]">
+          chunk.startsWith("**") && chunk.endsWith("**") ? (
+            <strong
+              key={`${key}-${index}`}
+              className="font-semibold text-[#E0E5EB]">
               {chunk.slice(2, -2)}
             </strong>
           ) : (
             <span key={`${key}-${index}`}>{chunk}</span>
-          )
+          ),
         )}
       </p>
-    )
-  }
+    );
+  };
 
   const renderMarkdownBody = (body: string) => (
     <div className="space-y-5">
-      {body.split('\n').map((line, index) => {
-        const trimmed = line.trim()
+      {body.split("\n").map((line, index) => {
+        const trimmed = line.trim();
 
         if (!trimmed) {
-          return <div key={`spacer-${index}`} className="h-2" />
+          return <div key={`spacer-${index}`} className="h-2" />;
         }
 
-        if (trimmed.startsWith('## ')) {
+        if (trimmed.startsWith("## ")) {
           return (
             <h4
               key={`heading-${index}`}
               className="pt-2 text-2xl font-medium text-[#E0E5EB]"
-              style={{ fontFamily: 'var(--font-brand-display)' }}
-            >
-              {trimmed.replace(/^##\s+/, '')}
+              style={{ fontFamily: "var(--font-brand-display)" }}>
+              {trimmed.replace(/^##\s+/, "")}
             </h4>
-          )
+          );
         }
 
-        if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+        if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
           return (
             <div key={`bullet-${index}`} className="flex gap-3">
               <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[#462D6E]" />
-              {renderMarkdownParagraph(trimmed.slice(2), `bullet-text-${index}`)}
+              {renderMarkdownParagraph(
+                trimmed.slice(2),
+                `bullet-text-${index}`,
+              )}
             </div>
-          )
+          );
         }
 
-        return renderMarkdownParagraph(trimmed, `paragraph-${index}`)
+        return renderMarkdownParagraph(trimmed, `paragraph-${index}`);
       })}
     </div>
-  )
+  );
 
   const renderExportBar = (platform: Platform, result: GeneratedContent) => {
-    const format = inferPostFormat(platform, result.content, result.format)
-    const postId = result.post_id ?? savedPostIds[platform] ?? null
-    const stats = postId ? exportStatsByPostId[postId] : undefined
-    const isExporting = exportingPlatform === platform
+    const format = inferPostFormat(platform, result.content, result.format);
+    const postId = result.post_id ?? savedPostIds[platform] ?? null;
+    const stats = postId ? exportStatsByPostId[postId] : undefined;
+    const isExporting = exportingPlatform === platform;
 
     return (
       <div className="rounded-[28px] border border-white/10 bg-[#171B22] p-5">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="text-lg font-medium text-[#E0E5EB]">Listo para publicar</p>
+            <p className="text-lg font-medium text-[#E0E5EB]">
+              Listo para publicar
+            </p>
             <p className="mt-2 text-sm text-[#8D95A6]">
               Exportado {stats?.count ?? 0} veces
-              {'  '}
-              Ultima exportacion: {stats?.lastExportedAt ? new Date(stats.lastExportedAt).toLocaleString() : '—'}
+              {"  "}
+              Ultima exportacion:{" "}
+              {stats?.lastExportedAt
+                ? new Date(stats.lastExportedAt).toLocaleString()
+                : "—"}
             </p>
           </div>
 
@@ -2044,16 +2460,18 @@ export default function ComposePage() {
               type="button"
               onClick={() => void handleExport(platform)}
               disabled={isExporting}
-              className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-60"
-            >
-              {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-60">
+              {isExporting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
               {getExportActionLabel(platform)}
             </button>
             <button
               type="button"
               onClick={() => void handleCopyCaption(platform)}
-              className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5"
-            >
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5">
               <Copy className="h-4 w-4" />
               Copiar caption
             </button>
@@ -2063,22 +2481,31 @@ export default function ComposePage() {
           </div>
         </div>
       </div>
-    )
-  }
+    );
+  };
 
-  const renderPostContentBody = (platform: Platform, result: GeneratedContent) => {
-    const format = inferPostFormat(platform, result.content, result.format)
-    const content = result.content
-    const hashtags = ensureHashtags(readStringArray(content.hashtags))
+  const renderPostContentBody = (
+    platform: Platform,
+    result: GeneratedContent,
+  ) => {
+    const format = inferPostFormat(platform, result.content, result.format);
+    const content = result.content;
+    const hashtags = ensureHashtags(readStringArray(content.hashtags));
 
-    if (platform === 'instagram' && format === 'carousel') {
-      const slides = readInstagramSlides(content.slides)
+    if (platform === "instagram" && format === "carousel") {
+      const slides = readInstagramSlides(content.slides);
+      const { editedSlides, slideBackgrounds } = getCarouselEditorMeta(result);
 
       return (
         <div className="space-y-5">
           <InstagramCarouselPreview
+            angle={readString(result.angle)}
+            editedSlides={editedSlides}
+            initialBackgrounds={slideBackgrounds}
             slides={slides}
-            onSearchUnsplash={(query) => openVisualSearch(query)}
+            onOpenDetailEditor={(activeIndex) =>
+              openCarouselEditor(activeIndex)
+            }
             onBackgroundChange={(backgrounds) => {
               setGeneratedResults((prev) => {
                 const r = prev[platform];
@@ -2089,50 +2516,107 @@ export default function ComposePage() {
                     ...r,
                     export_metadata: {
                       ...r.export_metadata,
+                      edited_carousel_slides: [],
                       slide_backgrounds: backgrounds,
-                    }
-                  }
-                }
+                    },
+                  },
+                };
               });
             }}
           />
           <div className="rounded-[24px] border border-white/10 bg-[#101417] p-4 text-sm leading-7 text-[#E0E5EB]">
             <p className="whitespace-pre-wrap">{readString(content.caption)}</p>
-            {hashtags.length > 0 ? <p className="mt-4 text-[#8D95A6]">{joinHashtags(hashtags)}</p> : null}
+            {hashtags.length > 0 ? (
+              <p className="mt-4 text-[#8D95A6]">{joinHashtags(hashtags)}</p>
+            ) : null}
           </div>
         </div>
-      )
+      );
     }
 
-    if (platform === 'instagram') {
+    if (platform === "instagram") {
       return (
         <div className="space-y-5">
+          {selectedImage ? (
+            <div className="relative aspect-square w-full overflow-hidden rounded-[24px] border border-white/10 bg-[#101417]">
+              <img src={selectedImage.url} alt="" className="h-full w-full object-cover" />
+              {overlayConfig?.dimming && (
+                <div className="absolute inset-0 bg-black" style={{ opacity: overlayConfig.dimming }} />
+              )}
+              {overlayConfig?.text && (
+                <div className={cn(
+                  "absolute inset-0 flex p-6",
+                  overlayConfig.placement === 'top' ? "items-start" : 
+                  overlayConfig.placement === 'center' ? "items-center" : "items-end"
+                )}>
+                  <p className={cn(
+                    "w-full text-center font-bold tracking-tight",
+                    overlayConfig.textSize === 'S' ? "text-xl" :
+                    overlayConfig.textSize === 'M' ? "text-2xl" :
+                    overlayConfig.textSize === 'L' ? "text-3xl" : "text-4xl"
+                  )} style={{ color: overlayConfig.textColor }}>
+                    {overlayConfig.text}
+                  </p>
+                </div>
+              )}
+              <button 
+                onClick={removeImage}
+                className="absolute right-4 top-4 rounded-full bg-black/40 p-2 text-white/80 backdrop-blur-md hover:bg-black/60 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          ) : null}
           <div className="rounded-[24px] border border-white/10 bg-[#101417] p-4 text-sm leading-7 text-[#E0E5EB]">
             <p className="whitespace-pre-wrap">{readString(content.caption)}</p>
-            {hashtags.length > 0 ? <p className="mt-4 text-[#8D95A6]">{joinHashtags(hashtags)}</p> : null}
+            {hashtags.length > 0 ? (
+              <p className="mt-4 text-[#8D95A6]">{joinHashtags(hashtags)}</p>
+            ) : null}
           </div>
-          <div className="rounded-[24px] border border-white/10 bg-[#101417] p-4">
-            <div className="flex items-center gap-2">
-              <ImageIcon className="h-4 w-4 text-[#8D95A6]" />
-              <p className="text-sm font-medium text-[#E0E5EB]">Imagen sugerida</p>
-            </div>
-            <p className="mt-3 text-sm leading-6 text-[#B5BDCA]">{readString(content.visual_direction)}</p>
+          
+          {/* AI Tips Card */}
+          {!selectedImage && (
+            <ImageTipsCard 
+              brief={visualBrief} 
+              loading={briefLoading} 
+              onClick={() => setIsImageDrawerOpen(true)}
+            />
+          )}
+
+          {!selectedImage ? (
             <button
               type="button"
-              onClick={() => openVisualSearch(readString(content.visual_direction))}
-              className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5"
+              onClick={() => openVisualSearch(readString(content.visual_direction) || readString(content.caption))}
+              className="flex w-full items-center justify-center gap-2 rounded-[24px] border border-dashed border-white/10 py-8 text-sm text-[#8D95A6] transition-colors hover:border-white/20 hover:bg-white/5"
             >
-              Buscar en Unsplash
-              <ExternalLink className="h-4 w-4" />
+              <ImageIcon className="h-5 w-5" />
+              <span>Agregar imagen de Unsplash</span>
             </button>
-          </div>
+          ) : (
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setIsImageDrawerOpen(true)}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-white/10 py-3 text-xs font-bold text-[#E0E5EB] hover:bg-white/5"
+              >
+                Cambiar imagen
+              </button>
+              <button
+                type="button"
+                onClick={removeImage}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-white/10 py-3 text-xs font-bold text-red-500/80 hover:bg-red-500/5"
+              >
+                Quitar imagen
+              </button>
+            </div>
+          )}
         </div>
-      )
+      );
     }
 
-    if (platform === 'x' && format === 'tweet') {
-      const tweet = readString(content.tweet)
-      const charCount = tweet.length
+    if (platform === "x" && format === "tweet") {
+      const tweet = readString(content.tweet);
+      const charCount = tweet.length;
 
       return (
         <div className="space-y-4">
@@ -2143,26 +2627,30 @@ export default function ComposePage() {
               className="min-h-[160px] w-full resize-none bg-transparent text-sm leading-7 text-[#E0E5EB] focus:outline-none"
             />
             <div className="mt-3 flex justify-end">
-              <span className="text-xs font-medium" style={{ color: getXTweetColor(charCount) }}>
+              <span
+                className="text-xs font-medium"
+                style={{ color: getXTweetColor(charCount) }}>
                 {charCount} / 270
               </span>
             </div>
           </div>
         </div>
-      )
+      );
     }
 
-    if (platform === 'x' && format === 'thread') {
-      const tweets = readXThreadTweets(content.tweets ?? content.thread)
-      const hookStrength = (
-        readString(content.hook_strength) ||
-        readString(isRecord(result.export_metadata) ? result.export_metadata?.hook_strength : undefined)
-      ) as XHookStrength
-      const hookNote = readString(content.hook_note)
+    if (platform === "x" && format === "thread") {
+      const tweets = readXThreadTweets(content.tweets ?? content.thread);
+      const hookStrength = (readString(content.hook_strength) ||
+        readString(
+          isRecord(result.export_metadata)
+            ? result.export_metadata?.hook_strength
+            : undefined,
+        )) as XHookStrength;
+      const hookNote = readString(content.hook_note);
 
       return (
         <div className="space-y-4">
-          {(hookStrength === 'medium' || hookStrength === 'weak') && (
+          {(hookStrength === "medium" || hookStrength === "weak") && (
             <div className="rounded-[24px] border border-[#78350F] bg-[#78350F]/10 p-4">
               <p className="text-sm text-[#FCD34D]">
                 El hook podria ser mas fuerte. {hookNote}
@@ -2171,9 +2659,12 @@ export default function ComposePage() {
                 type="button"
                 onClick={() => void handleRegenerateHook()}
                 disabled={regeneratingHook}
-                className="mt-3 inline-flex items-center gap-2 rounded-full border border-[#FCD34D]/30 px-4 py-2 text-sm text-[#FCD34D] disabled:opacity-60"
-              >
-                {regeneratingHook ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
+                className="mt-3 inline-flex items-center gap-2 rounded-full border border-[#FCD34D]/30 px-4 py-2 text-sm text-[#FCD34D] disabled:opacity-60">
+                {regeneratingHook ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCcw className="h-4 w-4" />
+                )}
                 Regenerar solo el hook
               </button>
             </div>
@@ -2181,103 +2672,148 @@ export default function ComposePage() {
 
           <div className="space-y-3">
             {tweets.map((tweet: XThreadTweet) => (
-              <div key={`thread-${tweet.number}`} className="rounded-2xl border border-white/8 bg-[#101417] p-4">
+              <div
+                key={`thread-${tweet.number}`}
+                className="rounded-2xl border border-white/8 bg-[#101417] p-4">
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs uppercase tracking-[0.2em] text-[#4E576A]">Tweet {tweet.number}</p>
-                  <span className="text-xs" style={{ color: getXTweetColor(tweet.content.length) }}>
+                  <p className="text-xs uppercase tracking-[0.2em] text-[#4E576A]">
+                    Tweet {tweet.number}
+                  </p>
+                  <span
+                    className="text-xs"
+                    style={{ color: getXTweetColor(tweet.content.length) }}>
                     {tweet.content.length} / 270
                   </span>
                 </div>
                 <textarea
                   value={tweet.content}
-                  onChange={(event) => handleThreadTweetEdit(tweet.number, event.target.value)}
+                  onChange={(event) =>
+                    handleThreadTweetEdit(tweet.number, event.target.value)
+                  }
                   className="mt-3 min-h-[110px] w-full resize-none bg-transparent text-sm leading-7 text-[#E0E5EB] focus:outline-none"
                 />
               </div>
             ))}
           </div>
         </div>
-      )
+      );
     }
 
-    if (platform === 'x' && format === 'article') {
+    if (platform === "x" && format === "article") {
       return (
         <article className="rounded-[28px] border border-white/10 bg-[#101417] p-6">
           <div className="flex flex-wrap gap-2">
             <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-[#8D95A6]">
-              {String(content.word_count ?? '')} palabras
+              {String(content.word_count ?? "")} palabras
             </span>
             <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-[#8D95A6]">
-              {String(content.read_time_minutes ?? '')} min de lectura
+              {String(content.read_time_minutes ?? "")} min de lectura
             </span>
           </div>
           <p
             className="mt-5 text-3xl font-medium text-[#E0E5EB]"
-            style={{ fontFamily: 'var(--font-brand-display)' }}
-          >
+            style={{ fontFamily: "var(--font-brand-display)" }}>
             {readString(content.title)}
           </p>
-          <p className="mt-3 text-base leading-7 text-[#8D95A6]">{readString(content.subtitle)}</p>
-          <div className="mt-8">{renderMarkdownBody(readString(content.body))}</div>
+          <p className="mt-3 text-base leading-7 text-[#8D95A6]">
+            {readString(content.subtitle)}
+          </p>
+          <div className="mt-8">
+            {renderMarkdownBody(readString(content.body))}
+          </div>
         </article>
-      )
+      );
     }
 
-    if (platform === 'linkedin' && (format === 'document' || format === 'carousel')) {
-      const slides = readLinkedInSlides(content.slides)
+    if (
+      platform === "linkedin" &&
+      (format === "document" || format === "carousel")
+    ) {
+      const slides = readLinkedInSlides(content.slides);
 
       return (
         <div className="space-y-5">
           <div className="grid gap-3 md:grid-cols-2">
             {slides.map((slide) => (
-              <div key={`linkedin-slide-${slide.number}`} className="rounded-[24px] border border-white/10 bg-[#101417] p-4">
+              <div
+                key={`linkedin-slide-${slide.number}`}
+                className="rounded-[24px] border border-white/10 bg-[#101417] p-4">
                 <div className="flex items-center justify-between gap-3">
                   <span className="rounded-full bg-white/5 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-[#B5BDCA]">
                     {slide.type}
                   </span>
-                  <span className="text-xs text-[#4E576A]">{slide.number}/{slides.length}</span>
+                  <span className="text-xs text-[#4E576A]">
+                    {slide.number}/{slides.length}
+                  </span>
                 </div>
                 <div className="mt-4 space-y-3">
                   {slide.title ? (
-                    <p className="text-xl font-medium text-[#E0E5EB]" style={{ fontFamily: 'var(--font-brand-display)' }}>
+                    <p
+                      className="text-xl font-medium text-[#E0E5EB]"
+                      style={{ fontFamily: "var(--font-brand-display)" }}>
                       {slide.title}
                     </p>
                   ) : null}
-                  {slide.subtitle ? <p className="text-sm leading-6 text-[#8D95A6]">{slide.subtitle}</p> : null}
+                  {slide.subtitle ? (
+                    <p className="text-sm leading-6 text-[#8D95A6]">
+                      {slide.subtitle}
+                    </p>
+                  ) : null}
                   {slide.headline ? (
-                    <p className="text-lg font-medium text-[#E0E5EB]" style={{ fontFamily: 'var(--font-brand-display)' }}>
+                    <p
+                      className="text-lg font-medium text-[#E0E5EB]"
+                      style={{ fontFamily: "var(--font-brand-display)" }}>
                       {slide.headline}
                     </p>
                   ) : null}
-                  {slide.content ? <p className="text-sm leading-6 text-[#D5DBE5]">{slide.content}</p> : null}
+                  {slide.content ? (
+                    <p className="text-sm leading-6 text-[#D5DBE5]">
+                      {slide.content}
+                    </p>
+                  ) : null}
                   {slide.stat_or_example ? (
                     <div className="rounded-2xl border-l-4 border-[#462D6E] bg-[#212631] px-4 py-3 text-sm leading-6 text-[#E0E5EB]">
                       {slide.stat_or_example}
                     </div>
                   ) : null}
-                  {slide.message ? <p className="text-base text-[#E0E5EB]">{slide.message}</p> : null}
-                  {slide.handle ? <p className="text-sm text-[#D3C2F1]">{slide.handle}</p> : null}
+                  {slide.message ? (
+                    <p className="text-base text-[#E0E5EB]">{slide.message}</p>
+                  ) : null}
+                  {slide.handle ? (
+                    <p className="text-sm text-[#D3C2F1]">{slide.handle}</p>
+                  ) : null}
                 </div>
               </div>
             ))}
           </div>
           <div className="rounded-[24px] border border-white/10 bg-[#101417] p-4">
-            <p className="text-xs uppercase tracking-[0.24em] text-[#4E576A]">Caption del post</p>
-            <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-[#E0E5EB]">{readString(content.post_caption)}</p>
-            {hashtags.length > 0 ? <p className="mt-4 text-[#8D95A6]">{joinHashtags(hashtags)}</p> : null}
+            <p className="text-xs uppercase tracking-[0.24em] text-[#4E576A]">
+              Caption del post
+            </p>
+            <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-[#E0E5EB]">
+              {readString(content.post_caption)}
+            </p>
+            {hashtags.length > 0 ? (
+              <p className="mt-4 text-[#8D95A6]">{joinHashtags(hashtags)}</p>
+            ) : null}
           </div>
-          <LinkedInPdfGenerator ref={linkedInPdfRef} slides={slides as LinkedInCarouselSlide[]} />
+          <LinkedInPdfGenerator
+            ref={linkedInPdfRef}
+            slides={slides as LinkedInCarouselSlide[]}
+          />
         </div>
-      )
+      );
     }
 
-    const caption = readString(content.caption)
-    const exportReadTime = isRecord(result.export_metadata) ? result.export_metadata.read_time_minutes : undefined
+    const caption = readString(content.caption);
+    const exportReadTime = isRecord(result.export_metadata)
+      ? result.export_metadata.read_time_minutes
+      : undefined;
     const readTime =
-      typeof exportReadTime === 'number'
+      typeof exportReadTime === "number"
         ? exportReadTime
-        : estimateReadTime(caption)
-    const showImageShortcut = platform === 'linkedin' && format === 'image'
+        : estimateReadTime(caption);
+    const showImageShortcut = platform === "linkedin" && format === "image";
 
     return (
       <div className="space-y-4">
@@ -2285,48 +2821,78 @@ export default function ComposePage() {
           <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-[#8D95A6]">
             {readTime} min de lectura
           </span>
-          {platform === 'linkedin' ? (
+          {platform === "linkedin" ? (
             <button
               type="button"
               onClick={() => setShowLinkedInPreview((current) => !current)}
-              className="rounded-full border border-white/10 px-3 py-1 text-xs text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5"
-            >
-              {showLinkedInPreview ? 'Ocultar vista previa LinkedIn' : 'Vista previa LinkedIn'}
+              className="rounded-full border border-white/10 px-3 py-1 text-xs text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5">
+              {showLinkedInPreview
+                ? "Ocultar vista previa LinkedIn"
+                : "Vista previa LinkedIn"}
             </button>
           ) : null}
         </div>
 
         <div className="rounded-[24px] border border-white/10 bg-[#101417] p-4 text-sm leading-7 text-[#E0E5EB]">
-          {platform === 'linkedin' && showLinkedInPreview ? (
+          {platform === "linkedin" && showLinkedInPreview ? (
             <div className="rounded-[24px] border border-white/10 bg-[#212631] p-5">
               <p className="whitespace-pre-wrap">{caption}</p>
             </div>
           ) : (
             <p className="whitespace-pre-wrap">{caption}</p>
           )}
-          {hashtags.length > 0 ? <p className="mt-4 text-[#8D95A6]">{joinHashtags(hashtags)}</p> : null}
+          {hashtags.length > 0 ? (
+            <p className="mt-4 text-[#8D95A6]">{joinHashtags(hashtags)}</p>
+          ) : null}
         </div>
 
-        {showImageShortcut ? (
-          <div className="rounded-[24px] border border-white/10 bg-[#101417] p-4">
-            <div className="flex items-center gap-2">
-              <ImageIcon className="h-4 w-4 text-[#8D95A6]" />
-              <p className="text-sm font-medium text-[#E0E5EB]">Imagen sugerida</p>
-            </div>
-            <p className="mt-3 text-sm leading-6 text-[#B5BDCA]">{readString(content.visual_direction)}</p>
-            <button
-              type="button"
-              onClick={() => openVisualSearch(readString(content.visual_direction))}
-              className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5"
-            >
-              Buscar imagen
-              <ExternalLink className="h-4 w-4" />
-            </button>
+        {showImageShortcut && (
+          <div className="space-y-4">
+            {!selectedImage && (
+              <ImageTipsCard 
+                brief={visualBrief} 
+                loading={briefLoading} 
+                onClick={() => setIsImageDrawerOpen(true)}
+              />
+            )}
+            
+            {!selectedImage ? (
+              <div className="rounded-[24px] border border-white/10 bg-[#101417] p-4">
+                <div className="flex items-center gap-2">
+                  <ImageIcon className="h-4 w-4 text-[#8D95A6]" />
+                  <p className="text-sm font-medium text-[#E0E5EB]">
+                    Imagen sugerida
+                  </p>
+                </div>
+                <p className="mt-3 text-sm leading-6 text-[#B5BDCA]">
+                  {readString(content.visual_direction) || "Generando sugerencia visual..."}
+                </p>
+                <button
+                  type="button"
+                  onClick={() =>
+                    openVisualSearch(readString(content.visual_direction) || caption)
+                  }
+                  className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5">
+                  Buscar imagen
+                  <ExternalLink className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <div className="relative aspect-video w-full overflow-hidden rounded-[24px] border border-white/10 bg-[#101417]">
+                <img src={selectedImage.url} alt="" className="h-full w-full object-cover" />
+                <button 
+                  onClick={removeImage}
+                  className="absolute right-4 top-4 rounded-full bg-black/40 p-2 text-white/80 backdrop-blur-md hover:bg-black/60 hover:text-white"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
           </div>
-        ) : null}
+        )}
       </div>
-    )
-  }
+    );
+  };
 
   const renderGeneratedContent = (platform: Platform) => {
     const result = generatedResults[platform];
@@ -2334,7 +2900,8 @@ export default function ComposePage() {
     if (!result) {
       return (
         <div className="rounded-[28px] border border-dashed border-[#4E576A] p-6 text-sm leading-6 text-[#8D95A6]">
-          Todavía no hay contenido generado para {formatPlatformLabel(platform)}.
+          Todavía no hay contenido generado para {formatPlatformLabel(platform)}
+          .
         </div>
       );
     }
@@ -2353,9 +2920,14 @@ export default function ComposePage() {
               )}
               <div className="flex flex-wrap items-center gap-2">
                 <PlatformBadge platform={platform} />
-                <p className="text-xs uppercase tracking-[0.24em] text-[#4E576A]">{result.angle}</p>
+                <p className="text-xs uppercase tracking-[0.24em] text-[#4E576A]">
+                  {result.angle}
+                </p>
                 <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] text-[#C9D0DB]">
-                  {getFormatLabel(platform, inferPostFormat(platform, result.content, result.format))}
+                  {getFormatLabel(
+                    platform,
+                    inferPostFormat(platform, result.content, result.format),
+                  )}
                 </span>
                 {currentQuickGeneratedOutput?.stanceUsed && (
                   <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] text-[#C9D0DB]">
@@ -2365,8 +2937,7 @@ export default function ComposePage() {
               </div>
               <p
                 className="mt-2 text-2xl font-medium text-[#E0E5EB]"
-                style={{ fontFamily: 'var(--font-brand-display)' }}
-              >
+                style={{ fontFamily: "var(--font-brand-display)" }}>
                 Resultado listo para editar o guardar
               </p>
             </div>
@@ -2376,35 +2947,45 @@ export default function ComposePage() {
             <button
               type="button"
               onClick={() => handleEditGeneratedContent(platform)}
-              className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5"
-            >
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5">
               <PenSquare className="h-4 w-4" />
               Editar
             </button>
             <button
               type="button"
               onClick={() => void copyResult(platform)}
-              className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5"
-            >
-              {isCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-              {isCopied ? 'Copiado' : 'Copiar'}
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5">
+              {isCopied ? (
+                <Check className="h-4 w-4" />
+              ) : (
+                <Copy className="h-4 w-4" />
+              )}
+              {isCopied ? "Copiado" : "Copiar"}
             </button>
             <button
               type="button"
               onClick={() => void saveAsDraft(platform)}
               disabled={savingDraft || Boolean(savedPostIds[platform])}
-              className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5 disabled:opacity-60"
-            >
-              {savingDraft ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              {savedPostIds[platform] ? 'Borrador guardado' : 'Guardar borrador'}
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5 disabled:opacity-60">
+              {savingDraft ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              {savedPostIds[platform]
+                ? "Borrador guardado"
+                : "Guardar borrador"}
             </button>
             <button
               type="button"
               onClick={() => void handleScheduleDraft(platform)}
               disabled={savingDraft}
-              className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5 disabled:opacity-60"
-            >
-              {savingDraft ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarDays className="h-4 w-4" />}
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5 disabled:opacity-60">
+              {savingDraft ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CalendarDays className="h-4 w-4" />
+              )}
               Agendar
             </button>
           </div>
@@ -2412,7 +2993,9 @@ export default function ComposePage() {
           <div className="mt-5">{renderPostContentBody(platform, result)}</div>
 
           {currentQuickGeneratedOutput?.note && (
-            <p className="mt-4 text-xs text-[#4E576A]">{currentQuickGeneratedOutput.note}</p>
+            <p className="mt-4 text-xs text-[#4E576A]">
+              {currentQuickGeneratedOutput.note}
+            </p>
           )}
 
           <div className="mt-6 flex flex-wrap gap-2">
@@ -2420,9 +3003,12 @@ export default function ComposePage() {
               type="button"
               onClick={() => void adaptToOtherPlatforms()}
               disabled={adapting}
-              className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] disabled:opacity-60"
-            >
-              {adapting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] disabled:opacity-60">
+              {adapting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCcw className="h-4 w-4" />
+              )}
               Adaptar a otras plataformas
             </button>
           </div>
@@ -2434,23 +3020,30 @@ export default function ComposePage() {
           <PostFeedback postId={savedPostIds[platform]!} />
         ) : (
           <div className="rounded-[28px] border border-dashed border-[#4E576A] p-5 text-sm leading-6 text-[#8D95A6]">
-            Guarda este resultado como borrador para activar feedback y seguimiento.
+            Guarda este resultado como borrador para activar feedback y
+            seguimiento.
           </div>
         )}
       </div>
     );
   };
 
-  const shouldShowGeneratedOutput = !quickActionOutput || quickActionOutput.kind === 'generated';
+  const shouldShowGeneratedOutput =
+    !quickActionOutput || quickActionOutput.kind === "generated";
   const visibleGeneratedPlatforms = shouldShowGeneratedOutput
     ? currentQuickGeneratedOutput
-      ? currentQuickGeneratedOutput.platformOrder.filter((platform) => Boolean(generatedResults[platform]))
+      ? currentQuickGeneratedOutput.platformOrder.filter((platform) =>
+          Boolean(generatedResults[platform]),
+        )
       : platforms.filter((platform) => Boolean(generatedResults[platform]))
     : [];
   const activeFaqPost =
-    quickActionOutput?.kind === 'faq' ? quickActionOutput.posts[faqActiveIndex] ?? null : null;
+    quickActionOutput?.kind === "faq"
+      ? (quickActionOutput.posts[faqActiveIndex] ?? null)
+      : null;
   const hasOutputPanel =
-    Boolean(quickActionOutput) || Object.values(generatedResults).some((value) => Boolean(value));
+    Boolean(quickActionOutput) ||
+    Object.values(generatedResults).some((value) => Boolean(value));
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 space-y-6 pb-8 duration-300">
@@ -2458,24 +3051,25 @@ export default function ComposePage() {
         <div className="space-y-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div className="space-y-2">
-              <p className="text-xs uppercase tracking-[0.28em] text-[#4E576A]">Compose</p>
+              <p className="text-xs uppercase tracking-[0.28em] text-[#4E576A]">
+                Compose
+              </p>
               <h1
                 className="text-4xl font-medium text-[#E0E5EB]"
-                style={{ fontFamily: 'var(--font-brand-display)' }}
-              >
+                style={{ fontFamily: "var(--font-brand-display)" }}>
                 Crea con contexto, no solo con prompts.
               </h1>
               <p className="max-w-2xl text-sm leading-7 text-[#8D95A6]">
-                Entra por exploración si necesitas orientación, por desarrollo si ya tienes
-                una intuición, o por directo si vienes con la pieza casi resuelta.
+                Entra por exploración si necesitas orientación, por desarrollo
+                si ya tienes una intuición, o por directo si vienes con la pieza
+                casi resuelta.
               </p>
             </div>
             {mode && (
               <button
                 type="button"
                 onClick={() => setMode(null)}
-                className="inline-flex shrink-0 items-center gap-2 self-start rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-all duration-300 hover:border-white/30 hover:bg-white/5"
-              >
+                className="inline-flex shrink-0 items-center gap-2 self-start rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-all duration-300 hover:border-white/30 hover:bg-white/5">
                 <RefreshCcw className="h-4 w-4" />
                 Cambiar modo
               </button>
@@ -2493,29 +3087,32 @@ export default function ComposePage() {
                     key={card.key}
                     className={`rounded-[24px] border p-4 transition-all duration-300 ${
                       isActive
-                        ? 'border-[#E0E5EB]/35 bg-[#2A3040]/85 shadow-[0_0_30px_rgba(224,229,235,0.08)]'
-                        : 'border-white/8 bg-[#101417]/55'
-                    }`}
-                  >
+                        ? "border-[#E0E5EB]/35 bg-[#2A3040]/85 shadow-[0_0_30px_rgba(224,229,235,0.08)]"
+                        : "border-white/8 bg-[#101417]/55"
+                    }`}>
                     <div className="flex items-center justify-between gap-3">
                       <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5">
-                        <Icon className={`h-4 w-4 ${isActive ? 'text-[#E0E5EB]' : 'text-[#8D95A6]'}`} />
+                        <Icon
+                          className={`h-4 w-4 ${isActive ? "text-[#E0E5EB]" : "text-[#8D95A6]"}`}
+                        />
                       </div>
                       <span
                         className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.22em] ${
-                          isActive ? 'bg-white/10 text-[#E0E5EB]' : 'bg-white/5 text-[#4E576A]'
-                        }`}
-                      >
+                          isActive
+                            ? "bg-white/10 text-[#E0E5EB]"
+                            : "bg-white/5 text-[#4E576A]"
+                        }`}>
                         {card.stepLabel}
                       </span>
                     </div>
                     <p
-                      className={`mt-5 text-lg font-medium ${isActive ? 'text-[#E0E5EB]' : 'text-[#B5BDCA]'}`}
-                      style={{ fontFamily: 'var(--font-brand-display)' }}
-                    >
+                      className={`mt-5 text-lg font-medium ${isActive ? "text-[#E0E5EB]" : "text-[#B5BDCA]"}`}
+                      style={{ fontFamily: "var(--font-brand-display)" }}>
                       {card.label}
                     </p>
-                    <p className="mt-2 text-sm leading-6 text-[#8D95A6]">{card.eyebrow}</p>
+                    <p className="mt-2 text-sm leading-6 text-[#8D95A6]">
+                      {card.eyebrow}
+                    </p>
                   </div>
                 );
               })}
@@ -2530,18 +3127,44 @@ export default function ComposePage() {
             <p className="text-[12px] font-medium uppercase tracking-[0.24em] text-[#4E576A]">
               Acciones rápidas
             </p>
-            <p className="mt-1 text-[11px] text-[#4E576A]">Genera contenido con un clic</p>
+            <p className="mt-1 text-[11px] text-[#4E576A]">
+              Genera contenido con un clic
+            </p>
           </div>
 
           <div className="md:grid md:grid-cols-3 md:gap-3">
             <div className="flex gap-3 overflow-x-auto pb-2 md:contents">
               {[
-                { key: 'plan' as const, icon: Calendar, label: 'Planear contenido' },
-                { key: 'repurpose' as const, icon: RefreshCw, label: 'Repurpose' },
-                { key: 'viral' as const, icon: TrendingUp, label: 'Qué está viral' },
-                { key: 'caseStudy' as const, icon: Briefcase, label: 'Caso de estudio' },
-                { key: 'thoughtLeadership' as const, icon: Lightbulb, label: 'Thought leadership' },
-                { key: 'faq' as const, icon: MessageCircle, label: 'FAQ de clientes' },
+                {
+                  key: "plan" as const,
+                  icon: Calendar,
+                  label: "Planear contenido",
+                },
+                {
+                  key: "repurpose" as const,
+                  icon: RefreshCw,
+                  label: "Repurpose",
+                },
+                {
+                  key: "viral" as const,
+                  icon: TrendingUp,
+                  label: "Qué está viral",
+                },
+                {
+                  key: "caseStudy" as const,
+                  icon: Briefcase,
+                  label: "Caso de estudio",
+                },
+                {
+                  key: "thoughtLeadership" as const,
+                  icon: Lightbulb,
+                  label: "Thought leadership",
+                },
+                {
+                  key: "faq" as const,
+                  icon: MessageCircle,
+                  label: "FAQ de clientes",
+                },
               ].map((chip) => {
                 const Icon = chip.icon;
                 const isRunning = runningQuickAction === chip.key;
@@ -2555,17 +3178,16 @@ export default function ComposePage() {
                     disabled={isRunning}
                     className={`flex min-w-[160px] shrink-0 items-center gap-2 rounded-[10px] border px-4 py-3 text-left transition-all md:min-w-0 ${
                       isOpen || isRunning
-                        ? 'border-[#E0E5EB] bg-[#1A1F28] opacity-70'
-                        : 'border-[#2A3040] bg-[#212631] hover:border-[#4E576A] hover:bg-[#1A1F28]'
-                    }`}
-                  >
+                        ? "border-[#E0E5EB] bg-[#1A1F28] opacity-70"
+                        : "border-[#2A3040] bg-[#212631] hover:border-[#4E576A] hover:bg-[#1A1F28]"
+                    }`}>
                     {isRunning ? (
                       <span className="h-4 w-4 rounded-full border-2 border-[#4E576A] border-t-[#E0E5EB] animate-spin" />
                     ) : (
                       <Icon className="h-4 w-4 text-[#E0E5EB]" />
                     )}
                     <span className="text-[13px] font-medium text-[#E0E5EB]">
-                      {isRunning ? 'Generando...' : chip.label}
+                      {isRunning ? "Generando..." : chip.label}
                     </span>
                   </button>
                 );
@@ -2578,22 +3200,30 @@ export default function ComposePage() {
               <motion.div
                 key={openQuickAction}
                 initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
+                animate={{ height: "auto", opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.2, ease: 'easeOut' }}
-                className="overflow-hidden"
-              >
+                transition={{ duration: 0.2, ease: "easeOut" }}
+                className="overflow-hidden">
                 <div className="rounded-[24px] border border-white/10 bg-[#101417]/80 p-4 sm:p-5">
-                  {openQuickAction === 'plan' && (
+                  {openQuickAction === "plan" && (
                     <div className="space-y-4">
                       <label className="grid gap-2">
-                        <span className="text-sm text-[#E0E5EB]">¿Cuántos días quieres planear?</span>
+                        <span className="text-sm text-[#E0E5EB]">
+                          ¿Cuántos días quieres planear?
+                        </span>
                         <input
                           type="number"
                           min={3}
                           max={30}
                           value={planDays}
-                          onChange={(event) => setPlanDays(Math.min(30, Math.max(3, Number(event.target.value) || 7)))}
+                          onChange={(event) =>
+                            setPlanDays(
+                              Math.min(
+                                30,
+                                Math.max(3, Number(event.target.value) || 7),
+                              ),
+                            )
+                          }
                           className="w-full rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB] focus:outline-none focus:ring-2 focus:ring-white/10"
                         />
                       </label>
@@ -2610,16 +3240,17 @@ export default function ComposePage() {
                                 onClick={() =>
                                   setPlanPlatforms((current) =>
                                     isSelected
-                                      ? current.filter((item) => item !== platform)
-                                      : [...current, platform]
+                                      ? current.filter(
+                                          (item) => item !== platform,
+                                        )
+                                      : [...current, platform],
                                   )
                                 }
                                 className={`rounded-full px-4 py-2 text-sm transition-colors ${
                                   isSelected
-                                    ? 'bg-white text-black'
-                                    : 'border border-white/10 text-[#B5BDCA] hover:border-white/20 hover:text-white'
-                                }`}
-                              >
+                                    ? "bg-white text-black"
+                                    : "border border-white/10 text-[#B5BDCA] hover:border-white/20 hover:text-white"
+                                }`}>
                                 {formatPlatformLabel(platform)}
                               </button>
                             );
@@ -2629,25 +3260,29 @@ export default function ComposePage() {
                       <button
                         type="button"
                         onClick={() => void runPlanQuickAction()}
-                        disabled={planPlatforms.length === 0 || runningQuickAction === 'plan'}
-                        className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-50"
-                      >
+                        disabled={
+                          planPlatforms.length === 0 ||
+                          runningQuickAction === "plan"
+                        }
+                        className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-50">
                         Generar plan
                         <MoveRight className="h-4 w-4" />
                       </button>
                     </div>
                   )}
 
-                  {openQuickAction === 'repurpose' && (
+                  {openQuickAction === "repurpose" && (
                     <div className="space-y-4">
                       {repurposePostsLoading ? (
                         <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-[#171B22] px-4 py-4 text-sm text-[#B5BDCA]">
                           <span className="h-4 w-4 rounded-full border-2 border-[#4E576A] border-t-[#E0E5EB] animate-spin" />
                           Cargando tus posts recientes...
                         </div>
-                      ) : repurposePostsLoaded && repurposePosts.length === 0 ? (
+                      ) : repurposePostsLoaded &&
+                        repurposePosts.length === 0 ? (
                         <div className="rounded-2xl border border-white/10 bg-[#171B22] px-4 py-4 text-sm text-[#B5BDCA]">
-                          Aún no tienes posts guardados. Genera tu primer post primero.
+                          Aún no tienes posts guardados. Genera tu primer post
+                          primero.
                         </div>
                       ) : (
                         <>
@@ -2656,8 +3291,10 @@ export default function ComposePage() {
                               <div className="flex flex-wrap items-center gap-2">
                                 <PlatformBadge
                                   platform={
-                                    repurposePosts.find((post) => post.id === selectedRepurposePostId)?.platform ??
-                                    'linkedin'
+                                    repurposePosts.find(
+                                      (post) =>
+                                        post.id === selectedRepurposePostId,
+                                    )?.platform ?? "linkedin"
                                   }
                                 />
                                 <span className="text-xs uppercase tracking-[0.22em] text-[#4E576A]">
@@ -2666,30 +3303,47 @@ export default function ComposePage() {
                               </div>
                               <p className="mt-3 text-sm leading-6 text-[#E0E5EB]">
                                 {getContentPreview(
-                                  repurposePosts.find((post) => post.id === selectedRepurposePostId)?.platform ?? 'linkedin',
+                                  repurposePosts.find(
+                                    (post) =>
+                                      post.id === selectedRepurposePostId,
+                                  )?.platform ?? "linkedin",
                                   getDefaultFormat(
-                                    repurposePosts.find((post) => post.id === selectedRepurposePostId)?.platform ?? 'linkedin'
+                                    repurposePosts.find(
+                                      (post) =>
+                                        post.id === selectedRepurposePostId,
+                                    )?.platform ?? "linkedin",
                                   ),
-                                  repurposePosts.find((post) => post.id === selectedRepurposePostId)?.content ?? null
+                                  repurposePosts.find(
+                                    (post) =>
+                                      post.id === selectedRepurposePostId,
+                                  )?.content ?? null,
                                 )}
                               </p>
                               <div className="mt-4 flex flex-wrap gap-2">
                                 <button
                                   type="button"
                                   onClick={() => void runRepurposeQuickAction()}
-                                  className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-black"
-                                >
+                                  className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-black">
                                   Sí, adaptar
                                   <MoveRight className="h-4 w-4" />
                                 </button>
                                 <select
                                   value={selectedRepurposePostId}
-                                  onChange={(event) => setSelectedRepurposePostId(event.target.value)}
-                                  className="rounded-full border border-white/10 bg-[#101417] px-4 py-2 text-sm text-[#E0E5EB] focus:outline-none"
-                                >
+                                  onChange={(event) =>
+                                    setSelectedRepurposePostId(
+                                      event.target.value,
+                                    )
+                                  }
+                                  className="rounded-full border border-white/10 bg-[#101417] px-4 py-2 text-sm text-[#E0E5EB] focus:outline-none">
                                   {repurposePosts.map((post) => (
                                     <option key={post.id} value={post.id}>
-                                      {formatPlatformLabel(post.platform)} · {getContentPreview(post.platform, getDefaultFormat(post.platform), post.content, 55)}
+                                      {formatPlatformLabel(post.platform)} ·{" "}
+                                      {getContentPreview(
+                                        post.platform,
+                                        getDefaultFormat(post.platform),
+                                        post.content,
+                                        55,
+                                      )}
                                     </option>
                                   ))}
                                 </select>
@@ -2701,7 +3355,7 @@ export default function ComposePage() {
                     </div>
                   )}
 
-                  {openQuickAction === 'viral' && (
+                  {openQuickAction === "viral" && (
                     <div className="space-y-4">
                       <div className="flex flex-wrap gap-2">
                         {platforms.map((platform) => (
@@ -2711,10 +3365,9 @@ export default function ComposePage() {
                             onClick={() => setViralPlatform(platform)}
                             className={`rounded-full px-4 py-2 text-sm transition-colors ${
                               viralPlatform === platform
-                                ? 'bg-white text-black'
-                                : 'border border-white/10 text-[#B5BDCA] hover:border-white/20 hover:text-white'
-                            }`}
-                          >
+                                ? "bg-white text-black"
+                                : "border border-white/10 text-[#B5BDCA] hover:border-white/20 hover:text-white"
+                            }`}>
                             {formatPlatformLabel(platform)}
                           </button>
                         ))}
@@ -2722,33 +3375,38 @@ export default function ComposePage() {
                       <button
                         type="button"
                         onClick={() => void runViralQuickAction()}
-                        className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-black"
-                      >
+                        className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-black">
                         Buscar tendencias
                         <MoveRight className="h-4 w-4" />
                       </button>
                     </div>
                   )}
 
-                  {openQuickAction === 'caseStudy' && (
+                  {openQuickAction === "caseStudy" && (
                     <div className="grid gap-4">
                       <input
                         type="text"
                         value={caseStudyClient}
-                        onChange={(event) => setCaseStudyClient(event.target.value)}
+                        onChange={(event) =>
+                          setCaseStudyClient(event.target.value)
+                        }
                         placeholder="Cliente o proyecto — ej. Valtru Interiorismo"
                         className="rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB] placeholder:text-[#667085] focus:outline-none"
                       />
                       <input
                         type="text"
                         value={caseStudyService}
-                        onChange={(event) => setCaseStudyService(event.target.value)}
+                        onChange={(event) =>
+                          setCaseStudyService(event.target.value)
+                        }
                         placeholder="Servicio entregado — ej. Sitio web + SEO"
                         className="rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB] placeholder:text-[#667085] focus:outline-none"
                       />
                       <textarea
                         value={caseStudyResult}
-                        onChange={(event) => setCaseStudyResult(event.target.value)}
+                        onChange={(event) =>
+                          setCaseStudyResult(event.target.value)
+                        }
                         placeholder="Resultado concreto — ej. Aumentó visitas orgánicas 3x en 2 meses"
                         className="min-h-[110px] rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB] placeholder:text-[#667085] focus:outline-none"
                       />
@@ -2760,10 +3418,9 @@ export default function ComposePage() {
                             onClick={() => setCaseStudyPlatform(platform)}
                             className={`rounded-full px-4 py-2 text-sm transition-colors ${
                               caseStudyPlatform === platform
-                                ? 'bg-white text-black'
-                                : 'border border-white/10 text-[#B5BDCA] hover:border-white/20 hover:text-white'
-                            }`}
-                          >
+                                ? "bg-white text-black"
+                                : "border border-white/10 text-[#B5BDCA] hover:border-white/20 hover:text-white"
+                            }`}>
                             {formatPlatformLabel(platform)}
                           </button>
                         ))}
@@ -2771,21 +3428,26 @@ export default function ComposePage() {
                       <button
                         type="button"
                         onClick={() => void runCaseStudyQuickAction()}
-                        disabled={!caseStudyClient.trim() || !caseStudyService.trim() || !caseStudyResult.trim()}
-                        className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-50"
-                      >
+                        disabled={
+                          !caseStudyClient.trim() ||
+                          !caseStudyService.trim() ||
+                          !caseStudyResult.trim()
+                        }
+                        className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-50">
                         Generar caso de estudio
                         <MoveRight className="h-4 w-4" />
                       </button>
                     </div>
                   )}
 
-                  {openQuickAction === 'thoughtLeadership' && (
+                  {openQuickAction === "thoughtLeadership" && (
                     <div className="grid gap-4">
                       <input
                         type="text"
                         value={thoughtLeadershipTopic}
-                        onChange={(event) => setThoughtLeadershipTopic(event.target.value)}
+                        onChange={(event) =>
+                          setThoughtLeadershipTopic(event.target.value)
+                        }
                         placeholder="Tema o área — ej. IA en agencias, SEO en 2026, diseño web en México"
                         className="rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB] placeholder:text-[#667085] focus:outline-none"
                       />
@@ -2793,7 +3455,9 @@ export default function ComposePage() {
                         <input
                           type="text"
                           value={thoughtLeadershipStance}
-                          onChange={(event) => setThoughtLeadershipStance(event.target.value)}
+                          onChange={(event) =>
+                            setThoughtLeadershipStance(event.target.value)
+                          }
                           placeholder="Tu postura (opcional) — ej. La mayoría lo hace mal porque..."
                           className="w-full rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB] placeholder:text-[#667085] focus:outline-none"
                         />
@@ -2806,13 +3470,14 @@ export default function ComposePage() {
                           <button
                             key={platform}
                             type="button"
-                            onClick={() => setThoughtLeadershipPlatform(platform)}
+                            onClick={() =>
+                              setThoughtLeadershipPlatform(platform)
+                            }
                             className={`rounded-full px-4 py-2 text-sm transition-colors ${
                               thoughtLeadershipPlatform === platform
-                                ? 'bg-white text-black'
-                                : 'border border-white/10 text-[#B5BDCA] hover:border-white/20 hover:text-white'
-                            }`}
-                          >
+                                ? "bg-white text-black"
+                                : "border border-white/10 text-[#B5BDCA] hover:border-white/20 hover:text-white"
+                            }`}>
                             {formatPlatformLabel(platform)}
                           </button>
                         ))}
@@ -2821,24 +3486,27 @@ export default function ComposePage() {
                         type="button"
                         onClick={() => void runThoughtLeadershipQuickAction()}
                         disabled={!thoughtLeadershipTopic.trim()}
-                        className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-50"
-                      >
+                        className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-50">
                         Generar opinión
                         <MoveRight className="h-4 w-4" />
                       </button>
                     </div>
                   )}
 
-                  {openQuickAction === 'faq' && (
+                  {openQuickAction === "faq" && (
                     <div className="grid gap-4">
                       <div className="space-y-2">
                         <textarea
                           value={faqQuestions}
-                          onChange={(event) => setFaqQuestions(event.target.value)}
+                          onChange={(event) =>
+                            setFaqQuestions(event.target.value)
+                          }
                           placeholder="¿Qué te preguntan tus clientes? Pega varias preguntas, una por línea"
                           className="min-h-[140px] w-full rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB] placeholder:text-[#667085] focus:outline-none"
                         />
-                        <p className="text-xs text-[#4E576A]">Pega varias preguntas, una por línea</p>
+                        <p className="text-xs text-[#4E576A]">
+                          Pega varias preguntas, una por línea
+                        </p>
                       </div>
                       <div className="flex flex-wrap gap-2">
                         {platforms.map((platform) => (
@@ -2848,22 +3516,30 @@ export default function ComposePage() {
                             onClick={() => setFaqPlatform(platform)}
                             className={`rounded-full px-4 py-2 text-sm transition-colors ${
                               faqPlatform === platform
-                                ? 'bg-white text-black'
-                                : 'border border-white/10 text-[#B5BDCA] hover:border-white/20 hover:text-white'
-                            }`}
-                          >
+                                ? "bg-white text-black"
+                                : "border border-white/10 text-[#B5BDCA] hover:border-white/20 hover:text-white"
+                            }`}>
                             {formatPlatformLabel(platform)}
                           </button>
                         ))}
                       </div>
                       <label className="grid gap-2">
-                        <span className="text-sm text-[#E0E5EB]">¿Cuántos posts?</span>
+                        <span className="text-sm text-[#E0E5EB]">
+                          ¿Cuántos posts?
+                        </span>
                         <input
                           type="number"
                           min={1}
                           max={5}
                           value={faqCount}
-                          onChange={(event) => setFaqCount(Math.min(5, Math.max(1, Number(event.target.value) || 3)))}
+                          onChange={(event) =>
+                            setFaqCount(
+                              Math.min(
+                                5,
+                                Math.max(1, Number(event.target.value) || 3),
+                              ),
+                            )
+                          }
                           className="w-full rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB] focus:outline-none"
                         />
                       </label>
@@ -2871,8 +3547,7 @@ export default function ComposePage() {
                         type="button"
                         onClick={() => void runFaqQuickAction()}
                         disabled={!faqQuestions.trim()}
-                        className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-50"
-                      >
+                        className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-50">
                         Convertir en contenido
                         <MoveRight className="h-4 w-4" />
                       </button>
@@ -2894,23 +3569,23 @@ export default function ComposePage() {
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -12 }}
-            transition={{ duration: 0.3, ease: 'easeOut' }}
-            className="grid gap-4 transition-all duration-300 lg:grid-cols-3"
-          >
+            transition={{ duration: 0.3, ease: "easeOut" }}
+            className="grid gap-4 transition-all duration-300 lg:grid-cols-3">
             {modeCards.map((card) => (
               <button
                 key={card.key}
                 type="button"
                 onClick={() => enterMode(card.key)}
-                className="group relative overflow-hidden rounded-[32px] border border-white/10 bg-[#212631]/55 p-6 text-left transition-all duration-300 hover:-translate-y-1 hover:border-[#E0E5EB]/55 hover:bg-[#2A3040]/82 hover:shadow-[0_18px_45px_rgba(0,0,0,0.24)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E0E5EB]/30"
-              >
+                className="group relative overflow-hidden rounded-[32px] border border-white/10 bg-[#212631]/55 p-6 text-left transition-all duration-300 hover:-translate-y-1 hover:border-[#E0E5EB]/55 hover:bg-[#2A3040]/82 hover:shadow-[0_18px_45px_rgba(0,0,0,0.24)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E0E5EB]/30">
                 <div className="pointer-events-none absolute inset-0 rounded-[32px] opacity-0 transition-all duration-300 group-hover:opacity-100 group-focus-visible:opacity-100">
                   <div className="absolute inset-[1px] rounded-[31px] border border-[#E0E5EB]/45 shadow-[0_0_0_1px_rgba(224,229,235,0.14),0_0_36px_rgba(224,229,235,0.16)]" />
                 </div>
 
                 <div className="relative">
                   <div className="flex items-start justify-between gap-4">
-                    <p className="text-xs uppercase tracking-[0.24em] text-[#4E576A]">{card.eyebrow}</p>
+                    <p className="text-xs uppercase tracking-[0.24em] text-[#4E576A]">
+                      {card.eyebrow}
+                    </p>
                     <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-[#B5BDCA] transition-all duration-300 group-hover:border-white/20 group-hover:bg-white/10 group-hover:text-white">
                       {card.stepLabel}
                     </span>
@@ -2918,8 +3593,7 @@ export default function ComposePage() {
 
                   <p
                     className="mt-8 text-3xl font-medium text-[#E0E5EB]"
-                    style={{ fontFamily: 'var(--font-brand-display)' }}
-                  >
+                    style={{ fontFamily: "var(--font-brand-display)" }}>
                     {card.title}
                   </p>
                   <p className="mt-4 text-sm leading-6 text-[#8D95A6] transition-colors duration-300 group-hover:text-[#C8D0DB]">
@@ -2939,9 +3613,8 @@ export default function ComposePage() {
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -12 }}
-            transition={{ duration: 0.3, ease: 'easeOut' }}
-            className="space-y-6 transition-all duration-300"
-          >
+            transition={{ duration: 0.3, ease: "easeOut" }}
+            className="space-y-6 transition-all duration-300">
             <section className="rounded-[32px] border border-white/10 bg-[#212631]/50 p-5 transition-all duration-300 sm:p-6">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
@@ -2949,32 +3622,36 @@ export default function ComposePage() {
                     <button
                       type="button"
                       onClick={() => setMode(null)}
-                      className="transition-colors hover:text-white"
-                    >
+                      className="transition-colors hover:text-white">
                       Crear
                     </button>
                     <ChevronRight className="h-3.5 w-3.5 text-[#4E576A]" />
                     <span className="text-[#E0E5EB]">
-                      {mode === 'explore' ? 'Explorar' : mode === 'idea' ? 'Desarrollar' : 'Directo'}
+                      {mode === "explore"
+                        ? "Explorar"
+                        : mode === "idea"
+                          ? "Desarrollar"
+                          : "Directo"}
                     </span>
                   </div>
-                  <p className="mt-4 text-xs uppercase tracking-[0.24em] text-[#4E576A]">Plataforma</p>
+                  <p className="mt-4 text-xs uppercase tracking-[0.24em] text-[#4E576A]">
+                    Plataforma
+                  </p>
                   <h2
                     className="mt-2 text-2xl font-medium text-[#E0E5EB]"
-                    style={{ fontFamily: 'var(--font-brand-display)' }}
-                  >
-                    {mode === 'explore'
-                      ? 'Encuentra una dirección'
-                      : mode === 'idea'
-                        ? 'Desarrolla una idea'
-                        : 'Escribe con precisión'}
+                    style={{ fontFamily: "var(--font-brand-display)" }}>
+                    {mode === "explore"
+                      ? "Encuentra una dirección"
+                      : mode === "idea"
+                        ? "Desarrolla una idea"
+                        : "Escribe con precisión"}
                   </h2>
                   <p className="mt-2 max-w-2xl text-sm leading-6 text-[#8D95A6]">
-                    {mode === 'explore'
-                      ? 'Elige plataforma y deja que la IA te proponga tres rutas concretas.'
-                      : mode === 'idea'
-                        ? 'Parte de una intuición y conviértela en una pieza lista para salir.'
-                        : 'Control total: plataforma, ángulo e idea visibles desde el inicio.'}
+                    {mode === "explore"
+                      ? "Elige plataforma y deja que la IA te proponga tres rutas concretas."
+                      : mode === "idea"
+                        ? "Parte de una intuición y conviértela en una pieza lista para salir."
+                        : "Control total: plataforma, ángulo e idea visibles desde el inicio."}
                   </p>
                 </div>
               </div>
@@ -2983,78 +3660,104 @@ export default function ComposePage() {
                 {renderPlatformTabs()}
                 {renderFormatSelector()}
 
-                {activePlatform === 'instagram' && selectedFormats.instagram === 'carousel' && (
-                  <div className="grid gap-4 rounded-[24px] border border-white/10 bg-[#101417] p-4 md:grid-cols-3">
-                    <label className="grid gap-2">
-                      <span className="text-sm text-[#E0E5EB]">¿Cuantos slides?</span>
-                      <input
-                        type="number"
-                        min={3}
-                        max={10}
-                        value={instagramSlideCount}
-                        onChange={(event) =>
-                          setInstagramSlideCount(Math.min(10, Math.max(3, Number(event.target.value) || 5)))
-                        }
-                        className="w-full rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB] focus:outline-none"
-                      />
-                    </label>
-                    <label className="flex items-center justify-between rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB]">
-                      <span>Incluir slide de portada</span>
-                      <input
-                        type="checkbox"
-                        checked={instagramIncludeCover}
-                        onChange={(event) => setInstagramIncludeCover(event.target.checked)}
-                        className="h-4 w-4 accent-white"
-                      />
-                    </label>
-                    <label className="flex items-center justify-between rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB]">
-                      <span>Incluir slide de CTA final</span>
-                      <input
-                        type="checkbox"
-                        checked={instagramIncludeCta}
-                        onChange={(event) => setInstagramIncludeCta(event.target.checked)}
-                        className="h-4 w-4 accent-white"
-                      />
-                    </label>
-                  </div>
-                )}
+                {activePlatform === "instagram" &&
+                  selectedFormats.instagram === "carousel" && (
+                    <div className="grid gap-4 rounded-[24px] border border-white/10 bg-[#101417] p-4 md:grid-cols-3">
+                      <label className="grid gap-2">
+                        <span className="text-sm text-[#E0E5EB]">
+                          ¿Cuantos slides?
+                        </span>
+                        <input
+                          type="number"
+                          min={3}
+                          max={10}
+                          value={instagramSlideCount}
+                          onChange={(event) =>
+                            setInstagramSlideCount(
+                              Math.min(
+                                10,
+                                Math.max(3, Number(event.target.value) || 5),
+                              ),
+                            )
+                          }
+                          className="w-full rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB] focus:outline-none"
+                        />
+                      </label>
+                      <label className="flex items-center justify-between rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB]">
+                        <span>Incluir slide de portada</span>
+                        <input
+                          type="checkbox"
+                          checked={instagramIncludeCover}
+                          onChange={(event) =>
+                            setInstagramIncludeCover(event.target.checked)
+                          }
+                          className="h-4 w-4 accent-white"
+                        />
+                      </label>
+                      <label className="flex items-center justify-between rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB]">
+                        <span>Incluir slide de CTA final</span>
+                        <input
+                          type="checkbox"
+                          checked={instagramIncludeCta}
+                          onChange={(event) =>
+                            setInstagramIncludeCta(event.target.checked)
+                          }
+                          className="h-4 w-4 accent-white"
+                        />
+                      </label>
+                    </div>
+                  )}
 
-                {activePlatform === 'linkedin' && (selectedFormats.linkedin === 'document' || selectedFormats.linkedin === 'carousel') && (
-                  <div className="grid gap-4 rounded-[24px] border border-white/10 bg-[#101417] p-4 md:max-w-sm">
-                    <label className="grid gap-2">
-                      <span className="text-sm text-[#E0E5EB]">¿Cuantas paginas?</span>
-                      <input
-                        type="number"
-                        min={5}
-                        max={15}
-                        value={linkedinSlideCount}
-                        onChange={(event) =>
-                          setLinkedinSlideCount(Math.min(15, Math.max(5, Number(event.target.value) || 8)))
-                        }
-                        className="w-full rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB] focus:outline-none"
-                      />
-                    </label>
-                  </div>
-                )}
+                {activePlatform === "linkedin" &&
+                  (selectedFormats.linkedin === "document" ||
+                    selectedFormats.linkedin === "carousel") && (
+                    <div className="grid gap-4 rounded-[24px] border border-white/10 bg-[#101417] p-4 md:max-w-sm">
+                      <label className="grid gap-2">
+                        <span className="text-sm text-[#E0E5EB]">
+                          ¿Cuantas paginas?
+                        </span>
+                        <input
+                          type="number"
+                          min={5}
+                          max={15}
+                          value={linkedinSlideCount}
+                          onChange={(event) =>
+                            setLinkedinSlideCount(
+                              Math.min(
+                                15,
+                                Math.max(5, Number(event.target.value) || 8),
+                              ),
+                            )
+                          }
+                          className="w-full rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB] focus:outline-none"
+                        />
+                      </label>
+                    </div>
+                  )}
 
-                {mode === 'explore' && (
+                {mode === "explore" && (
                   <div className="space-y-4">
                     <p className="max-w-2xl text-sm leading-6 text-[#8D95A6]">
-                      La IA propondrá tres ideas nuevas considerando tus borradores sin
-                      procesar y evitando repetir temas recientes.
+                      La IA propondrá tres ideas nuevas considerando tus
+                      borradores sin procesar y evitando repetir temas
+                      recientes.
                     </p>
                     <div className="flex flex-wrap gap-3">
                       <AIButton
                         onClick={() => void requestSuggestedIdeas()}
                         state={ideasButtonState}
                         disabled={suggestingIdeas}
-                        idleLabel={suggestedIdeas.length > 0 ? 'Sugerir otras 3' : 'Sugerir 3 ideas'}
+                        idleLabel={
+                          suggestedIdeas.length > 0
+                            ? "Sugerir otras 3"
+                            : "Sugerir 3 ideas"
+                        }
                         loadingPhases={[
-                          'Inicializando',
-                          'Analizando tu marca',
-                          'Identificando oportunidad',
-                          'Generando ideas',
-                          'Finalizando detalles',
+                          "Inicializando",
+                          "Analizando tu marca",
+                          "Identificando oportunidad",
+                          "Generando ideas",
+                          "Finalizando detalles",
                         ]}
                         successLabel="Ideas listas"
                         errorLabel="Reintentar ideas"
@@ -3069,26 +3772,33 @@ export default function ComposePage() {
                           <Sparkles className="h-6 w-6 text-[#E0E5EB]" />
                         </div>
                         <p className="max-w-md">
-                          Elige una plataforma y pide a la IA tres rutas para desbloquear qué
-                          publicar.
+                          Elige una plataforma y pide a la IA tres rutas para
+                          desbloquear qué publicar.
                         </p>
                       </div>
                     ) : (
                       <div
-                        key={suggestedIdeas.map((suggestedIdea) => getSuggestedIdeaKey(suggestedIdea)).join('|')}
-                        className="grid gap-4 animate-fadeIn lg:grid-cols-3"
-                      >
+                        key={suggestedIdeas
+                          .map((suggestedIdea) =>
+                            getSuggestedIdeaKey(suggestedIdea),
+                          )
+                          .join("|")}
+                        className="grid gap-4 animate-fadeIn lg:grid-cols-3">
                         {suggestedIdeas.map((suggestedIdea) => {
-                          const suggestionKey = getSuggestedIdeaKey(suggestedIdea);
-                          const isSaved = Boolean(savedSuggestedIdeaKeys[suggestionKey]);
-                          const isCopied = copiedSuggestedIdeaKey === suggestionKey;
-                          const isSaving = savingSuggestedIdeaKey === suggestionKey;
+                          const suggestionKey =
+                            getSuggestedIdeaKey(suggestedIdea);
+                          const isSaved = Boolean(
+                            savedSuggestedIdeaKeys[suggestionKey],
+                          );
+                          const isCopied =
+                            copiedSuggestedIdeaKey === suggestionKey;
+                          const isSaving =
+                            savingSuggestedIdeaKey === suggestionKey;
 
                           return (
                             <div
                               key={suggestionKey}
-                              className="rounded-[28px] border border-white/10 bg-[#101417] p-5 text-left transition-colors hover:border-[#E0E5EB]/40"
-                            >
+                              className="rounded-[28px] border border-white/10 bg-[#101417] p-5 text-left transition-colors hover:border-[#E0E5EB]/40">
                               <div className="flex items-start justify-between gap-3">
                                 <p className="text-xs uppercase tracking-[0.24em] text-[#4E576A]">
                                   {suggestedIdea.angle}
@@ -3096,35 +3806,49 @@ export default function ComposePage() {
                                 <div className="flex items-center gap-2">
                                   <button
                                     type="button"
-                                    onClick={() => void copySuggestedIdea(suggestedIdea)}
-                                    className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1.5 text-xs text-[#8D95A6] transition-colors hover:border-white/20 hover:text-white"
-                                  >
-                                    {isCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                                    {isCopied ? 'Copiado' : 'Copiar'}
+                                    onClick={() =>
+                                      void copySuggestedIdea(suggestedIdea)
+                                    }
+                                    className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1.5 text-xs text-[#8D95A6] transition-colors hover:border-white/20 hover:text-white">
+                                    {isCopied ? (
+                                      <Check className="h-3.5 w-3.5" />
+                                    ) : (
+                                      <Copy className="h-3.5 w-3.5" />
+                                    )}
+                                    {isCopied ? "Copiado" : "Copiar"}
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => void saveSuggestedIdea(suggestedIdea)}
+                                    onClick={() =>
+                                      void saveSuggestedIdea(suggestedIdea)
+                                    }
                                     disabled={isSaved || isSaving}
-                                    className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1.5 text-xs text-[#8D95A6] transition-colors hover:border-white/20 hover:text-white disabled:opacity-60"
-                                  >
-                                    {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                                    {isSaved ? 'Guardada' : 'Guardar como idea'}
+                                    className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1.5 text-xs text-[#8D95A6] transition-colors hover:border-white/20 hover:text-white disabled:opacity-60">
+                                    {isSaving ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <Save className="h-3.5 w-3.5" />
+                                    )}
+                                    {isSaved ? "Guardada" : "Guardar como idea"}
                                   </button>
                                 </div>
                               </div>
                               <button
                                 type="button"
-                                onClick={() => selectSuggestedIdea(suggestedIdea)}
-                                className="mt-3 block w-full text-left"
-                              >
+                                onClick={() =>
+                                  selectSuggestedIdea(suggestedIdea)
+                                }
+                                className="mt-3 block w-full text-left">
                                 <p
                                   className="text-xl font-medium text-[#E0E5EB]"
-                                  style={{ fontFamily: 'var(--font-brand-display)' }}
-                                >
+                                  style={{
+                                    fontFamily: "var(--font-brand-display)",
+                                  }}>
                                   {suggestedIdea.title}
                                 </p>
-                                <p className="mt-3 text-sm leading-6 text-[#E0E5EB]">{suggestedIdea.hook}</p>
+                                <p className="mt-3 text-sm leading-6 text-[#E0E5EB]">
+                                  {suggestedIdea.hook}
+                                </p>
                                 <p className="mt-4 inline-flex rounded-full bg-[#462D6E]/15 px-3 py-1 text-xs text-[#D3C2F1]">
                                   {suggestedIdea.why_now}
                                 </p>
@@ -3141,9 +3865,9 @@ export default function ComposePage() {
                   </div>
                 )}
 
-                {(mode === 'idea' || mode === 'direct') && (
+                {(mode === "idea" || mode === "direct") && (
                   <div className="space-y-5">
-                    {mode === 'idea' ? (
+                    {mode === "idea" ? (
                       <div className="space-y-4">
                         <div className="grid gap-2">
                           <span className="mb-2 text-xs font-semibold tracking-[0.28em] text-zinc-400">
@@ -3155,7 +3879,9 @@ export default function ComposePage() {
                               value={idea}
                               onChange={(event) => setIdea(event.target.value)}
                               maxLength={500}
-                              placeholder={ideaPlaceholders[ideaPlaceholderIndex]}
+                              placeholder={
+                                ideaPlaceholders[ideaPlaceholderIndex]
+                              }
                               className="min-h-[120px] w-full resize-none rounded-[28px] border border-white/10 bg-[#101417] px-4 py-4 pb-10 text-sm leading-7 text-[#E0E5EB] placeholder:text-[#667085] focus:outline-none focus:ring-2 focus:ring-[#E0E5EB]/10"
                             />
                             <div className="pointer-events-none absolute bottom-3 right-4 text-xs text-zinc-500">
@@ -3171,10 +3897,10 @@ export default function ComposePage() {
                             state={anglesButtonState}
                             idleLabel="Sugerir ángulos"
                             loadingPhases={[
-                              'Inicializando',
-                              'Analizando contexto',
-                              'Identificando ángulos',
-                              'Propuesta lista',
+                              "Inicializando",
+                              "Analizando contexto",
+                              "Identificando ángulos",
+                              "Propuesta lista",
                             ]}
                             successLabel="Ángulos listos"
                             errorLabel="Reintentar ángulos"
@@ -3187,11 +3913,11 @@ export default function ComposePage() {
                             state={generateButtonState}
                             idleLabel={generationActionLabel}
                             loadingPhases={[
-                              'Inicializando',
-                              'Identificando oportunidad',
-                              'Generando contenido',
-                              'Finalizando detalles',
-                              'Propuesta lista',
+                              "Inicializando",
+                              "Identificando oportunidad",
+                              "Generando contenido",
+                              "Finalizando detalles",
+                              "Propuesta lista",
                             ]}
                             successLabel="Contenido listo"
                             errorLabel="Reintentar generación"
@@ -3208,18 +3934,22 @@ export default function ComposePage() {
                                 onClick={() => setSelectedAngle(angle.type)}
                                 className={`rounded-[28px] border p-4 text-left transition-colors ${
                                   selectedAngle === angle.type
-                                    ? 'border-[#E0E5EB]/50 bg-[#101417]'
-                                    : 'border-white/10 bg-[#101417]/40 hover:border-white/20'
-                                }`}
-                              >
-                                <p className="text-xs uppercase tracking-[0.24em] text-[#4E576A]">{angle.type}</p>
+                                    ? "border-[#E0E5EB]/50 bg-[#101417]"
+                                    : "border-white/10 bg-[#101417]/40 hover:border-white/20"
+                                }`}>
+                                <p className="text-xs uppercase tracking-[0.24em] text-[#4E576A]">
+                                  {angle.type}
+                                </p>
                                 <p
                                   className="mt-3 text-lg font-medium text-[#E0E5EB]"
-                                  style={{ fontFamily: 'var(--font-brand-display)' }}
-                                >
+                                  style={{
+                                    fontFamily: "var(--font-brand-display)",
+                                  }}>
                                   {angle.hook}
                                 </p>
-                                <p className="mt-2 text-sm leading-6 text-[#8D95A6]">{angle.one_liner}</p>
+                                <p className="mt-2 text-sm leading-6 text-[#8D95A6]">
+                                  {angle.one_liner}
+                                </p>
                               </button>
                             ))}
                           </div>
@@ -3228,9 +3958,12 @@ export default function ComposePage() {
                     ) : (
                       <div className="space-y-3">
                         <div className="space-y-1.5">
-                          <p className="text-xs uppercase tracking-[0.24em] text-[#4E576A]">Ángulo</p>
+                          <p className="text-xs uppercase tracking-[0.24em] text-[#4E576A]">
+                            Ángulo
+                          </p>
                           <p className="text-xs leading-5 text-[#6F7786]">
-                            ¿No sabes qué elegir? Empieza con &apos;Opinión&apos; o &apos;Historia&apos;
+                            ¿No sabes qué elegir? Empieza con
+                            &apos;Opinión&apos; o &apos;Historia&apos;
                           </p>
                         </div>
                         <div className="flex flex-nowrap gap-2 overflow-x-auto pb-1">
@@ -3241,10 +3974,9 @@ export default function ComposePage() {
                               onClick={() => setSelectedAngle(angle)}
                               className={`shrink-0 cursor-pointer whitespace-nowrap rounded-full px-4 py-2 text-sm transition-all duration-200 ${
                                 selectedAngle === angle
-                                  ? 'bg-white font-medium text-black'
-                                  : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
-                              }`}
-                            >
+                                  ? "bg-white font-medium text-black"
+                                  : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+                              }`}>
                               {angle}
                             </button>
                           ))}
@@ -3259,7 +3991,9 @@ export default function ComposePage() {
                               value={idea}
                               onChange={(event) => setIdea(event.target.value)}
                               maxLength={500}
-                              placeholder={ideaPlaceholders[ideaPlaceholderIndex]}
+                              placeholder={
+                                ideaPlaceholders[ideaPlaceholderIndex]
+                              }
                               className="min-h-[120px] w-full resize-none overflow-hidden rounded-[28px] border border-white/10 bg-[#101417] px-4 py-4 pb-10 text-sm leading-7 text-[#E0E5EB] placeholder:text-[#667085] focus:outline-none focus:ring-2 focus:ring-[#E0E5EB]/10"
                             />
                             <div className="pointer-events-none absolute bottom-3 right-4 text-xs text-zinc-500">
@@ -3270,24 +4004,31 @@ export default function ComposePage() {
                         {renderPillarSelector()}
                         <div
                           className="inline-flex"
-                          title={!idea.trim() && !generating && !loadingIdea ? 'Escribe una idea primero' : undefined}
-                        >
+                          title={
+                            !idea.trim() && !generating && !loadingIdea
+                              ? "Escribe una idea primero"
+                              : undefined
+                          }>
                           <AIButton
                             onClick={() => void generateContent()}
                             disabled={!canGenerate}
                             state={generateButtonState}
                             idleLabel={generationActionLabel}
                             loadingPhases={[
-                              'Inicializando',
-                              'Identificando oportunidad',
-                              'Generando contenido',
-                              'Finalizando detalles',
-                              'Propuesta lista',
+                              "Inicializando",
+                              "Identificando oportunidad",
+                              "Generando contenido",
+                              "Finalizando detalles",
+                              "Propuesta lista",
                             ]}
                             successLabel="Contenido listo"
                             errorLabel="Reintentar generación"
                             icon={Sparkles}
-                            className={!canGenerate ? 'bg-white text-black opacity-40' : ''}
+                            className={
+                              !canGenerate
+                                ? "bg-white text-black opacity-40"
+                                : ""
+                            }
                           />
                         </div>
                       </div>
@@ -3302,14 +4043,13 @@ export default function ComposePage() {
                 )}
               </div>
             </section>
-
           </motion.div>
         )}
       </AnimatePresence>
 
       {hasOutputPanel && (
         <section ref={outputSectionRef} className="space-y-4">
-          {quickActionOutput?.kind === 'plan' && (
+          {quickActionOutput?.kind === "plan" && (
             <div className="rounded-[28px] border border-white/10 bg-[#212631]/55 p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -3318,8 +4058,7 @@ export default function ComposePage() {
                   </div>
                   <p
                     className="mt-3 text-2xl font-medium text-[#E0E5EB]"
-                    style={{ fontFamily: 'var(--font-brand-display)' }}
-                  >
+                    style={{ fontFamily: "var(--font-brand-display)" }}>
                     Plan listo para llevar al calendario
                   </p>
                 </div>
@@ -3327,11 +4066,12 @@ export default function ComposePage() {
                   type="button"
                   onClick={() =>
                     openCalendarForDay(
-                      Math.min(...quickActionOutput.plan.map((item) => item.day))
+                      Math.min(
+                        ...quickActionOutput.plan.map((item) => item.day),
+                      ),
                     )
                   }
-                  className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5"
-                >
+                  className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5">
                   Agregar todos
                   <CalendarDays className="h-4 w-4" />
                 </button>
@@ -3344,28 +4084,35 @@ export default function ComposePage() {
                     currentItems.push(item);
                     map.set(item.day, currentItems);
                     return map;
-                  }, new Map<number, QuickActionPlanItem[]>())
+                  }, new Map<number, QuickActionPlanItem[]>()),
                 ).map(([day, items]) => (
-                  <div key={day} className="rounded-[24px] border border-white/8 bg-[#101417] p-4">
+                  <div
+                    key={day}
+                    className="rounded-[24px] border border-white/8 bg-[#101417] p-4">
                     <div className="mb-4 inline-flex rounded-full bg-white/5 px-3 py-1 text-xs uppercase tracking-[0.22em] text-[#E0E5EB]">
                       Día {day}
                     </div>
                     <div className="space-y-3">
                       {items.map((item) => (
-                        <div key={item.savedIdeaId} className="rounded-2xl border border-white/8 bg-[#171B22] p-4">
+                        <div
+                          key={item.savedIdeaId}
+                          className="rounded-2xl border border-white/8 bg-[#171B22] p-4">
                           <div className="flex flex-wrap items-center gap-2">
                             <PlatformBadge platform={item.platform} />
                             <span className="rounded-full bg-white/5 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-[#B5BDCA]">
                               {item.angle}
                             </span>
                           </div>
-                          <p className="mt-3 text-sm leading-6 text-[#E0E5EB]">{item.hook}</p>
-                          <p className="mt-2 text-xs leading-5 text-[#8D95A6]">{item.why}</p>
+                          <p className="mt-3 text-sm leading-6 text-[#E0E5EB]">
+                            {item.hook}
+                          </p>
+                          <p className="mt-2 text-xs leading-5 text-[#8D95A6]">
+                            {item.why}
+                          </p>
                           <button
                             type="button"
                             onClick={() => openCalendarForDay(item.day)}
-                            className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5"
-                          >
+                            className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5">
                             Agregar al calendario
                             <CalendarDays className="h-4 w-4" />
                           </button>
@@ -3378,31 +4125,31 @@ export default function ComposePage() {
             </div>
           )}
 
-          {quickActionOutput?.kind === 'viral' && (
+          {quickActionOutput?.kind === "viral" && (
             <div className="rounded-[28px] border border-white/10 bg-[#212631]/55 p-5">
               <div className="inline-flex rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-[#E0E5EB]">
                 {quickActionOutput.sourceLabel}
               </div>
               <p
                 className="mt-3 text-2xl font-medium text-[#E0E5EB]"
-                style={{ fontFamily: 'var(--font-brand-display)' }}
-              >
+                style={{ fontFamily: "var(--font-brand-display)" }}>
                 Ideas para subirte a la conversación de hoy
               </p>
 
               <div className="mt-5 space-y-3">
                 {quickActionOutput.trends.map((trend) => (
-                  <div key={trend.savedIdeaId} className="rounded-[24px] border border-white/8 bg-[#101417] p-4">
+                  <div
+                    key={trend.savedIdeaId}
+                    className="rounded-[24px] border border-white/8 bg-[#101417] p-4">
                     <div className="flex flex-wrap items-center gap-2">
                       <span
                         className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em] ${
-                          trend.urgency === 'high'
-                            ? 'bg-[#7F1D1D] text-[#FCA5A5]'
-                            : trend.urgency === 'medium'
-                              ? 'bg-[#78350F] text-[#FCD34D]'
-                              : 'bg-[#1A3A2A] text-[#4ADE80]'
-                        }`}
-                      >
+                          trend.urgency === "high"
+                            ? "bg-[#7F1D1D] text-[#FCA5A5]"
+                            : trend.urgency === "medium"
+                              ? "bg-[#78350F] text-[#FCD34D]"
+                              : "bg-[#1A3A2A] text-[#4ADE80]"
+                        }`}>
                         {trend.urgency}
                       </span>
                       <PlatformBadge platform={trend.platform} />
@@ -3410,13 +4157,16 @@ export default function ComposePage() {
                         {trend.angle}
                       </span>
                     </div>
-                    <p className="mt-3 text-sm leading-6 text-[#B5BDCA]">{trend.trend_context}</p>
-                    <p className="mt-3 text-sm leading-6 text-[#E0E5EB]">{trend.hook}</p>
+                    <p className="mt-3 text-sm leading-6 text-[#B5BDCA]">
+                      {trend.trend_context}
+                    </p>
+                    <p className="mt-3 text-sm leading-6 text-[#E0E5EB]">
+                      {trend.hook}
+                    </p>
                     <button
                       type="button"
                       onClick={() => developTrend(trend)}
-                      className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5"
-                    >
+                      className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5">
                       Desarrollar este
                       <MoveRight className="h-4 w-4" />
                     </button>
@@ -3426,7 +4176,7 @@ export default function ComposePage() {
             </div>
           )}
 
-          {quickActionOutput?.kind === 'faq' && activeFaqPost && (
+          {quickActionOutput?.kind === "faq" && activeFaqPost && (
             <div className="space-y-4">
               <div className="rounded-[28px] border border-white/10 bg-[#212631]/55 p-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -3436,16 +4186,14 @@ export default function ComposePage() {
                     </div>
                     <p
                       className="mt-3 text-2xl font-medium text-[#E0E5EB]"
-                      style={{ fontFamily: 'var(--font-brand-display)' }}
-                    >
+                      style={{ fontFamily: "var(--font-brand-display)" }}>
                       FAQ convertidas en posts listos
                     </p>
                   </div>
                   <button
                     type="button"
                     disabled
-                    className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] opacity-70"
-                  >
+                    className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] opacity-70">
                     <Check className="h-4 w-4" />
                     Guardar todos como borrador
                   </button>
@@ -3459,10 +4207,9 @@ export default function ComposePage() {
                       onClick={() => setFaqActiveIndex(index)}
                       className={`rounded-full px-4 py-2 text-sm transition-colors ${
                         faqActiveIndex === index
-                          ? 'bg-white text-black'
-                          : 'text-[#8D95A6] hover:bg-white/5 hover:text-[#E0E5EB]'
-                      }`}
-                    >
+                          ? "bg-white text-black"
+                          : "text-[#8D95A6] hover:bg-white/5 hover:text-[#E0E5EB]"
+                      }`}>
                       Post {index + 1}
                     </button>
                   ))}
@@ -3477,7 +4224,7 @@ export default function ComposePage() {
                   </div>
                   <div className="mt-4">
                     {renderPostContentBody(activeFaqPost.platform, {
-                      angle: 'FAQ',
+                      angle: "FAQ",
                       content: activeFaqPost.content,
                       platform: activeFaqPost.platform,
                       raw: activeFaqPost.question_used,
@@ -3500,10 +4247,9 @@ export default function ComposePage() {
                     onClick={() => setActivePlatform(platform)}
                     className={`rounded-full px-4 py-2 text-sm transition-colors ${
                       platform === activePlatform
-                        ? 'bg-[#212631] text-[#E0E5EB]'
-                        : 'text-[#8D95A6] hover:bg-white/5 hover:text-[#E0E5EB]'
-                    }`}
-                  >
+                        ? "bg-[#212631] text-[#E0E5EB]"
+                        : "text-[#8D95A6] hover:bg-white/5 hover:text-[#E0E5EB]"
+                    }`}>
                     {formatPlatformLabel(platform)}
                   </button>
                 ))}
@@ -3516,14 +4262,75 @@ export default function ComposePage() {
       )}
 
       <AnimatePresence>
+        {isTemplateModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-6"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-[32px] border border-white/10 bg-[#0A0D0F] p-8 shadow-2xl"
+            >
+              <TemplateSelector
+                slideData={readInstagramSlides(generatedResults.instagram?.content.slides || [])[carouselEditorActiveIndex]}
+                currentSlideIndex={carouselEditorActiveIndex}
+                suggestedTemplateId={readInstagramSlides(generatedResults.instagram?.content.slides || [])[carouselEditorActiveIndex]?.suggested_template}
+                onSelect={(template, applyToAll) => {
+                  setPreSelectedTemplate(template);
+                  setApplyTemplateToAll(applyToAll || false);
+                  setIsTemplateModalOpen(false);
+                  setIsCarouselEditorOpen(true);
+                }}
+                onKeepCurrent={() => {
+                  setPreSelectedTemplate(null);
+                  setIsTemplateModalOpen(false);
+                  setIsCarouselEditorOpen(true);
+                }}
+              />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {isCarouselEditorOpen &&
+        (() => {
+          const editorPayload = getInstagramCarouselEditorPayload();
+
+          if (!editorPayload) {
+            return null;
+          }
+
+          return (
+            <FabricEditor
+              angle={editorPayload.angle}
+              initialActiveSlideIndex={carouselEditorActiveIndex}
+              initialBackgrounds={editorPayload.slideBackgrounds}
+              initialEditedSlides={editorPayload.editedSlides}
+              initialTemplate={preSelectedTemplate}
+              initialTemplateApplyToAll={applyTemplateToAll}
+              onClose={() => {
+                setIsCarouselEditorOpen(false);
+                setPreSelectedTemplate(null);
+                setApplyTemplateToAll(false);
+              }}
+              onSave={handleCarouselEditorSave}
+              slides={editorPayload.slides}
+            />
+          );
+        })()}
+
+      <AnimatePresence>
         {toastMessage && (
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 12 }}
-            transition={{ duration: 0.2, ease: 'easeOut' }}
-            className="fixed right-4 bottom-4 z-50 rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB] shadow-[0_12px_36px_rgba(0,0,0,0.32)]"
-          >
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="fixed right-4 bottom-4 z-50 rounded-2xl border border-white/10 bg-[#171B22] px-4 py-3 text-sm text-[#E0E5EB] shadow-[0_12px_36px_rgba(0,0,0,0.32)]">
             {toastMessage}
           </motion.div>
         )}
@@ -3534,22 +4341,23 @@ export default function ComposePage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <p className="text-sm text-[#E0E5EB]">
-                ¿Primera vez creando contenido para {formatPlatformLabel(activePlatform)}?
+                ¿Primera vez creando contenido para{" "}
+                {formatPlatformLabel(activePlatform)}?
               </p>
               <button
                 type="button"
                 onClick={() => setShowGuidancePanel((value) => !value)}
-                className="mt-2 inline-flex items-center gap-2 text-sm text-[#8D95A6] transition-colors duration-300 hover:text-white"
-              >
+                className="mt-2 inline-flex items-center gap-2 text-sm text-[#8D95A6] transition-colors duration-300 hover:text-white">
                 Te explico qué funciona mejor
-                <ArrowRight className={`h-4 w-4 transition-transform duration-300 ${showGuidancePanel ? 'rotate-90' : ''}`} />
+                <ArrowRight
+                  className={`h-4 w-4 transition-transform duration-300 ${showGuidancePanel ? "rotate-90" : ""}`}
+                />
               </button>
             </div>
             <button
               type="button"
               onClick={dismissAssistance}
-              className="text-xs text-zinc-500 transition-colors duration-300 hover:text-white"
-            >
+              className="text-xs text-zinc-500 transition-colors duration-300 hover:text-white">
               OCULTAR
             </button>
           </div>
@@ -3558,8 +4366,7 @@ export default function ComposePage() {
             <div className="mt-4 rounded-2xl border border-white/10 bg-[#101417] p-4">
               <p
                 className="text-lg font-medium text-[#E0E5EB]"
-                style={{ fontFamily: 'var(--font-brand-display)' }}
-              >
+                style={{ fontFamily: "var(--font-brand-display)" }}>
                 {currentGuidance.title}
               </p>
               <p className="mt-2 text-sm leading-6 text-[#8D95A6]">
@@ -3574,6 +4381,19 @@ export default function ComposePage() {
           )}
         </div>
       )}
+
+      {/* Image Drawer */}
+      <ImageDrawer 
+        isOpen={isImageDrawerOpen}
+        onClose={() => setIsImageDrawerOpen(false)}
+        onConfirm={handleImageConfirm}
+        postContent={{
+          platform: activePlatform,
+          angle: selectedAngle || "General",
+          caption: getCaptionText(activePlatform, inferPostFormat(activePlatform, generatedResults[activePlatform]?.content || {}, generatedResults[activePlatform]?.format || "tweet"), generatedResults[activePlatform]?.content || {}),
+          keywords: []
+        }}
+      />
     </div>
   );
 }

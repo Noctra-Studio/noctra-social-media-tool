@@ -1,4 +1,5 @@
 import type { Platform } from '@/lib/product'
+import { normalizeGradientConfig, type CarouselGradientConfig } from '@/lib/carousel-backgrounds'
 
 export type InstagramFormat = 'single' | 'carousel'
 export type XFormat = 'tweet' | 'thread' | 'article'
@@ -13,6 +14,7 @@ export type InstagramCarouselPost = {
 
 export type InstagramCarouselSlide = {
   body: string
+  color_suggestion: string | null
   design_note: string
   headline: string
   slide_number: number
@@ -23,6 +25,7 @@ export type InstagramCarouselSlide = {
   bg_reasoning: string
   unsplash_query: string | null
   gradient_style: 'brand_dark' | 'brand_navy' | 'brand_subtle' | null
+  suggested_template: string | null
 }
 
 export type XThreadTweet = {
@@ -48,6 +51,7 @@ export type LinkedInCarouselSlide = {
 export type SlideBackgroundSelection = {
   slide_number: number
   bg_type: 'image' | 'gradient' | 'solid'
+  gradient_config?: CarouselGradientConfig
   image_url?: string
   photographer?: string
   gradient_style?: string
@@ -222,12 +226,17 @@ export function readInstagramSlides(value: unknown): InstagramCarouselSlide[] {
       const stat_or_example = readOptionalString(item.stat_or_example)
       const bg_type = (readString(item.bg_type) as 'image' | 'gradient' | 'solid') || 'solid'
       const bg_reasoning = readString(item.bg_reasoning)
+      const color_suggestion = readOptionalString(item.color_suggestion)
       const unsplash_query = readOptionalString(item.unsplash_query)
+      const suggested_template = readOptionalString(item.suggested_template)
       const gradient_style = readOptionalString(item.gradient_style) as
         | 'brand_dark'
         | 'brand_navy'
         | 'brand_subtle'
         | null
+      const gradient_config = isRecord(item.gradient_config)
+        ? normalizeGradientConfig(item.gradient_config as Partial<CarouselGradientConfig>)
+        : undefined
 
       if (
         !body ||
@@ -240,18 +249,22 @@ export function readInstagramSlides(value: unknown): InstagramCarouselSlide[] {
         return null
       }
 
+      const slideType = type as InstagramCarouselSlide['type']
+
       return {
         body,
         design_note,
         headline,
         slide_number,
-        type,
+        type: slideType,
         visual_direction,
         stat_or_example,
         bg_type,
         bg_reasoning,
+        color_suggestion,
         unsplash_query,
-        gradient_style,
+        suggested_template,
+        gradient_style: gradient_config ? null : gradient_style,
       }
     })
     .filter((item): item is InstagramCarouselSlide => item !== null)
@@ -446,4 +459,60 @@ export function getXTweetColor(charCount: number) {
   }
 
   return '#4E576A'
+}
+
+export type BriefQuery = {
+  query: string
+  rationale: string
+  priority: 1 | 2 | 3
+}
+
+export type VisualBrief = {
+  queries: BriefQuery[]
+  visual_brief: {
+    mood: string
+    composition: string
+    color_palette: string
+    subject_matter: string
+    lighting: string
+    avoid: string[]
+  }
+  mood_category_id: string
+  ideal_image_description: string
+  why_it_works: string
+  per_slide_notes?: string
+}
+
+export type ScoredImage = {
+  unsplashId: string
+  url: string
+  thumbUrl: string
+  photographer: string
+  scores: {
+    total: number
+    mood: number
+    composition: number
+    color: number
+    subject: number
+  }
+  verdict: string
+  best_for: 'cover' | 'content' | 'cta' | 'any'
+  query_source: string
+}
+
+export type EfficacyReport = {
+  efficacy_score: number
+  grade: 'A+' | 'A' | 'B' | 'C' | 'D'
+  verdict: string
+  strengths: string[]
+  risks: string[]
+  optimization_tips: Array<{
+    tip: string
+    type: 'text' | 'overlay' | 'crop' | 'color' | 'placement'
+  }>
+  alternative_suggestion: {
+    should_reconsider: boolean
+    reason: string | null
+    better_query: string | null
+  }
 }

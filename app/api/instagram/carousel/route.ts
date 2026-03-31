@@ -116,17 +116,25 @@ Generate each slide with:
 - stat_or_example: (optional) a short case study, statistic, or example related to the headline to be highlighted in a separate box.
 - bg_type: 'image' | 'gradient' | 'solid'
 - bg_reasoning: string (1 sentence why this bg type fits)
-- unsplash_query: string | null (only when bg_type is 'image', specific terms like "dark minimal workspace")
-- gradient_style: 'brand_dark' | 'brand_navy' | 'brand_subtle' | null (only when bg_type is 'gradient')
+- unsplash_query: string | null (only when bg_type is 'image', specific terms like "editorial portrait", "startup team meeting", "minimal workspace")
+- color_suggestion: string | null
+- suggested_template: 'editorial' | 'bold-statement' | 'split' | 'list' | 'stat-hero' | 'minimal-quote'
 
-For each slide, recommend a background type based on content:
-- Use 'image' when: Slide type is 'cover' or 'cta', or content is narrative/human/case-study centric. Provide a specific unsplash_query for dark, minimal, editorial photography.
-- Use 'gradient' when: Content is technical, abstract (SEO, AI, automation), or data-driven.
-- Use 'solid' when: Slide has extensive text or a minimalist approach fits better.
+Suggest background type based on content and emotion:
 
-Also generate:
-- caption: full Instagram caption for the post (max 150 words, 5-8 hashtags)
-- hashtags: string[]
+- Use 'image' when content is narrative, human, or benefits from real-world visual context.
+- Use 'gradient' when you want to create mood or energy that pure color can't achieve alone.
+- Use 'solid' when typography is the hero.
+
+Suggest a layout template for each slide:
+- editorial     -> narrative content, case studies, general info
+- bold-statement -> cover slides with strong claims, CTA slides
+- split         -> content with strong visual contrast needed
+- list          -> 3-4 distinct points or steps
+- stat-hero     -> when a number is the main message
+- minimal-quote -> quotes, opinions, thought leadership
+
+Provide color_suggestion as either one HEX color for solid backgrounds or two HEX colors separated by a comma for gradients.
 
 Return ONLY valid JSON:
 {
@@ -141,7 +149,8 @@ Return ONLY valid JSON:
     "bg_type": "image",
     "bg_reasoning": "string",
     "unsplash_query": "string",
-    "gradient_style": "brand_dark"
+    "color_suggestion": "#0A1628,#1E3A5F",
+    "suggested_template": "editorial"
   }],
   "caption": "string",
   "hashtags": ["#tag"]
