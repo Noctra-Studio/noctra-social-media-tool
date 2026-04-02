@@ -32,7 +32,7 @@ import { makeTextOnArc, makeTextOnCircle } from '@/lib/editor/text-effects'
 import { ExportModal } from './export-modal'
 import { quickExportCurrentSlide } from '@/lib/editor/export'
 import { PreviewModal } from '@/components/editor/preview/preview-modal'
-import { exportCanvasUHD, UHD_PRESET } from '@/lib/editor/export-utils'
+import { exportCanvasUHD, UHD_PRESET, exportMultiPlatformZip } from '@/lib/editor/export-utils'
 import { ExportDialog } from '@/components/editor/export/export-dialog'
 import { CanvasToolbar } from '@/components/editor/canvas/canvas-toolbar'
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
@@ -359,8 +359,8 @@ function buildSlideCounter(slideNumber: number, totalSlides: number) {
   return `${String(slideNumber).padStart(2, '0')} / ${String(totalSlides).padStart(2, '0')}`
 }
 
-function createLogoURL(variant: 'light' | 'dark' = 'light') {
-  return `/brand/favicon-${variant}.svg`
+function createLogoURL(_variant: 'light' | 'dark' = 'light') {
+  return '/brand/noctra-icon.jpg'
 }
 
 function getLogoVariantForBackground(background: CarouselEditorBackground) {
@@ -591,7 +591,7 @@ async function initSlideFromData(args: {
       top: 1020,
       width: 120,
     })
-    const handle = new Textbox('noctra.studio', {
+    const handle = new Textbox('@noctra_studio', {
       fill: '#4E576A',
       fontFamily: '"Inter", system-ui, sans-serif',
       fontSize: 24,
@@ -719,7 +719,7 @@ async function initSlideFromData(args: {
       top: 608,
       width: 84,
     })
-    const handle = new Textbox('@NoctraStudio', {
+    const handle = new Textbox('@noctra_studio', {
       fill: '#462D6E',
       fontFamily: '"Inter", system-ui, sans-serif',
       fontSize: 30,
@@ -1065,28 +1065,6 @@ export function FabricEditor({
     }
   }, [activeFilterCSS, handleExportSuccess, platform, postId, previewFormat])
 
-  const handleDialogExport = useCallback(async (options: ExportOptions) => {
-    const canvas = canvasRef.current
-
-    if (!canvas) {
-      return
-    }
-
-    setIsDialogExporting(true)
-
-    try {
-      await exportCanvasUHD(canvas, options)
-
-      if (postId) {
-        await handleExportSuccess(postId, platform, options.format)
-      }
-
-      setIsExportDialogOpen(false)
-    } finally {
-      setIsDialogExporting(false)
-    }
-  }, [handleExportSuccess, platform, postId])
-
   const schedulePreviewRefresh = useCallback(
     (delay = 800) => {
       if (typeof window === 'undefined') {
@@ -1251,16 +1229,14 @@ export function FabricEditor({
     }
 
     const active = canvas.getActiveObject()
-
     if (!active || Boolean(active.get('isLocked'))) {
       return
     }
 
-    active.clone().then((cloned) => {
+    active.clone().then((cloned: FabricObject) => {
       canvas.discardActiveObject()
 
       cloned.set({
-        evented: true,
         left: (cloned.left ?? 0) + 20,
         top: (cloned.top ?? 0) + 20,
       })
@@ -1283,6 +1259,58 @@ export function FabricEditor({
       updateSelectedObject()
     })
   }, [commitCanvasMutation, updateSelectedObject])
+
+  const handleDialogExport = useCallback(async (options: ExportOptions) => {
+    const current = editorStateRef.current
+    if (!current) return
+    
+    setIsDialogExporting(true)
+
+    try {
+      // 1. Persist current slide state first
+      persistCurrentCanvas({ markDirty: false, refreshPreview: false })
+      // Use latest slides from the ref (updated by persistCurrentCanvas)
+      const slides = editorStateRef.current?.slides ?? current.slides
+      const netId = platform ?? 'social-post'
+
+      // 2. Render all slides offscreen
+      const offscreen = new StaticCanvas(undefined, { 
+        width: 1080, 
+        height: 1080,
+        enableRetinaScaling: false 
+      })
+      
+      const dataURLs: string[] = []
+
+      for (const slide of slides) {
+        if (!slide.fabricJSON) continue
+        
+        offscreen.clear()
+        await offscreen.loadFromJSON(slide.fabricJSON)
+        
+        const url = offscreen.toDataURL({
+          format: options.format,
+          quality: options.quality,
+          multiplier: options.multiplier
+        })
+        
+        dataURLs.push(url)
+      }
+
+      // 3. Generate ZIP with images and copy
+      await exportMultiPlatformZip(dataURLs, slides, netId)
+
+      if (postId) {
+        await handleExportSuccess(postId, platform ?? 'bundle', options.format)
+      }
+
+      setIsExportDialogOpen(false)
+    } catch (error) {
+      console.error('Export failed:', error)
+    } finally {
+      setIsDialogExporting(false)
+    }
+  }, [persistCurrentCanvas, handleExportSuccess, platform, postId])
 
   const handleBringForwardSelection = useCallback(() => {
     const canvas = canvasRef.current
@@ -1334,27 +1362,42 @@ export function FabricEditor({
 
   const handleToggleLockSelection = useCallback(() => {
     const canvas = canvasRef.current
-
-    if (!canvas) {
-      return
-    }
-
+    if (!canvas) return
     const objects = canvas.getActiveObjects()
-
-    if (objects.length === 0) {
-      return
-    }
+    if (objects.length === 0) return
 
     const nextLocked = !objects.every((object) => Boolean(object.get('isLocked')))
-
-    objects.forEach((object) => {
-      setObjectLockState(object, nextLocked)
-    })
-
+    objects.forEach((object) => setObjectLockState(object, nextLocked))
     canvas.requestRenderAll()
     commitCanvasMutation()
     updateSelectedObject()
   }, [commitCanvasMutation, updateSelectedObject])
+
+  const handleVerticalAlign = useCallback((align: 'top' | 'middle' | 'bottom') => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    
+    const active = canvas.getActiveObject()
+    if (!active || Boolean(active.get('isLocked'))) return
+
+    const margin = 80 // Safe margin for slides
+    const h = active.height! * active.scaleY!
+    
+    let newTop = active.top!
+
+    if (align === 'top') {
+      newTop = margin
+    } else if (align === 'middle') {
+      newTop = (CANVAS_SIZE - h) / 2
+    } else if (align === 'bottom') {
+      newTop = CANVAS_SIZE - h - margin
+    }
+
+    active.set({ top: newTop })
+    active.setCoords()
+    canvas.requestRenderAll()
+    commitCanvasMutation()
+  }, [commitCanvasMutation])
 
   // --- Advanced Text Effects Helpers ---
 
@@ -3514,6 +3557,12 @@ export function FabricEditor({
                   canvas={canvasRef.current}
                   selectedObject={selectedObject}
                   onCommit={commitCanvasMutation}
+                  onDelete={handleDeleteSelection}
+                  onDuplicate={handleDuplicateSelection}
+                  onBringForward={handleBringForwardSelection}
+                  onSendBackward={handleSendBackwardSelection}
+                  onToggleLock={handleToggleLockSelection}
+                  onVerticalAlign={handleVerticalAlign}
                 />
               </div>
             )}

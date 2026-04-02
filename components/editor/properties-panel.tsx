@@ -65,6 +65,62 @@ import {
 } from "@/lib/editor/text-styles";
 import { SaveTextStyleDialog } from "./save-style-dialog";
 import { cn } from "@/lib/utils";
+import { 
+  DndContext, 
+  closestCenter, 
+  PointerSensor, 
+  useSensor, 
+  useSensors, 
+  type DragEndEvent 
+} from "@dnd-kit/core";
+import { 
+  SortableContext, 
+  arrayMove, 
+  useSortable, 
+  verticalListSortingStrategy 
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { 
+  GripVertical, 
+  Square,
+  ImageIcon as ImageIconLucide,
+  Type as TypeLucide
+} from "lucide-react";
+
+// --- Sortable Layer Item Component ---
+
+function SortableLayerItem({ id, label, icon: Icon, isSelected, onClick }: any) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={cn(
+        "flex items-center gap-2 px-3 py-2 rounded-xl border border-white/5 bg-[#14171C] group transition-all",
+        isSelected && "border-[#4E576A] bg-[#212631] shadow-lg scale-[1.02]",
+        isDragging && "opacity-50 z-50 scale-105 shadow-2xl skew-x-1"
+      )}
+      onClick={onClick}
+    >
+      <div {...attributes} {...listeners} className="cursor-grab text-[#4E576A] hover:text-[#8D95A6] p-1 -ml-1">
+        <GripVertical size={14} />
+      </div>
+      <div className={cn(
+        "flex h-7 w-7 items-center justify-center rounded-lg bg-white/5",
+        isSelected && "bg-[#462D6E]/20"
+      )}>
+        <Icon size={14} className={cn("text-[#8D95A6]", isSelected && "text-[#A855F7]")} />
+      </div>
+      <span className={cn(
+        "flex-1 truncate text-[11px] font-medium text-[#E0E5EB] uppercase tracking-wider",
+        isSelected && "text-white"
+      )}>
+        {label}
+      </span>
+    </div>
+  );
+}
 
 // --- Helper Components ---
 
@@ -552,6 +608,60 @@ export function PropertiesPanel({
 
   const getCharSpacingLabel = (val: number) => val === 0 ? "Normal" : val > 0 ? `+${val}` : `${val}`;
 
+  // --- Layer Management Logic ---
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  const layerItems = useMemo(() => {
+    if (!canvas) return [];
+    // Get objects, filter out backgrounds, and reverse for top-to-bottom UI
+    return canvas.getObjects()
+      .filter(obj => {
+        const id = obj.get('id');
+        return id && typeof id === 'string' && !id.startsWith('background-');
+      })
+      .map(obj => {
+        const id = obj.get('id') as string;
+        let label = "Elemento";
+        let Icon = Square;
+
+        if (obj.type === 'textbox' || obj.type === 'itext') {
+          const text = (obj as any).text || "";
+          label = text.length > 20 ? text.substring(0, 20) + "..." : text || "Texto";
+          Icon = TypeLucide;
+        } else if (obj.type === 'image') {
+          label = (obj as any).data?.role === 'logo' ? "Logo Noctra" : "Imagen";
+          Icon = ImageIconLucide;
+        } else if (obj.get('id')?.includes('counter')) {
+          label = "Contador";
+        }
+        
+        return { id, label, icon: Icon, object: obj };
+      })
+      .reverse(); 
+  }, [canvas, activeObject]);
+
+  const handleLayerDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id || !canvas) return;
+
+    const oldIdx = layerItems.findIndex(i => i.id === active.id);
+    const newIdx = layerItems.findIndex(i => i.id === over.id);
+    
+    if (oldIdx === -1 || newIdx === -1) return;
+
+    const targetObj = layerItems[oldIdx].object;
+    const overObj = layerItems[newIdx].object;
+    
+    // Get actual fabric index of the object we are moving over
+    const fabricObjects = canvas.getObjects();
+    const targetFabricIdx = fabricObjects.indexOf(overObj);
+    
+    (targetObj as any).moveTo(targetFabricIdx);
+    
+    canvas.renderAll();
+    commitCanvasMutation();
+  };
+
   return (
     <div className="flex flex-col gap-4">
       {activeObject && isTextbox(activeObject) ? (
@@ -839,7 +949,43 @@ export function PropertiesPanel({
           <PropertySection title="Slide" id="slide-mgmt"><div className="grid grid-cols-2 gap-2"><PropertyButton onClick={handleDuplicateSlide}>Duplicar</PropertyButton><PropertyButton onClick={handleDeleteSlide}>Eliminar</PropertyButton></div></PropertySection>
         </>
       )}
-      {activeObject && (<PropertySection title="Capas" id="layers" defaultExpanded={false}><div className="grid grid-cols-2 gap-2">{layerActions.map(a => (<PropertyButton key={a.label} onClick={a.onClick}>{a.label}</PropertyButton>))}</div></PropertySection>)}
+
+      {/* --- Interactive Layer List --- */}
+      <PropertySection title="Gestión de Capas" id="layer-stack" defaultExpanded={true}>
+        <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1 no-scrollbar">
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleLayerDragEnd}>
+            <SortableContext items={layerItems.map(i => i.id)} strategy={verticalListSortingStrategy}>
+              <div className="space-y-1.5">
+                {layerItems.map((item) => (
+                  <SortableLayerItem
+                    key={item.id}
+                    id={item.id}
+                    label={item.label}
+                    icon={item.icon}
+                    isSelected={activeObject?.get('id') === item.id}
+                    onClick={() => {
+                        canvas?.setActiveObject(item.object);
+                        canvas?.renderAll();
+                    }}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
+        </div>
+        
+        {/* Layer Actions (Quick Movement) */}
+        {activeObject && (
+          <div className="grid grid-cols-2 gap-2 pt-3 border-t border-white/5 mt-2">
+            {layerActions.map(a => (
+              <PropertyButton key={a.label} onClick={a.onClick} className="text-[10px] py-1.5">
+                {a.label}
+              </PropertyButton>
+            ))}
+          </div>
+        )}
+      </PropertySection>
+
       <SaveTextStyleDialog isOpen={isSaveDialogOpen} onClose={() => setIsSaveDialogOpen(false)} activeObject={activeObject as Textbox} onSave={refreshStyles} />
     </div>
   );
