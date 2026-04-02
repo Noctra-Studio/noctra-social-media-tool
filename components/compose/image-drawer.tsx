@@ -89,17 +89,45 @@ export function ImageDrawer({ isOpen, onClose, postContent, onConfirm }: ImageDr
 
   const controls = useAnimation();
 
+  const [brief, setBrief] = useState<any>(null);
+  const [loadingBrief, setLoadingBrief] = useState(false);
+
   // Initial search on open
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
       // Trigger initial search
       handleSearch(true);
+      fetchBrief();
     } else {
       document.body.style.overflow = 'auto';
     }
     return () => { document.body.style.overflow = 'auto'; };
   }, [isOpen]);
+
+  const fetchBrief = async () => {
+    if (brief) return;
+    setLoadingBrief(true);
+    try {
+      const res = await fetch('/api/images/brief', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          post_content: postContent,
+          slide_index: -1, // Drawer is usually for single/post-level
+          slide_type: 'content'
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setBrief(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch brief for keywords', err);
+    } finally {
+      setLoadingBrief(false);
+    }
+  };
 
   const dedupeById = (photos: any[]) => {
     const seen = new Set<string>();
@@ -110,6 +138,14 @@ export function ImageDrawer({ isOpen, onClose, postContent, onConfirm }: ImageDr
     });
   };
 
+  const handleKeywordClick = (keyword: string) => {
+    setQuery(keyword);
+    setTab('unsplash');
+    setTimeout(() => {
+      handleSearch();
+    }, 50);
+  };
+
   const fetchPhotos = async (targetPage: number, isInitial: boolean) => {
     const filters = activeFilters.join(' ');
     const res = await fetch('/api/visual/search', {
@@ -117,6 +153,7 @@ export function ImageDrawer({ isOpen, onClose, postContent, onConfirm }: ImageDr
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         query: query || undefined,
+        isManualSearch: !!query,
         keywords: query ? undefined : postContent.keywords,
         platform: postContent.platform,
         context: isInitial ? { caption: postContent.caption, angle: postContent.angle } : undefined,
@@ -125,7 +162,7 @@ export function ImageDrawer({ isOpen, onClose, postContent, onConfirm }: ImageDr
       }),
     });
     const data = await res.json();
-    return (data.photos ?? []).map((p: any) => ({ ...p, onBrandScore: Math.random() }));
+    return (data.photos ?? []).map((p: any) => ({ ...p, onBrandScore: p.onBrandScore || 0.5 }));
   };
 
   const handleSearch = async (isInitial = false) => {
@@ -346,6 +383,33 @@ export function ImageDrawer({ isOpen, onClose, postContent, onConfirm }: ImageDr
                       {loading ? <Loader2 className="animate-spin" size={18} /> : "Buscar"}
                     </button>
                   </div>
+
+                  {/* Quick Keywords */}
+                  {((brief?.topic_keywords && brief.topic_keywords.length > 0) || loadingBrief) && (
+                    <div className="mb-4">
+                      <div className="mb-2 flex items-center justify-between px-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-[#4E576A]">Temas sugeridos [✦ IA]</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {loadingBrief ? (
+                          [1,2,3,4,5].map(i => (
+                            <div key={i} className="h-7 w-20 animate-pulse rounded-full bg-white/5" />
+                          ))
+                        ) : (
+                          brief.topic_keywords.map((kw: string) => (
+                            <button
+                              key={kw}
+                              onClick={() => handleKeywordClick(kw)}
+                              className="rounded-full border border-white/5 bg-white/5 px-3 py-1 text-[11px] font-medium text-[#E0E5EB] transition-colors hover:border-[#4E576A] hover:bg-[#212631]"
+                            >
+                              {kw}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   <p className="mb-4 text-[11px] text-[#4E576A]">Búsqueda en inglés da mejores resultados en Unsplash</p>
 
                   {/* Filters */}

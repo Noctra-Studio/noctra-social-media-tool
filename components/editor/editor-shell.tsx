@@ -16,12 +16,21 @@ import {
   Eye,
   ImagePlus,
   Layers3,
+  Loader2,
+  Lock,
   Monitor,
   PaintBucket,
+  Plus,
+  RotateCw,
   Save,
+  Search,
   Sparkles,
   Type,
   X,
+  Unlock,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
 } from "lucide-react";
 import type {
   Canvas as FabricCanvas,
@@ -30,6 +39,7 @@ import type {
   Textbox,
 } from "fabric";
 
+import { ResizableAside } from "@/components/editor/layout/resizable-aside";
 import { CanvasToolbar } from "@/components/editor/canvas/canvas-toolbar";
 import { FilterPanel } from "@/components/editor/canvas/filter-panel";
 import { ExportDialog } from "@/components/editor/export/export-dialog";
@@ -1255,25 +1265,23 @@ function EditorShellClient({
 
   if (isMobile) {
     return (
-      <div className="fixed inset-0 z-[90] flex items-center justify-center bg-[#090D14] p-6">
+      <div className="fixed inset-0 z-[90] flex items-center justify-center bg-[#111111] p-6">
         <motion.div
-          initial={{ opacity: 0, scale: 0.96, y: 12 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          className="w-full max-w-sm rounded-[28px] border border-white/10 bg-white/5 p-6 text-center shadow-[0_30px_80px_rgba(0,0,0,0.45)]"
+          initial={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="w-full max-w-sm rounded-lg border border-white/10 bg-[#1e1e1e] p-6 text-center shadow-2xl"
         >
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-white/5">
-            <Monitor className="h-7 w-7 text-white" />
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-md border border-white/10 bg-white/5 mb-4">
+            <Monitor className="h-6 w-6 text-white/70" />
           </div>
-          <h1 className="mt-5 text-xl font-semibold text-white">
-            El editor visual esta disponible en desktop
-          </h1>
-          <p className="mt-2 text-sm leading-6 text-white/60">
-            Abre social.noctra.studio desde una pantalla mas amplia para editar con canvas y paneles completos.
+          <h1 className="text-lg font-bold text-white">Editor Desktop Requerido</h1>
+          <p className="mt-2 text-xs leading-relaxed text-white/50">
+            Noctra Studio requiere una pantalla más amplia para el diseño de precisión. Por favor, abre esta herramienta en tu computadora.
           </p>
           <button
             type="button"
             onClick={onClose}
-            className="mt-6 inline-flex h-11 items-center justify-center rounded-full bg-white px-5 text-sm font-semibold text-[#0B1020]"
+            className="mt-6 inline-flex h-9 items-center justify-center rounded-md bg-white px-4 text-xs font-bold text-black hover:bg-white/90"
           >
             Cerrar
           </button>
@@ -1283,52 +1291,54 @@ function EditorShellClient({
   }
 
   return (
-    <div className="fixed inset-0 z-[90] flex h-screen w-screen flex-col overflow-hidden bg-[#090D14] text-white">
+    <div className="fixed inset-0 z-[90] flex h-screen w-screen flex-col overflow-hidden bg-[var(--editor-bg)] text-white font-sans text-sm antialiased">
       {/* --- HEADER BAR --- */}
-      <header className="flex h-12 items-center justify-between border-b border-white/10 px-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[#72F1B8] via-[#59B8FF] to-[#9B7BFF] text-[11px] font-black tracking-[0.24em] text-[#090D14]">
+      <header className="flex h-10 items-center justify-between border-b border-[var(--editor-border)] bg-[var(--editor-surface)] px-3 shrink-0">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="flex h-6 w-6 items-center justify-center rounded-sm bg-gradient-to-br from-[#72F1B8] via-[#59B8FF] to-[#9B7BFF] text-[10px] font-black tracking-widest text-[#090D14]">
             N
           </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold">Noctra Editor</p>
-            <p className="truncate text-[11px] uppercase tracking-[0.14em] text-white/45">
-              {networkId} / {formatConfig.label}
+            <p className="truncate text-[11px] font-bold text-white/90 leading-none">Noctra Studio</p>
+            <p className="truncate text-[9px] text-white/30 uppercase tracking-[0.1em] mt-1 leading-none">
+              {networkId} — {formatConfig?.label}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={() => void openPreview()}
-            className={HEADER_BUTTON_CLASS}
+            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-white/5 bg-white/5 px-2.5 text-[11px] font-medium text-white/80 transition-colors hover:bg-white/10 hover:text-white"
           >
-            <Eye className="h-4 w-4" />
-            <span className="hidden sm:inline">Preview</span>
+            <Eye className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Vista previa</span>
           </button>
           <button
             type="button"
             onClick={() => setIsExportDialogOpen(true)}
-            className={HEADER_BUTTON_CLASS}
+            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-white/5 bg-white/5 px-2.5 text-[11px] font-medium text-white/80 transition-colors hover:bg-white/10 hover:text-white"
           >
-            <Download className="h-4 w-4" />
+            <Download className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Exportar</span>
           </button>
           <button
             type="button"
             onClick={handleSave}
-            className="inline-flex h-9 items-center gap-2 rounded-full bg-white px-3 text-sm font-semibold text-[#090D14] transition-opacity hover:opacity-90"
+            className={cn(
+              "inline-flex h-7 items-center gap-1.5 rounded-sm px-2.5 text-[11px] font-bold transition-opacity hover:opacity-90",
+              editorState.isDirty ? "bg-[var(--editor-accent)] text-white" : "bg-white/10 text-white/70"
+            )}
           >
-            <Save className="h-4 w-4" />
-            <span className="hidden sm:inline">
-              {editorState.isDirty ? "Guardar" : "Guardado"}
-            </span>
+            <Save className="h-3.5 w-3.5" />
+            <span>{editorState.isDirty ? "Guardar" : "Guardado"}</span>
           </button>
+          <div className="mx-1 h-4 w-px bg-white/10" />
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 text-white/70 transition-colors hover:bg-white/5 hover:text-white"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-white/40 transition-colors hover:bg-white/5 hover:text-white"
             aria-label="Cerrar editor"
           >
             <X className="h-4 w-4" />
@@ -1336,78 +1346,65 @@ function EditorShellClient({
         </div>
       </header>
 
-      {/* --- MAIN LAYOUT --- */}
+      {/* --- CONTENT AREA --- */}
       <div className="flex min-h-0 flex-1">
-        {/* --- LEFT PANEL --- */}
-        <aside className="flex w-64 shrink-0 flex-col border-r border-white/10 bg-white/[0.02]">
-          <div className="flex border-b border-white/10 p-2">
+        <ResizableAside side="left" defaultWidth={260} minWidth={220} maxWidth={400}>
+          <div className="flex border-b border-[var(--editor-border)] bg-black/10 p-1">
             {TAB_ITEMS.map((tab) => {
               const Icon = tab.icon;
               const isActive = tab.id === activeTab;
-
               return (
                 <button
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
                   className={cn(
-                    "flex flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-2 text-[11px] transition-colors",
-                    isActive
-                      ? "bg-white/10 text-white"
-                      : "text-white/45 hover:bg-white/5 hover:text-white/80"
+                    "flex flex-1 flex-col items-center justify-center gap-1 rounded-sm py-2 text-[9px] font-bold uppercase tracking-tighter transition-colors",
+                    isActive ? "bg-white/5 text-[var(--editor-accent)]" : "text-white/30 hover:bg-white/[0.03] hover:text-white/60"
                   )}
                 >
-                  <Icon className="h-4 w-4" />
+                  <Icon className="h-3.5 w-3.5" />
                   <span>{tab.label}</span>
                 </button>
               );
             })}
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          <div className="flex-1 overflow-y-auto p-2 scrollbar-none">
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
                 key={activeTab}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.18, ease: "easeOut" }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.1 }}
               >
                 {renderLeftPanelContent()}
               </motion.div>
             </AnimatePresence>
           </div>
-        </aside>
+        </ResizableAside>
 
-        {/* --- CANVAS AREA --- */}
-        <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+        <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--editor-bg)]">
           <CanvasToolbar
             activeObject={activeObject}
             onDelete={handleDelete}
-            onDuplicate={() => {
-              void handleDuplicate();
-            }}
+            onDuplicate={() => void handleDuplicate()}
             onBringForward={handleBringForward}
             onSendBackward={handleSendBackward}
             onToggleLock={handleToggleLock}
             isLocked={activeObjectLocked}
-            onPreview={() => {
-              void openPreview();
-            }}
+            onPreview={() => void openPreview()}
             onExport={() => setIsExportDialogOpen(true)}
-            onUndo={() => {
-              void handleUndo();
-            }}
-            onRedo={() => {
-              void handleRedo();
-            }}
+            onUndo={() => void handleUndo()}
+            onRedo={() => void handleRedo()}
             canUndo={canUndo}
             canRedo={canRedo}
           />
 
-          <div className="flex min-h-0 flex-1 items-center justify-center p-6 pt-20">
+          <div className="flex flex-1 items-center justify-center p-8 overflow-auto">
             <div
-              className="relative"
+              className="relative shadow-2xl shadow-black/80 ring-1 ring-white/5"
               style={{
                 maxWidth: shellWidth,
                 width: shellWidth,
@@ -1424,257 +1421,240 @@ function EditorShellClient({
             </div>
           </div>
 
-          {!isCanvasReady ? (
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-[#090D14]/40 backdrop-blur-sm">
-              <div className="rounded-full border border-white/10 bg-black/50 px-4 py-2 text-sm text-white/70">
-                Inicializando canvas...
+          {!isCanvasReady && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center bg-[var(--editor-bg)]/80 backdrop-blur-sm">
+              <div className="flex items-center gap-3 rounded-md border border-white/5 bg-[var(--editor-surface)] px-4 py-2 text-xs font-medium text-white/50 shadow-xl">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <span>Cargando Noctra Engine...</span>
               </div>
             </div>
-          ) : null}
+          )}
         </main>
 
-        {/* --- RIGHT PANEL --- */}
-        <aside className="flex w-72 shrink-0 flex-col border-l border-white/10 bg-white/[0.02]">
-          <div className="border-b border-white/10 px-5 py-4">
-            <p className="text-xs uppercase tracking-[0.16em] text-white/45">
-              Seleccion
-            </p>
-            <h2 className="mt-2 text-lg font-semibold capitalize">
-              {selectedObjectLabel}
-            </h2>
-            <p className="mt-1 text-sm text-white/55">
-              {activeObject
-                ? "Ajusta tipografia, color y posicion del elemento activo."
-                : "Selecciona un objeto en el canvas para editar sus propiedades."}
+        <ResizableAside side="right" defaultWidth={300} minWidth={260} maxWidth={500}>
+          <div className="flex h-8 items-center border-b border-[var(--editor-border)] bg-black/10 px-3 shrink-0">
+            <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/20">
+              {activeObject ? `Propiedades: ${getObjectLabel(activeObject)}` : "Documento"}
             </p>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          <div className="flex-1 overflow-y-auto p-3 scrollbar-none">
             {activeObject ? (
-              <div className="space-y-5" key={selectionVersion}>
-                {/* --- OBJECT BASICS --- */}
-                <section className="space-y-3 rounded-3xl border border-white/10 bg-white/[0.03] p-4">
-                  <div className="grid grid-cols-2 gap-3">
-                    <label className="space-y-1.5 text-xs text-white/55">
-                      <span>X</span>
+              <div className="space-y-4" key={selectionVersion}>
+                {/* --- TRANSFORM --- */}
+                <section className="space-y-2 rounded-sm border border-white/5 bg-white/[0.02] p-2.5">
+                  <div className="flex items-center justify-between pb-1">
+                    <span className="text-[9px] font-bold uppercase tracking-widest text-white/20">Transformas</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="flex items-center gap-2 rounded-sm border border-white/5 bg-black/20 px-2 py-1.5 focus-within:ring-1 focus-within:ring-[var(--editor-accent)]">
+                      <span className="text-[8px] font-black text-white/20 w-3">X</span>
                       <input
                         type="number"
-                        value={objectPosition.left}
+                        value={Math.round(objectPosition.left)}
                         onChange={(event) => {
                           const value = Number(event.target.value);
-                          if (Number.isNaN(value)) {
-                            return;
-                          }
-                          mutateActiveObject((object) => {
-                            object.set("left", value);
-                          });
+                          if (!isNaN(value)) mutateActiveObject(o => o.set("left", value));
                         }}
-                        className="w-full rounded-2xl border border-white/10 bg-[#0B1020] px-3 py-2 text-sm text-white outline-none"
+                        className="w-full bg-transparent text-[11px] text-white/80 outline-none"
                       />
-                    </label>
-                    <label className="space-y-1.5 text-xs text-white/55">
-                      <span>Y</span>
+                    </div>
+                    <div className="flex items-center gap-2 rounded-sm border border-white/5 bg-black/20 px-2 py-1.5 focus-within:ring-1 focus-within:ring-[var(--editor-accent)]">
+                      <span className="text-[8px] font-black text-white/20 w-3">Y</span>
                       <input
                         type="number"
-                        value={objectPosition.top}
+                        value={Math.round(objectPosition.top)}
                         onChange={(event) => {
                           const value = Number(event.target.value);
-                          if (Number.isNaN(value)) {
-                            return;
-                          }
-                          mutateActiveObject((object) => {
-                            object.set("top", value);
-                          });
+                          if (!isNaN(value)) mutateActiveObject(o => o.set("top", value));
                         }}
-                        className="w-full rounded-2xl border border-white/10 bg-[#0B1020] px-3 py-2 text-sm text-white outline-none"
+                        className="w-full bg-transparent text-[11px] text-white/80 outline-none"
                       />
-                    </label>
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <label className="space-y-1.5 text-xs text-white/55">
-                      <span>Rotacion</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="flex items-center gap-2 rounded-sm border border-white/5 bg-black/20 px-2 py-1.5 focus-within:ring-1 focus-within:ring-[var(--editor-accent)]">
+                      <RotateCw className="h-3 w-3 text-white/20" />
                       <input
                         type="number"
-                        value={objectPosition.angle}
+                        value={Math.round(objectPosition.angle)}
                         onChange={(event) => {
                           const value = Number(event.target.value);
-                          if (Number.isNaN(value)) {
-                            return;
-                          }
-                          mutateActiveObject((object) => {
-                            object.set("angle", value);
-                          });
+                          if (!isNaN(value)) mutateActiveObject(o => o.set("angle", value));
                         }}
-                        className="w-full rounded-2xl border border-white/10 bg-[#0B1020] px-3 py-2 text-sm text-white outline-none"
+                        className="w-full bg-transparent text-[11px] text-white/80 outline-none"
                       />
-                    </label>
-                    <label className="space-y-1.5 text-xs text-white/55">
-                      <span>Opacidad</span>
+                    </div>
+                    <div className="flex items-center gap-2 rounded-sm border border-white/5 bg-black/20 px-2 py-1.5 focus-within:ring-1 focus-within:ring-[var(--editor-accent)]">
+                      <Eye className="h-3 w-3 text-white/20" />
                       <input
-                        type="range"
-                        min="5"
+                        type="number"
+                        min="0"
                         max="100"
-                        value={objectPosition.opacity}
+                        value={Math.round(objectPosition.opacity * 100)}
                         onChange={(event) => {
                           const value = Number(event.target.value);
-                          mutateActiveObject((object) => {
-                            object.set("opacity", value / 100);
-                          });
+                          if (!isNaN(value)) mutateActiveObject(o => o.set("opacity", value / 100));
                         }}
-                        className="w-full accent-white"
+                        className="w-full bg-transparent text-[11px] text-white/80 outline-none"
                       />
-                    </label>
+                      <span className="text-[9px] text-white/20">%</span>
+                    </div>
                   </div>
                 </section>
 
-                {/* --- COLOR CONTROLS --- */}
-                <section className="space-y-3 rounded-3xl border border-white/10 bg-white/[0.03] p-4">
-                  <div className="grid grid-cols-2 gap-3">
-                    <label className="space-y-1.5 text-xs text-white/55">
-                      <span>Relleno</span>
-                      <input
-                        type="color"
-                        value={objectFill}
-                        onChange={(event) => {
-                          mutateActiveObject((object) => {
-                            object.set("fill", event.target.value);
-                          });
-                        }}
-                        className="h-11 w-full rounded-2xl border border-white/10 bg-[#0B1020] p-1"
-                      />
-                    </label>
-                    <label className="space-y-1.5 text-xs text-white/55">
-                      <span>Trazo</span>
-                      <input
-                        type="color"
-                        value={objectStroke}
-                        onChange={(event) => {
-                          mutateActiveObject((object) => {
-                            object.set("stroke", event.target.value);
-                          });
-                        }}
-                        className="h-11 w-full rounded-2xl border border-white/10 bg-[#0B1020] p-1"
-                      />
-                    </label>
+                {/* --- APPEARANCE (Fill/Stroke) --- */}
+                <section className="space-y-2 rounded-sm border border-white/5 bg-white/[0.02] p-2.5">
+                  <div className="flex items-center justify-between pb-1">
+                    <span className="text-[9px] font-bold uppercase tracking-widest text-white/20">Apariencia</span>
                   </div>
-
-                  <label className="space-y-1.5 text-xs text-white/55">
-                    <span>Grosor del trazo</span>
-                    <input
-                      type="range"
-                      min="0"
-                      max="24"
-                      value={Math.round(activeObject.strokeWidth ?? 0)}
-                      onChange={(event) => {
-                        const value = Number(event.target.value);
-                        mutateActiveObject((object) => {
-                          object.set("strokeWidth", value);
-                        });
-                      }}
-                      className="w-full accent-white"
-                    />
-                  </label>
-                </section>
-
-                {/* --- TEXT CONTROLS --- */}
-                {isTextboxObject(activeObject) ? (
-                  <section className="space-y-3 rounded-3xl border border-white/10 bg-white/[0.03] p-4">
-                    <label className="space-y-1.5 text-xs text-white/55">
-                      <span>Contenido</span>
-                      <textarea
-                        value={activeObject.text ?? ""}
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          mutateActiveObject((object) => {
-                            if (isTextboxObject(object)) {
-                              object.set("text", value);
-                            }
-                          });
-                        }}
-                        rows={4}
-                        className="w-full rounded-2xl border border-white/10 bg-[#0B1020] px-3 py-2 text-sm text-white outline-none"
-                      />
-                    </label>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <label className="space-y-1.5 text-xs text-white/55">
-                        <span>Fuente</span>
-                        <select
-                          value={activeObject.fontFamily ?? FONT_OPTIONS[0].family}
-                          onChange={(event) => {
-                            const value = event.target.value;
-                            mutateActiveObject((object) => {
-                              if (isTextboxObject(object)) {
-                                object.set("fontFamily", value);
-                              }
-                            });
-                          }}
-                          className="w-full rounded-2xl border border-white/10 bg-[#0B1020] px-3 py-2 text-sm text-white outline-none"
-                        >
-                          {FONT_OPTIONS.map((font) => (
-                            <option key={font.label} value={font.family}>
-                              {font.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-
-                      <label className="space-y-1.5 text-xs text-white/55">
-                        <span>Tamano</span>
+                  
+                  <div className="flex items-center gap-3">
+                    <div className="flex flex-1 items-center gap-2 rounded-sm border border-white/5 bg-black/20 p-1.5">
+                      <div className="relative h-5 w-5 overflow-hidden rounded-sm border border-white/10 ring-1 ring-inset ring-black/20">
                         <input
-                          type="number"
-                          value={Math.round(activeObject.fontSize ?? 0)}
-                          onChange={(event) => {
-                            const value = Number(event.target.value);
-                            if (Number.isNaN(value)) {
-                              return;
-                            }
-                            mutateActiveObject((object) => {
-                              if (isTextboxObject(object)) {
-                                object.set("fontSize", value);
-                              }
-                            });
-                          }}
-                          className="w-full rounded-2xl border border-white/10 bg-[#0B1020] px-3 py-2 text-sm text-white outline-none"
+                          type="color"
+                          value={typeof activeObject.get("fill") === "string" ? activeObject.get("fill") : "#ffffff"}
+                          onChange={(e) => mutateActiveObject(o => o.set("fill", e.target.value))}
+                          className="absolute -inset-1 h-[200%] w-[200%] cursor-pointer"
                         />
-                      </label>
+                      </div>
+                      <span className="text-[10px] text-white/60">Relleno</span>
+                    </div>
+
+                    <div className="flex flex-1 items-center gap-2 rounded-sm border border-white/5 bg-black/20 p-1.5">
+                      <div className="relative h-5 w-5 overflow-hidden rounded-sm border border-white/10 ring-1 ring-inset ring-black/20">
+                        <input
+                          type="color"
+                          value={typeof activeObject.get("stroke") === "string" ? activeObject.get("stroke") : "#000000"}
+                          onChange={(e) => mutateActiveObject(o => o.set("stroke", e.target.value))}
+                          className="absolute -inset-1 h-[200%] w-[200%] cursor-pointer"
+                        />
+                      </div>
+                      <span className="text-[10px] text-white/60">Trazo</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 rounded-sm border border-white/5 bg-black/20 px-2 py-1.5 focus-within:ring-1 focus-within:ring-[var(--editor-accent)]">
+                   <Type className="h-3 w-3 text-white/20 shrink-0" />
+                   <input
+                     type="number"
+                     min="0"
+                     max="100"
+                     value={Math.round(activeObject.get("strokeWidth") || 0)}
+                     onChange={(event) => {
+                       const value = Number(event.target.value);
+                       if (!isNaN(value)) mutateActiveObject(o => o.set("strokeWidth", value));
+                     }}
+                     className="w-full bg-transparent text-[11px] text-white/80 outline-none"
+                   />
+                   <span className="text-[9px] text-white/20 uppercase">px</span>
+                  </div>
+                </section>
+
+                {/* --- TYPOGRAPHY (Textbox only) --- */}
+                {isTextboxObject(activeObject) && (
+                  <section className="space-y-2 rounded-sm border border-white/5 bg-white/[0.02] p-2.5">
+                    <div className="flex items-center justify-between pb-1">
+                      <span className="text-[9px] font-bold uppercase tracking-widest text-white/20">Tipografía</span>
+                    </div>
+                    
+                    <div className="space-y-2">
+                       <div className="flex items-center gap-2 rounded-sm border border-white/5 bg-black/20 px-2 py-1.5">
+                         <select
+                           value={activeObject.get("fontFamily")}
+                           onChange={(e) => mutateActiveObject(o => o.set("fontFamily", e.target.value))}
+                           className="w-full bg-transparent text-[11px] text-white/80 outline-none"
+                         >
+                           {FONT_OPTIONS.map(f => (
+                             <option key={f.family} value={f.family} className="bg-[#1e1e1e]">{f.label}</option>
+                           ))}
+                         </select>
+                       </div>
+
+                       <div className="grid grid-cols-2 gap-2">
+                         <div className="flex items-center gap-2 rounded-sm border border-white/5 bg-black/20 px-2 py-1.5">
+                           <span className="text-[8px] font-black text-white/20 shrink-0">Aa</span>
+                           <input
+                             type="number"
+                             value={Math.round(activeObject.get("fontSize") || 0)}
+                             onChange={(e) => {
+                               const value = Number(e.target.value);
+                               if (!isNaN(value)) mutateActiveObject(o => o.set("fontSize", value));
+                             }}
+                             className="w-full bg-transparent text-[11px] text-white/80 outline-none"
+                           />
+                         </div>
+
+                         <div className="flex items-center justify-center gap-0.5 rounded-sm border border-white/5 bg-black/20 p-0.5">
+                            {[
+                              { id: "left", icon: AlignLeft },
+                              { id: "center", icon: AlignCenter },
+                              { id: "right", icon: AlignRight }
+                            ].map((btn) => {
+                              const Icon = btn.icon;
+                              const isSelected = activeObject.get("textAlign") === btn.id;
+                              return (
+                                <button
+                                  key={btn.id}
+                                  onClick={() => mutateActiveObject(o => o.set("textAlign", btn.id))}
+                                  className={cn(
+                                    "flex flex-1 h-6 items-center justify-center rounded-sm transition-colors",
+                                    isSelected ? "bg-[var(--editor-accent)] text-white" : "text-white/20 hover:bg-white/5 hover:text-white/40"
+                                  )}
+                                >
+                                  <Icon className="h-3 w-3" />
+                                </button>
+                              );
+                            })}
+                         </div>
+                       </div>
                     </div>
                   </section>
-                ) : null}
-
-                {/* --- OBJECT ACTIONS --- */}
-                <section className="space-y-3 rounded-3xl border border-white/10 bg-white/[0.03] p-4">
-                  <button
-                    type="button"
-                    onClick={handleToggleLock}
-                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white transition-colors hover:bg-white/10"
-                  >
-                    {activeObjectLocked ? "Desbloquear objeto" : "Bloquear objeto"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void handleDuplicate();
-                    }}
-                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white transition-colors hover:bg-white/10"
-                  >
-                    Duplicar seleccion
-                  </button>
+                )}
+                
+                <section className="space-y-2 rounded-sm border border-white/5 bg-white/[0.02] p-2.5">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleToggleLock}
+                      className={cn(
+                        "flex-1 flex items-center justify-center gap-2 rounded-sm border py-2 text-[10px] font-bold transition-colors",
+                        activeObjectLocked 
+                          ? "border-[var(--editor-accent)] bg-[var(--editor-accent)]/10 text-[var(--editor-accent)]" 
+                          : "border-white/5 bg-white/5 text-white/50 hover:bg-white/10"
+                      )}
+                    >
+                      {activeObjectLocked ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
+                      <span>{activeObjectLocked ? "Desbloquear" : "Bloquear"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleDuplicate()}
+                      className="flex h-8 w-8 items-center justify-center rounded-sm border border-white/5 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </button>
+                  </div>
                 </section>
               </div>
             ) : (
-              <div className="rounded-3xl border border-dashed border-white/10 bg-white/[0.02] p-5 text-sm leading-6 text-white/55">
-                Usa el panel izquierdo para agregar titulares, bloques o assets. Luego selecciona cualquier objeto en el canvas para editarlo aqui.
+              <div className="flex h-48 flex-col items-center justify-center rounded-sm border border-dashed border-white/5 bg-white/[0.01] p-6 text-center">
+                <Search className="h-5 w-5 text-white/10 mb-2" />
+                <p className="text-[10px] text-white/30 uppercase tracking-[0.15em] leading-relaxed">
+                  Sin selección<br/>
+                  <span className="text-[9px] normal-case lowercase tracking-normal">Selecciona un elemento para editar</span>
+                </p>
               </div>
             )}
           </div>
-        </aside>
+        </ResizableAside>
       </div>
 
       {/* --- MODALS --- */}
       <PreviewModal
-        isOpen={isPreviewOpen && Boolean(previewDataURL)}
+        isOpen={isPreviewOpen}
         onClose={() => setIsPreviewOpen(false)}
         networkId={networkId}
         format={formatKey}
@@ -1685,11 +1665,7 @@ function EditorShellClient({
         username={username}
         displayName={displayName}
         handle={normalizedHandle}
-        postText={
-          initialContent?.postText ||
-          initialContent?.tweetText ||
-          initialContent?.body
-        }
+        postText={initialContent?.postText || initialContent?.tweetText}
         caption={initialContent?.caption}
       />
 
@@ -1707,9 +1683,4 @@ function EditorShellClient({
   );
 }
 
-const EditorShell = dynamic(async () => Promise.resolve(EditorShellClient), {
-  ssr: false,
-});
-
-export { EditorShell };
-export default EditorShell;
+export default dynamic(() => Promise.resolve(EditorShellClient), { ssr: false });

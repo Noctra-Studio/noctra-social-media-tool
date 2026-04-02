@@ -4,7 +4,7 @@ import html2canvas from 'html2canvas'
  * Renders a DOM element to a high-quality PNG blob.
  * Optimized for 1080x1080px social media posts.
  */
-export async function renderElementToPng(element: HTMLElement, scale: number = 2): Promise<Blob> {
+export async function renderElementToPng(element: HTMLElement, scale: number = 3): Promise<Blob> {
   const canvas = await html2canvas(element, {
     scale,
     useCORS: true,

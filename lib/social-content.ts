@@ -30,6 +30,8 @@ export type InstagramCarouselSlide = {
   text_order?: 'headline-first' | 'body-first'
   headline_size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl'
   body_size?: 'xs' | 'sm' | 'md' | 'lg'
+  vertical_alignment?: 'top' | 'middle' | 'bottom'
+  vertical_offset?: number
 }
 
 export type XThreadTweet = {
@@ -516,6 +518,7 @@ export type BriefQuery = {
 
 export type VisualBrief = {
   queries: BriefQuery[]
+  topic_keywords: string[]
   visual_brief: {
     mood: string
     composition: string

@@ -181,12 +181,20 @@ export async function POST(req: Request) {
       count = 12, 
       page = 1,
       slideType = 'content',
-      caption // context for scoring
+      caption, // context for scoring
+      isManualSearch = false
     } = body;
 
     let finalQuery = '';
     if (directQuery) {
-      finalQuery = directQuery;
+      if (isManualSearch) {
+        // Expand manual search with visual quality keywords
+        const visualModifiers = ['minimal', 'professional', 'dark aesthetic', 'high quality', 'clean'];
+        const modifier = visualModifiers[Math.floor(Math.random() * visualModifiers.length)];
+        finalQuery = `${directQuery} ${modifier}`;
+      } else {
+        finalQuery = directQuery;
+      }
     } else if (keywords && Array.isArray(keywords) && keywords.length > 0) {
       // If keywords provided, we use the smart engine to get a better visual query
       const { query } = generateSmartQuery(keywords.join(' '), 'editorial', platform, slideType);
@@ -219,10 +227,17 @@ export async function POST(req: Request) {
     // We score the top 8 results to balance speed and quality
     const scoringContext = caption || directQuery || finalQuery;
     if (scoringContext && photos.length > 0) {
-      const photosToScore = photos.slice(0, 8);
+      const photosToScore = photos.slice(0, 3);
       const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+      const scoredBatch: any[] = [];
+      let quotaExhausted = false;
 
-      const scoringPromises = photosToScore.map(async (photo) => {
+      for (const photo of photosToScore) {
+        if (quotaExhausted) {
+          scoredBatch.push({ ...photo, onBrandScore: 0.5 });
+          continue;
+        }
+
         try {
           const { data, mimeType } = await fetchImageAsBase64(photo.thumbUrl);
           const prompt = `You are an expert design judge. Score this image (0.0-1.0) on how well it fits as a social media post background for this context: "${scoringContext}".
@@ -240,19 +255,30 @@ export async function POST(req: Request) {
           ]);
 
           const responseText = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-          const parsed = JSON.parse(responseText);
-          return { ...photo, onBrandScore: Number(parsed.score) };
-        } catch (err) {
-          console.error(`Scoring failed for image ${photo.id}:`, err);
-          return { ...photo, onBrandScore: 0.5 };
+          const startIdx = responseText.indexOf('{');
+          const endIdx = responseText.lastIndexOf('}');
+          
+          if (startIdx === -1) throw new Error('Invalid JSON');
+          
+          const parsed = JSON.parse(responseText.slice(startIdx, endIdx + 1));
+          scoredBatch.push({ ...photo, onBrandScore: Number(parsed.score) });
+          
+          await new Promise(res => setTimeout(res, 1800));
+        } catch (err: any) {
+          if (err?.status === 429) {
+            quotaExhausted = true;
+            console.warn('Gemini Search Scoring 429: Bailing.');
+          }
+          scoredBatch.push({ ...photo, onBrandScore: 0.5 });
         }
-      });
-
-      const scoredBatch = await Promise.all(scoringPromises);
-      const remaining = photos.slice(8).map(p => ({ ...p, onBrandScore: 0.4 }));
+        
+        if (!quotaExhausted) {
+          await new Promise(res => setTimeout(res, 1800));
+        }
+      }
       
+      const remaining = photos.slice(3).map(p => ({ ...p, onBrandScore: 0.5 }));
       photos = [...scoredBatch, ...remaining];
-      photos.sort((a, b) => (b.onBrandScore || 0) - (a.onBrandScore || 0));
     }
 
     return NextResponse.json({ 

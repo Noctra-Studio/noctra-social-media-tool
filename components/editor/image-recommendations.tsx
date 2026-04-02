@@ -349,17 +349,25 @@ export function ImageRecommendations({
                   <RecommendationCard key={img.unsplashId} image={img} onSelect={onSelect} slideType={slideType} />
                 ))}
               </div>
+            ) : results.good.length > 0 ? (
+              // If no perfect matches, promote "good" matches to the main view
+              <div className="grid grid-cols-2 gap-3">
+                {results.good.map((img) => (
+                  <RecommendationCard key={img.unsplashId} image={img} onSelect={onSelect} slideType={slideType} />
+                ))}
+              </div>
             ) : (
               <div className="rounded-xl border border-dashed border-white/10 p-6 text-center">
                 <Info className="mx-auto mb-2 h-5 w-5 text-[#4E576A]" />
-                <p className="text-xs text-[#4E576A]">No se encontraron imágenes con puntuación perfecta.</p>
+                <p className="text-xs text-[#4E576A]">No se encontraron imágenes que coincidan con el brief.</p>
+                <p className="mt-1 text-[10px] text-[#4E576A]">Prueba refinando la descripción o los temas.</p>
               </div>
             )}
           </section>
 
-          {/* Tier 2: Good Options */}
-          {results.good.length > 0 && (
-            <CollapsibleSection title={`Buenas opciones (${results.good.length})`} defaultOpen={results.recommended.length === 0}>
+          {/* Tier 2: Good Options - Only show if recommended was NOT empty (otherwise they are already shown above) */}
+          {results.good.length > 0 && results.recommended.length > 0 && (
+            <CollapsibleSection title={`Buenas opciones (${results.good.length})`} defaultOpen={false}>
               <div className="grid grid-cols-2 gap-3">
                 {results.good.map((img) => (
                   <RecommendationCard key={img.unsplashId} image={img} onSelect={onSelect} slideType={slideType} />

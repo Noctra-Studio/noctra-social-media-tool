@@ -102,6 +102,20 @@ export const MOOD_CATEGORIES = [
   }
 ];
 
+export const VISUAL_MODIFIERS = [
+  'minimal clean professional',
+  'dark moody aesthetic',
+  'high contrast editorial',
+  'modern architectural geometric',
+  'clean simple workspace',
+  'professional premium quality',
+  'abstract texture minimal'
+];
+
+export function getVisualModifier(): string {
+  return VISUAL_MODIFIERS[Math.floor(Math.random() * VISUAL_MODIFIERS.length)];
+}
+
 const DOMAIN_MAP = {
   web: ['sitio', 'web', 'página', 'diseño', 'desarrollo', 'mockup'],
   seo: ['seo', 'búsqueda', 'google', 'posicionamiento', 'orgánico', 'rank'],
@@ -113,28 +127,30 @@ const DOMAIN_MAP = {
   finance: ['dinero', 'inversión', 'financiero', 'costo', 'precio', 'roi'],
   strategy: ['estrategia', 'plan', 'proceso', 'sistema', 'método', 'operación'],
   results: ['resultado', 'caso', 'cliente', 'éxito', 'logro', 'meta'],
-  opinion: ['error', 'problema', 'mayoría', 'agencia', 'diferencia', 'crítica'],
+  legal: ['ley', 'derecho', 'abogado', 'legal', 'juicio', 'notaría'],
+  medical: ['salud', 'médico', 'doctor', 'clínica', 'hospital', 'paciente'],
   saas: ['plataforma', 'software', 'herramienta', 'app', 'aplicación', 'interfaz'],
   coach: ['mentor', 'guía', 'crecimiento', 'desarrollo', 'mente', 'mentalidad', 'hábitos'],
   lifestyle: ['vida', 'rutina', 'café', 'viaje', 'mañana', 'minimalismo', 'estética'],
 };
 
 const QUERY_MAP = {
-  web: 'dark minimal website mockup screen',
-  seo: 'search analytics dark dashboard',
-  ai: 'abstract dark technology neural',
-  branding: 'brand identity minimal dark studio',
-  ecommerce: 'product photography minimal dark',
-  realestate: 'modern architecture minimal interior',
-  education: 'focused study minimal desk dark',
-  finance: 'financial chart minimal dark',
-  strategy: 'chess pieces dark minimal',
-  results: 'success growth minimal dark',
-  opinion: 'editorial portrait dark moody',
-  saas: 'modern minimalist software interface dark',
-  coach: 'minimalist meditation workspace dark',
-  lifestyle: 'minimalist coffee desk dark morning',
-  default: 'dark minimal professional workspace',
+  web: 'dark minimal website mockup laptop screen',
+  seo: 'search engine optimization analytics dark dashboard data',
+  ai: 'abstract dark technology artificial intelligence neural network',
+  branding: 'brand identity minimal dark photography project',
+  ecommerce: 'product photography minimal premium dark aesthetic',
+  realestate: 'modern architecture luxury minimal interior dark shadow',
+  education: 'focused study minimal desk dark library professional',
+  finance: 'financial growth chart minimal dark money',
+  strategy: 'chess pieces focus dark minimal strategy',
+  results: 'success achievement trophy minimal dark light',
+  legal: 'justice law scales minimal dark architecture professional',
+  medical: 'health medical science minimal clean dark professional',
+  saas: 'modern minimalist software platform ui dark',
+  coach: 'minimalist meditation workspace zen dark',
+  lifestyle: 'minimalist coffee beans desk dark morning productive',
+  default: 'dark minimal professional workspace premium',
 };
 
 const MOOD_MAP = {
@@ -148,7 +164,8 @@ const MOOD_MAP = {
   finance: 'dark-minimal',
   strategy: 'dark-minimal',
   results: 'editorial',
-  opinion: 'editorial',
+  legal: 'architecture',
+  medical: 'creative',
   saas: 'tech',
   coach: 'abstract',
   lifestyle: 'workspace',
@@ -180,10 +197,14 @@ export function generateSmartQuery(
   const suggestedMoodId = MOOD_MAP[detectedDomain as keyof typeof MOOD_MAP] || MOOD_MAP.default;
 
   // Step 4: Apply slide type modifier
-  if (slideType === 'content') {
+  const modifier = getVisualModifier();
+  
+  if (slideType === 'cover') {
+    query = `${query} ${modifier}`;
+  } else if (slideType === 'content') {
     query = `clean ${query}`;
   } else if (slideType === 'cta') {
-    query = `minimal ${query}`;
+    query = `minimal ${query} focus`;
   }
 
   return { query, suggestedMoodId };

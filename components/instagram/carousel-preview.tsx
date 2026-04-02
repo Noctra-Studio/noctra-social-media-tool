@@ -57,6 +57,8 @@ type CarouselPreviewProps = {
   onBackgroundChange?: (backgrounds: SlideBackgroundSelection[]) => void
   onUpdateSlide?: (slideNumber: number, updates: Partial<InstagramCarouselSlide>) => void
   onReorderSlides?: (newOrder: number[]) => void
+  caption?: string
+  onUpdateCaption?: (caption: string) => void
 }
 
 export type SlideTemplateProps = {
@@ -402,7 +404,7 @@ function SlideBackdrop({ background, slide }: Pick<SlideTemplateProps, 'backgrou
   )
 }
 
-function CoverSlide({ angle, background, slide }: SlideTemplateProps) {
+function CoverSlide({ angle, background, slide, onUpdateSlide }: SlideTemplateProps & { onUpdateSlide?: (slideNumber: number, updates: Partial<InstagramCarouselSlide>) => void }) {
   const resolved = getResolvedBackground(slide, background)
   const eyebrow = sanitizeSlideText(angle)?.toUpperCase()
   const headline = sanitizeSlideText(slide.headline)
@@ -411,17 +413,38 @@ function CoverSlide({ angle, background, slide }: SlideTemplateProps) {
   const headlineSize = slide.headline_size ? SIZE_SCALE_HEADLINE[slide.headline_size] : toCanvasPx(28)
   const bodySize = slide.body_size ? SIZE_SCALE_BODY[slide.body_size] : toCanvasPx(13)
 
+  // Vertical alignment mapping
+  const verticalAlign = slide.vertical_alignment || 'bottom'
+  const justifyContent = verticalAlign === 'top' ? 'flex-start' : verticalAlign === 'middle' ? 'center' : 'flex-end'
+
   return (
     <div style={{ position: 'relative', height: 1080, width: 1080, overflow: 'hidden' }}>
       <SlideBackdrop background={background} slide={slide} />
 
       <div
         className="relative z-10 flex h-full flex-col"
-        style={{ padding: toCanvasPx(32) }}
+        style={{ 
+          padding: toCanvasPx(32),
+          justifyContent: justifyContent,
+          paddingBottom: toCanvasPx(80) // Space for the bottom logo/handle
+        }}
       >
-        <div className="flex-1" />
-
-        <div style={{ display: 'flex', flexDirection: slide.text_order === 'body-first' ? 'column-reverse' : 'column', gap: toCanvasPx(8) }}>
+        <motion.div
+           drag="y"
+           dragConstraints={{ top: 0, bottom: 0 }}
+           dragElastic={0.1}
+           onDragEnd={(_, info) => {
+              const deltaY = info.offset.y
+              const currentOffset = slide.vertical_offset || 0
+              onUpdateSlide?.(slide.slide_number, { vertical_offset: currentOffset + deltaY })
+           }}
+           style={{ 
+             y: slide.vertical_offset || 0,
+             display: 'flex', 
+             flexDirection: slide.text_order === 'body-first' ? 'column-reverse' : 'column', 
+             gap: toCanvasPx(8) 
+           }}
+        >
           <div>
             {eyebrow ? (
               <span
@@ -476,16 +499,16 @@ function CoverSlide({ angle, background, slide }: SlideTemplateProps) {
               {subtitle}
             </p>
           ) : null}
-        </div>
 
-        <div
-          style={{
-            background: resolved.accentColor,
-            height: toCanvasPx(2),
-            marginTop: toCanvasPx(16),
-            width: toCanvasPx(32),
-          }}
-        />
+          <div
+            style={{
+              background: resolved.accentColor,
+              height: toCanvasPx(2),
+              marginTop: toCanvasPx(16),
+              width: toCanvasPx(32),
+            }}
+          />
+        </motion.div>
 
         <div
           className="absolute inset-x-0 z-10 flex items-center justify-between"
@@ -518,14 +541,18 @@ function CoverSlide({ angle, background, slide }: SlideTemplateProps) {
   )
 }
 
-function ContentSlide({ background, slide, totalSlides }: SlideTemplateProps) {
+function ContentSlide({ background, slide, totalSlides, onUpdateSlide }: SlideTemplateProps & { onUpdateSlide?: (slideNumber: number, updates: Partial<InstagramCarouselSlide>) => void }) {
   const resolved = getResolvedBackground(slide, background)
   const headline = sanitizeSlideText(slide.headline)
   const body = sanitizeSlideText(slide.body)
   const stat = sanitizeSlideText(slide.stat_or_example)
   const template = slide.suggested_template || 'editorial'
 
-  // Dynamic Font Scaling Logic (Simplified for CSS)
+  // Vertical alignment mapping
+  const verticalAlign = slide.vertical_alignment || 'middle'
+  const justifyContent = verticalAlign === 'top' ? 'flex-start' : verticalAlign === 'middle' ? 'center' : 'flex-end'
+
+  // Dynamic Font Scaling Logic
   const getHeadlineSize = (text: string) => {
     if (slide.headline_size) return SIZE_SCALE_HEADLINE[slide.headline_size]
     const len = text.length
@@ -545,17 +572,22 @@ function ContentSlide({ background, slide, totalSlides }: SlideTemplateProps) {
     return toCanvasPx(13)
   }
 
-  const renderTemplate = () => {
+  // ... (renderTemplate case switch remains the same internal logic but used inside the motion.div)
+  
+  const innerTemplate = () => {
+    const headlineSize = getHeadlineSize(headline)
+    const bodySize = getBodySize(body)
+    
     switch (template) {
       case 'bold-statement':
         return (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: toCanvasPx(48), height: '100%', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: toCanvasPx(48), width: '100%' }}>
             <h3
               style={{
                 ...clampLines(4),
                 color: '#E0E5EB',
                 fontFamily: 'var(--font-brand-display)',
-                fontSize: getHeadlineSize(headline) * 1.5,
+                fontSize: headlineSize * 1.5,
                 fontWeight: 900,
                 lineHeight: 1.1,
                 textTransform: 'uppercase',
@@ -571,24 +603,24 @@ function ContentSlide({ background, slide, totalSlides }: SlideTemplateProps) {
         )
       case 'split':
         return (
-          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', paddingBottom: toCanvasPx(32) }}>
-               <h3 style={{ ...clampLines(3), fontSize: getHeadlineSize(headline), fontWeight: 800, color: '#E0E5EB', lineHeight: 1.2, margin: 0 }}>{headline}</h3>
+               <h3 style={{ ...clampLines(3), fontSize: headlineSize, fontWeight: 800, color: '#E0E5EB', lineHeight: 1.2, margin: 0 }}>{headline}</h3>
             </div>
-            <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', borderRadius: `${toCanvasPx(16)}px ${toCanvasPx(16)}px 0 0`, padding: toCanvasPx(32), backdropFilter: 'blur(8px)', overflow: 'hidden' }}>
-               <p style={{ ...clampLines(5), fontSize: getBodySize(body), lineHeight: 1.6, color: 'rgba(224,229,235,0.8)', margin: 0 }}>{body}</p>
+            <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', borderRadius: `${toCanvasPx(16)}px ${toCanvasPx(16)}px 0 0`, padding: toCanvasPx(32), backdropFilter: 'blur(8px)' }}>
+               <p style={{ ...clampLines(5), fontSize: bodySize, lineHeight: 1.6, color: 'rgba(224,229,235,0.8)', margin: 0 }}>{body}</p>
             </div>
           </div>
         )
       case 'list':
         return (
-          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: toCanvasPx(24), overflow: 'hidden', height: '100%' }}>
-            <h3 style={{ ...clampLines(2), fontSize: getHeadlineSize(headline), fontWeight: 700, color: resolved.accentColor, margin: 0 }}>{headline}</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: toCanvasPx(24), width: '100%' }}>
+            <h3 style={{ ...clampLines(2), fontSize: headlineSize, fontWeight: 700, color: resolved.accentColor, margin: 0 }}>{headline}</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: toCanvasPx(16) }}>
               {body.split('.').filter(s => s.trim()).slice(0, 4).map((item, i) => (
                 <div key={i} style={{ display: 'flex', gap: toCanvasPx(16), alignItems: 'flex-start' }}>
                   <div style={{ width: toCanvasPx(24), height: toCanvasPx(24), borderRadius: '50%', background: 'rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: toCanvasPx(10), fontWeight: 700, color: 'white', flexShrink: 0 }}>{i+1}</div>
-                  <p style={{ ...clampLines(2), fontSize: getBodySize(item), color: '#E0E5EB', lineHeight: 1.4, margin: 0 }}>{item.trim()}</p>
+                  <p style={{ ...clampLines(2), fontSize: bodySize, color: '#E0E5EB', lineHeight: 1.4, margin: 0 }}>{item.trim()}</p>
                 </div>
               ))}
             </div>
@@ -596,31 +628,31 @@ function ContentSlide({ background, slide, totalSlides }: SlideTemplateProps) {
         )
       case 'stat-hero':
         return (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', overflow: 'hidden', height: '100%' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', width: '100%' }}>
             <div style={{ fontSize: toCanvasPx(64), fontWeight: 900, color: resolved.accentColor, lineHeight: 1 }}>{stat || "50%"}</div>
-            <h3 style={{ ...clampLines(2), fontSize: getHeadlineSize(headline), fontWeight: 700, color: '#E0E5EB', marginTop: toCanvasPx(12), margin: 0 }}>{headline}</h3>
-            <p style={{ ...clampLines(3), fontSize: getBodySize(body), color: 'rgba(224,229,235,0.6)', marginTop: toCanvasPx(8), margin: 0 }}>{body} / {stat}</p>
+            <h3 style={{ ...clampLines(2), fontSize: headlineSize, fontWeight: 700, color: '#E0E5EB', marginTop: toCanvasPx(12), margin: 0 }}>{headline}</h3>
+            <p style={{ ...clampLines(3), fontSize: bodySize, color: 'rgba(224,229,235,0.6)', marginTop: toCanvasPx(8), margin: 0 }}>{body} / {stat}</p>
           </div>
         )
       case 'minimal-quote':
         return (
-          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center', padding: toCanvasPx(64), overflow: 'hidden', height: '100%' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center', padding: toCanvasPx(64), width: '100%' }}>
             <span style={{ fontSize: toCanvasPx(48), color: resolved.accentColor, opacity: 0.5, lineHeight: 1 }}>"</span>
-            <h3 style={{ ...clampLines(4), fontSize: getHeadlineSize(headline), fontStyle: 'italic', color: '#E0E5EB', lineHeight: 1.6, maxWidth: '80%', margin: 0 }}>{headline}</h3>
+            <h3 style={{ ...clampLines(4), fontSize: headlineSize, fontStyle: 'italic', color: '#E0E5EB', lineHeight: 1.6, maxWidth: '80%', margin: 0 }}>{headline}</h3>
             <div style={{ height: 1, width: toCanvasPx(40), background: resolved.accentColor, margin: `${toCanvasPx(12)}px 0` }} />
-            <p style={{ fontSize: toCanvasPx(10), textTransform: 'uppercase', letterSpacing: '0.2em', color: 'rgba(224,229,235,0.5)', margin: 0 }}>@noctra_studio</p>
+            <p style={{ fontSize: toCanvasPx(10), textTransform: 'uppercase', letterSpacing: '0.2em', color: 'rgba(224, 229, 235, 0.5)', margin: 0 }}>@noctra_studio</p>
           </div>
         )
       case 'editorial':
       default:
         return (
-          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', overflow: 'hidden', height: '100%' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', width: '100%' }}>
             <h3
               style={{
                 ...clampLines(3),
                 color: '#E0E5EB',
                 fontFamily: 'var(--font-brand-display)',
-                fontSize: getHeadlineSize(headline) * 1.2,
+                fontSize: headlineSize * 1.2,
                 fontWeight: 700,
                 lineHeight: 1.2,
                 marginBottom: toCanvasPx(12),
@@ -634,7 +666,7 @@ function ContentSlide({ background, slide, totalSlides }: SlideTemplateProps) {
                 ...clampLines(5),
                 color: 'rgba(224, 229, 235, 0.7)',
                 fontFamily: 'var(--font-inter)',
-                fontSize: getBodySize(body),
+                fontSize: bodySize,
                 lineHeight: 1.6,
                 maxWidth: '92%',
                 margin: 0,
@@ -651,15 +683,33 @@ function ContentSlide({ background, slide, totalSlides }: SlideTemplateProps) {
     <div style={{ position: 'relative', height: 1080, width: 1080, overflow: 'hidden' }}>
       <SlideBackdrop background={background} slide={slide} />
       <div className="relative z-10 h-full flex flex-col" style={{ padding: toCanvasPx(32) }}>
-        <div className="flex justify-between items-center mb-8">
+        <div className="flex justify-between items-center mb-4">
            <span style={{ fontSize: toCanvasPx(10), color: 'rgba(224,229,235,0.4)', fontWeight: 500, letterSpacing: '0.1em' }}>
               {getCounterLabel(slide.slide_number, totalSlides)}
            </span>
            <div style={{ width: toCanvasPx(40), height: 1, background: 'rgba(224,229,235,0.1)' }} />
         </div>
         
-        <div className="flex-1 min-h-0">
-           {renderTemplate()}
+        <div 
+          className="flex-1 flex flex-col"
+          style={{ justifyContent: justifyContent }}
+        >
+           <motion.div
+              drag="y"
+              dragConstraints={{ top: 0, bottom: 0 }}
+              dragElastic={0.1}
+              onDragEnd={(_, info) => {
+                const deltaY = info.offset.y
+                const currentOffset = slide.vertical_offset || 0
+                onUpdateSlide?.(slide.slide_number, { vertical_offset: currentOffset + deltaY })
+              }}
+              style={{ 
+                y: slide.vertical_offset || 0,
+                width: '100%'
+              }}
+           >
+              {innerTemplate()}
+           </motion.div>
         </div>
 
         <div className="flex justify-end mt-4">
@@ -781,7 +831,7 @@ function CTASlide({ background, slide }: SlideTemplateProps) {
   )
 }
 
-export function SlideCanvas(props: SlideTemplateProps) {
+export function SlideCanvas(props: SlideTemplateProps & { onUpdateSlide?: (slideNumber: number, updates: Partial<InstagramCarouselSlide>) => void }) {
   if (props.slide.type === 'cover') {
     return <CoverSlide {...props} />
   }
@@ -878,6 +928,8 @@ export function InstagramCarouselPreview({
   onBackgroundChange,
   onUpdateSlide,
   onReorderSlides,
+  caption,
+  onUpdateCaption,
 }: CarouselPreviewProps) {
   const [activeIndex, setActiveIndex] = useState(0)
   const [direction, setDirection] = useState(1)
@@ -1040,12 +1092,12 @@ export function InstagramCarouselPreview({
         <div className="relative flex w-full flex-col overflow-hidden rounded-[42px] border border-white/10 bg-black p-3 shadow-2xl">
           <div className="flex items-center justify-between px-4 py-2 border-b border-white/5">
             <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-full bg-zinc-800 overflow-hidden ring-1 ring-white/10">
-                <span className="flex h-full w-full items-center justify-center text-[10px] font-bold text-zinc-500">NS</span>
+              <div className="h-8 w-8 rounded-full bg-zinc-800 overflow-hidden ring-1 ring-white/10 relative">
+                <Image src="/brand/noctra-icon.jpg" alt="" fill className="object-cover" />
               </div>
               <div className="flex flex-col">
-                <span className="text-[13px] font-semibold text-white">noctrastudio</span>
-                <span className="text-[10px] text-zinc-500">Málaga, Spain</span>
+                <span className="text-[13px] font-semibold text-white">noctra_studio</span>
+                <span className="text-[10px] text-zinc-500">Querétaro, México</span>
               </div>
             </div>
             <MoreHorizontal className="h-4 w-4 text-white" />
@@ -1099,6 +1151,7 @@ export function InstagramCarouselPreview({
                     isPreview
                     slide={previewingPreset ? { ...currentSlide, suggested_template: PRESET_STYLES.find(p => p.id === previewingPreset)!.template } : currentSlide}
                     totalSlides={totalSlides}
+                    onUpdateSlide={onUpdateSlide}
                   />
                 </div>
               </motion.div>
@@ -1292,6 +1345,34 @@ export function InstagramCarouselPreview({
                   ))}
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* Sec: Posición Vertical */}
+          <div className="mb-6">
+            <span className="mb-3 block text-[10px] uppercase tracking-[0.2em] text-[#4E576A]">
+              Posición
+            </span>
+            <div className="flex flex-col gap-3">
+              <div className="flex gap-1.5 p-1 bg-black/20 rounded-xl w-fit">
+                {(['top', 'middle', 'bottom'] as const).map((pos) => (
+                  <button
+                    key={pos}
+                    onClick={() => onUpdateSlide?.(currentSlide.slide_number, { vertical_alignment: pos, vertical_offset: 0 })}
+                    className={cn(
+                      "px-3 py-1 text-[11px] font-medium rounded-lg transition-all",
+                      (currentSlide.vertical_alignment || (currentSlide.type === 'cover' ? 'bottom' : 'middle')) === pos
+                        ? 'bg-[#E0E5EB] text-black shadow-lg'
+                        : 'text-[#8D95A6] hover:text-white hover:bg-white/5'
+                    )}
+                  >
+                    {pos === 'top' ? 'Superior' : pos === 'middle' ? 'Centro' : 'Inferior'}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-[#4E576A] italic px-1">
+                💡 Hint: También puedes arrastrar el texto directamente en el preview.
+              </p>
             </div>
           </div>
 

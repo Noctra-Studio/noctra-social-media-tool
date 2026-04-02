@@ -51,19 +51,20 @@ export async function POST(req: Request) {
     
     Generate a visual brief with maximum precision.
     
-    IMPORTANT: The "queries" field is for Unsplash search. Unsplash works best with 2-4 keywords (e.g., "minimal architecture ocean" or "woman working laptop"). 
-    DO NOT use full sentences or descriptive phrases like "business person pointing at target". 
-    Use concrete, visual keywords.
+    IMPORTANT: 
+    - The "queries" field is for Unsplash search. Use 2-4 visual keywords (e.g., "minimal architecture ocean"). 
+    - The "topic_keywords" field is for general topic identification. Provide exactly 5 keywords in Spanish (e.g., "Finanzas", "Minimalismo", "Oficina", "Tecnología", "Crecimiento").
     
     Respond ONLY with valid JSON — no preamble, no markdown:
     {
       "queries": [
         {
-          "query": "string", // 2-4 visual keywords reflecting the intent
+          "query": "string",
           "rationale": "string",
           "priority": 1
         }
       ],
+     "topic_keywords": ["string", "string", "string", "string", "string"],
      "visual_brief": {
        "mood": "string",
        "composition": "string",

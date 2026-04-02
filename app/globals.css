@@ -6,6 +6,13 @@
   --muted: #8d96a6;
   --border-subtle: rgba(231, 234, 239, 0.12);
   --font-brand-display: "Satoshi", var(--font-dm-sans), var(--font-inter), sans-serif;
+  
+  /* Adobe Illustrator Inspired Tokens */
+  --editor-bg: #1d1d1d;
+  --editor-panel: #2e2e2e;
+  --editor-border: #1a1a1a;
+  --editor-accent: #3b82f6;
+  --editor-surface: #242424;
 }
 
 @theme inline {
