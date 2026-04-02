@@ -1,3 +1,4 @@
+import { BrandAuthorityPanel } from '@/components/home/BrandAuthorityPanel'
 import { HomeFeedClient } from '@/components/home/home-feed-client'
 import { getUser } from '@/lib/auth/get-user'
 import { createClient } from '@/lib/supabase/server'
@@ -33,6 +34,9 @@ export default async function HomePage() {
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
+      <div className="mb-8">
+        <BrandAuthorityPanel />
+      </div>
       <HomeFeedClient firstName={firstName} posts={(posts as any[]) ?? []} />
     </div>
   )

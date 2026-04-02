@@ -1,8 +1,8 @@
 "use client";
 
 import Image from 'next/image'
-import { useEffect, useState, useRef, type ChangeEvent, type FormEvent } from 'react'
-import { Bookmark, Heart, MessageCircle, Send, MoreHorizontal, Pencil, Search, Upload } from 'lucide-react'
+import { useEffect, useLayoutEffect, useState, useRef, type ChangeEvent, type FormEvent } from 'react'
+import { Bookmark, Heart, MessageCircle, Send, MoreHorizontal, Pencil, Search, Upload, Image as ImageIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { InstagramCarouselSlide, SlideBackgroundSelection } from '@/lib/social-content'
 import {
@@ -59,7 +59,7 @@ interface InstagramPostPreviewProps {
 }
 
 const BACKGROUND_TYPES = [
-  { icon: (props: any) => <Image src="/icons/image.svg" width={16} height={16} alt="" {...props} />, id: 'image', label: 'Imagen' },
+  { icon: (props: any) => <ImageIcon className="h-4 w-4" {...props} />, id: 'image', label: 'Imagen' },
   { icon: (props: any) => <div className="h-3 w-3 rounded-full bg-gradient-to-tr from-[#FF0080] to-[#7928CA]" {...props} />, id: 'gradient', label: 'Gradiente' },
   { icon: (props: any) => <div className="h-3 w-3 rounded-full bg-[#101417]" {...props} />, id: 'solid', label: 'Sólido' },
 ] as const
@@ -82,6 +82,15 @@ export function InstagramPostPreview({
   const [searchResults, setSearchResults] = useState<UnsplashPhoto[]>([])
   const [dynamicScale, setDynamicScale] = useState(DEFAULT_PREVIEW_SCALE)
   const containerRef = useRef<HTMLDivElement>(null)
+
+  useLayoutEffect(() => {
+    if (!containerRef.current) return
+
+    const width = containerRef.current.getBoundingClientRect().width
+    if (width > 0) {
+      setDynamicScale(width / SLIDE_SIZE)
+    }
+  }, [])
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -161,12 +170,18 @@ export function InstagramPostPreview({
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-2 border-b border-white/5">
             <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-full bg-zinc-800 overflow-hidden ring-1 ring-white/10">
-                <span className="flex h-full w-full items-center justify-center text-[10px] font-bold text-zinc-500">NS</span>
+              <div className="h-8 w-8 rounded-full bg-[#101417] overflow-hidden ring-1 ring-white/10 relative">
+                <Image 
+                  src="/brand/noctra-icon.jpg" 
+                  alt="Noctra Studio" 
+                  fill 
+                  sizes="32px"
+                  className="object-cover"
+                />
               </div>
               <div className="flex flex-col">
                 <div className="flex items-center gap-1">
-                  <span className="text-[13px] font-semibold text-white">noctrastudio</span>
+                  <span className="text-[13px] font-semibold text-white">noctra_studio</span>
                   {isVerified && (
                     <svg viewBox="0 0 24 24" aria-label="Verified account" className="h-3 w-3 text-[#0095f6] fill-current">
                       <g><path d="M22.25 12c0-1.43-.88-2.67-2.19-3.34.46-1.39.2-2.97-.81-3.99s-2.6-1.27-3.99-.81c-.67-1.31-1.91-2.19-3.34-2.19s-2.67.88-3.33 2.19c-1.4-.46-2.98-.2-4 .81s-1.27 2.6-.81 4c-1.31.67-2.19 1.91-2.19 3.34s.88 2.67 2.19 3.34c-.46 1.39-.2 2.97.81 3.99s2.6 1.27 3.99.81c.66 1.31 1.91 2.19 3.34 2.19s2.67-.88 3.34-2.19c1.39.46 2.97.2 3.99-.81s1.27-2.6.81-3.99c1.31-.67 2.19-1.91 2.19-3.34zm-11.71 4.2L6.8 12.46l1.41-1.42 2.26 2.26 4.8-5.23 1.47 1.35-6.2 6.78z"></path></g>
@@ -190,19 +205,21 @@ export function InstagramPostPreview({
             <MoreHorizontal className="h-4 w-4 text-white" />
           </div>
 
-          <div 
-            ref={containerRef}
-            className="flex aspect-square items-center justify-center bg-black overflow-hidden relative"
+        <div 
+          ref={containerRef}
+          className="flex aspect-square items-center justify-center bg-black overflow-hidden relative"
+        >
+          <div
+            style={{
+              height: SLIDE_SIZE,
+              left: 0,
+              position: 'absolute',
+              top: 0,
+              transform: `scale(${dynamicScale})`,
+              transformOrigin: 'top left',
+              width: SLIDE_SIZE,
+            }}
           >
-            <div 
-              className="absolute origin-top-left"
-              style={{
-                height: SLIDE_SIZE,
-                transform: `scale(${dynamicScale})`,
-                transformOrigin: 'top left',
-                width: SLIDE_SIZE,
-              }}
-            >
               <SlideCanvas
                 angle="0"
                 background={currentBgState}
@@ -227,7 +244,7 @@ export function InstagramPostPreview({
             <div className="mt-2.5">
               <p className="text-[13px] font-semibold text-white">1,248 likes</p>
               <div className="mt-1 flex items-start gap-1 text-[13px] leading-snug">
-                <span className="font-semibold text-white">noctrastudio</span>
+                <span className="font-semibold text-white">noctra_studio</span>
                 <span className="text-zinc-200 line-clamp-2">Optimiza tu presencia digital con Noctra...</span>
               </div>
               <p className="mt-1 text-[10px] uppercase text-zinc-500">Hace 4 horas</p>

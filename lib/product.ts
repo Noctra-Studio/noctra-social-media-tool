@@ -1,8 +1,19 @@
+import type { PostFormat } from '@/lib/social-content'
+
 export const platforms = ['instagram', 'linkedin', 'x'] as const
 
 export type Platform = (typeof platforms)[number]
 export type AssistanceLevel = 'guided' | 'balanced' | 'expert'
 export type ComposeMode = 'explore' | 'idea' | 'direct'
+export type AngleDefinition = {
+  id: string
+  label: string
+  description: string
+  functions: Array<'educa' | 'curiosidad' | 'conocimiento' | 'convence'>
+  best_for: Platform[]
+  example_hook: string
+  format_affinity: PostFormat[]
+}
 
 export type SuggestionCard = {
   ageLabel: string
@@ -24,23 +35,89 @@ export type SuggestedIdea = {
 export type AngleSuggestion = {
   hook: string
   one_liner: string
-  type: string
+  type: AngleDefinition['id']
 }
+
+export const ANGLE_LIBRARY: AngleDefinition[] = [
+  {
+    id: 'Tutorial',
+    label: 'Tutorial',
+    description: 'Enseña algo paso a paso. El lector aprende a hacer X.',
+    functions: ['educa', 'conocimiento'],
+    best_for: ['instagram', 'linkedin'],
+    example_hook: '3 pasos para hacer X sin necesitar Y.',
+    format_affinity: ['carousel', 'document'],
+  },
+  {
+    id: 'Opinión',
+    label: 'Opinión',
+    description: 'Toma postura sobre algo del mercado. Genera debate.',
+    functions: ['convence', 'curiosidad'],
+    best_for: ['linkedin', 'x'],
+    example_hook: 'La mayoría hace X mal y no lo sabe.',
+    format_affinity: ['text', 'tweet', 'thread'],
+  },
+  {
+    id: 'Historia',
+    label: 'Historia',
+    description: 'Narra una experiencia real. Genera conexión y contexto.',
+    functions: ['curiosidad', 'convence'],
+    best_for: ['instagram', 'linkedin'],
+    example_hook: 'Hace 6 meses cometí el error que casi me cuesta X.',
+    format_affinity: ['single', 'text', 'thread'],
+  },
+  {
+    id: 'Caso de estudio',
+    label: 'Caso de estudio',
+    description: 'Muestra resultados reales de un proyecto o cliente.',
+    functions: ['conocimiento', 'convence'],
+    best_for: ['linkedin', 'instagram'],
+    example_hook: 'Así logramos X para [cliente] en solo Y semanas.',
+    format_affinity: ['carousel', 'document'],
+  },
+  {
+    id: 'Behind the scenes',
+    label: 'Behind the scenes',
+    description: 'Muestra el proceso interno. Construye confianza.',
+    functions: ['curiosidad', 'conocimiento'],
+    best_for: ['instagram'],
+    example_hook: 'Así construimos X por dentro (lo que nadie te muestra).',
+    format_affinity: ['single', 'carousel'],
+  },
+  {
+    id: 'Contrarian',
+    label: 'Contrarian',
+    description: 'Contradice el pensamiento común con evidencia.',
+    functions: ['curiosidad', 'convence'],
+    best_for: ['linkedin', 'x'],
+    example_hook: 'Llevas años haciendo X. Probablemente estás equivocado.',
+    format_affinity: ['text', 'thread', 'article'],
+  },
+  {
+    id: 'Desmitificador',
+    label: 'Desmitificador',
+    description: 'Destruye un mito común. Educa corrigiendo creencias falsas.',
+    functions: ['educa', 'curiosidad'],
+    best_for: ['linkedin', 'instagram'],
+    example_hook: 'No, X no funciona así. Aquí está la realidad.',
+    format_affinity: ['carousel', 'text'],
+  },
+  {
+    id: 'Predicción',
+    label: 'Predicción',
+    description: 'Anticipa tendencias o cambios del mercado.',
+    functions: ['curiosidad', 'conocimiento'],
+    best_for: ['linkedin', 'x'],
+    example_hook: 'En 12 meses, X cambiará completamente. Aquí por qué.',
+    format_affinity: ['text', 'thread'],
+  },
+]
 
 export type GeneratedContent = {
   angle: string
   content: Record<string, unknown>
   export_metadata?: Record<string, unknown> | null
-  format?:
-    | 'single'
-    | 'carousel'
-    | 'tweet'
-    | 'thread'
-    | 'article'
-    | 'text'
-    | 'image'
-    | 'document'
-    | null
+  format?: PostFormat | null
   platform: Platform
   pillar_id?: string | null
   post_id?: string | null

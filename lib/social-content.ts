@@ -28,6 +28,8 @@ export type InstagramCarouselSlide = {
   gradient_style: 'brand_dark' | 'brand_navy' | 'brand_subtle' | null
   suggested_template: string | null
   text_order?: 'headline-first' | 'body-first'
+  headline_size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl'
+  body_size?: 'xs' | 'sm' | 'md' | 'lg'
 }
 
 export type XThreadTweet = {
@@ -40,6 +42,13 @@ export type XThreadTweet = {
 }
 
 export type XHookStrength = 'strong' | 'medium' | 'weak'
+export type HookScore = {
+  score: 0 | 1 | 2 | 3 | 4 | 5
+  strength: 'strong' | 'medium' | 'weak'
+  first_line: string
+  why: string
+  pattern: 'pregunta' | 'stat' | 'contrarian' | 'promesa' | 'story' | 'otro'
+}
 
 export type LinkedInCarouselSlide = {
   content?: string
@@ -250,6 +259,8 @@ export function readInstagramSlides(value: unknown): InstagramCarouselSlide[] {
         | 'brand_navy'
         | 'brand_subtle'
         | null
+      const headline_size = (readOptionalString(item.headline_size) as InstagramCarouselSlide['headline_size']) ?? undefined
+      const body_size = (readOptionalString(item.body_size) as InstagramCarouselSlide['body_size']) ?? undefined
       const gradient_config = isRecord(item.gradient_config)
         ? normalizeGradientConfig(item.gradient_config as Partial<CarouselGradientConfig>)
         : undefined
@@ -281,7 +292,9 @@ export function readInstagramSlides(value: unknown): InstagramCarouselSlide[] {
         unsplash_query,
         suggested_template,
         gradient_style: gradient_config ? null : gradient_style,
-      }
+        headline_size,
+        body_size,
+      } as InstagramCarouselSlide
     })
     .filter((item): item is InstagramCarouselSlide => item !== null)
 }

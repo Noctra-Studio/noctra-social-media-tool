@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { getEditorialPrinciplesPrompt } from './editorial-principles'
 
 export async function buildUserContext(userId: string, platform: string) {
   const supabase = await createClient();
@@ -45,6 +46,7 @@ export async function buildUserContext(userId: string, platform: string) {
     avoided_patterns,
     style_notes,
     recent_topics,
-    total_posts_generated: recentPosts?.length || 0
+    total_posts_generated: recentPosts?.length || 0,
+    editorial_principles: getEditorialPrinciplesPrompt(platform),
   };
 }

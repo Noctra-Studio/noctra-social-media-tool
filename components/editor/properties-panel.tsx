@@ -771,7 +771,7 @@ export function PropertiesPanel({
                     Base: {currentScale?.base || 36}px
                   </p>
                   <p className="text-[9px] text-[#4E576A]">
-                    Ratio: {currentScale?.ratio.toFixed(3) || '1.200'}
+                    Ratio: {currentScale?.ratio?.toFixed(3) ?? '1.200'}
                   </p>
                 </div>
                 <button 

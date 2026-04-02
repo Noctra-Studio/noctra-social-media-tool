@@ -37,12 +37,12 @@ export function LinkedInPostPreview({
       {/* Header */}
       <div className="p-3 pb-0 flex items-start justify-between">
         <div className="flex gap-2">
-          <div className="h-12 w-12 rounded-full bg-zinc-200 overflow-hidden flex-shrink-0 flex items-center justify-center">
-            {authorAvatar ? (
-              <img src={authorAvatar} alt={authorName} className="h-full w-full object-cover" />
-            ) : (
-              <span className="text-lg font-bold text-zinc-500">{authorName.charAt(0)}</span>
-            )}
+          <div className="h-12 w-12 rounded-full bg-[#101417] overflow-hidden flex-shrink-0 flex items-center justify-center relative border border-black/5">
+            <img 
+              src={authorAvatar || "/brand/noctra-icon.jpg"} 
+              alt={authorName} 
+              className="h-full w-full object-cover" 
+            />
           </div>
           <div className="flex flex-col">
             <h4 className="text-sm font-semibold text-[#000000e6] hover:text-[#0a66c2] hover:underline cursor-pointer leading-tight">

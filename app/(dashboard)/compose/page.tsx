@@ -77,6 +77,7 @@ import { PostFeedback } from "@/components/post-feedback";
 import { AIButton, type AIButtonState } from "@/components/ui/AIButton";
 import { PlatformBadge } from "@/components/ui/PlatformBadge";
 import {
+  ANGLE_LIBRARY,
   formatPlatformLabel,
   getPlatformGuidance,
   platforms,
@@ -150,9 +151,13 @@ const FabricEditor = dynamic(
 
 import { TemplateSelector } from "@/components/editor/template-selector";
 import { SlideTemplate } from "@/lib/editor/templates";
+import { AngleLibrary } from "@/components/compose/angle-library";
 import { ImageDrawer, type SelectedImage, type OverlayConfig } from "@/components/compose/image-drawer";
+import { IdeaSwipeDeck } from "@/components/compose/idea-swipe-deck";
+import { HookScore } from "@/components/compose/hook-score";
 import { ImageTipsCard } from "@/components/compose/image-tips-card";
 import { ContentImageSlot } from "@/components/compose/content-image-slot";
+import { ContentScore } from "@/components/compose/content-score";
 import {
   buildStructuredPostFields,
   isMissingStructuredPostColumnError,
@@ -201,15 +206,6 @@ const modeCards: Array<{
     eyebrow: "Editor directo",
     description: "Elige plataforma, ángulo y ejecuta sin pasos intermedios.",
   },
-];
-
-const directAngles = [
-  "Tutorial",
-  "Opinión",
-  "Historia",
-  "Caso de estudio",
-  "Behind the scenes",
-  "Contrarian",
 ];
 
 type StoredIdeaRow = {
@@ -310,15 +306,6 @@ function readAssistanceState(): AssistanceState {
 
 function writeAssistanceState(state: AssistanceState) {
   window.localStorage.setItem(assistanceStateKey, JSON.stringify(state));
-}
-
-function formatSuggestedIdeaForClipboard(suggestedIdea: SuggestedIdea) {
-  return [
-    suggestedIdea.title,
-    suggestedIdea.hook,
-    `Angulo: ${suggestedIdea.angle}`,
-    `Por que ahora: ${suggestedIdea.why_now}`,
-  ].join("\n\n");
 }
 
 function getContentPreview(
@@ -436,6 +423,7 @@ export default function ComposePage() {
   const [sourceIdeaId, setSourceIdeaId] = useState<string | null>(null);
   const [angles, setAngles] = useState<AngleSuggestion[]>([]);
   const [selectedAngle, setSelectedAngle] = useState<string | null>(null);
+  const [showAngleLibrary, setShowAngleLibrary] = useState(false);
   const [generatedResults, setGeneratedResults] = useState<
     Partial<Record<Platform, GeneratedContent>>
   >({});
@@ -469,12 +457,6 @@ export default function ComposePage() {
   const [savedPostIds, setSavedPostIds] = useState<
     Partial<Record<Platform, string>>
   >({});
-  const [copiedSuggestedIdeaKey, setCopiedSuggestedIdeaKey] = useState<
-    string | null
-  >(null);
-  const [savingSuggestedIdeaKey, setSavingSuggestedIdeaKey] = useState<
-    string | null
-  >(null);
   const [savedSuggestedIdeaKeys, setSavedSuggestedIdeaKeys] = useState<
     Record<string, string>
   >({});
@@ -1466,7 +1448,6 @@ export default function ComposePage() {
       }
 
       setSuggestedIdeas(data.ideas || []);
-      setCopiedSuggestedIdeaKey(null);
       setSavedSuggestedIdeaKeys({});
       setIdeasButtonState("success");
     } catch (error) {
@@ -1505,6 +1486,7 @@ export default function ComposePage() {
 
       setAngles(data.angles || []);
       setSelectedAngle(null);
+      setShowAngleLibrary(false);
       setAnglesButtonState("success");
     } catch (error) {
       setAnglesButtonState("error");
@@ -1911,21 +1893,6 @@ export default function ComposePage() {
     setMode("idea");
   };
 
-  const copySuggestedIdea = async (suggestedIdea: SuggestedIdea) => {
-    const suggestionKey = getSuggestedIdeaKey(suggestedIdea);
-
-    await navigator.clipboard.writeText(
-      formatSuggestedIdeaForClipboard(suggestedIdea),
-    );
-    setCopiedSuggestedIdeaKey(suggestionKey);
-
-    window.setTimeout(() => {
-      setCopiedSuggestedIdeaKey((current) =>
-        current === suggestionKey ? null : current,
-      );
-    }, 1800);
-  };
-
   const saveSuggestedIdea = async (suggestedIdea: SuggestedIdea) => {
     const suggestionKey = getSuggestedIdeaKey(suggestedIdea);
 
@@ -1933,7 +1900,6 @@ export default function ComposePage() {
       return;
     }
 
-    setSavingSuggestedIdeaKey(suggestionKey);
     setErrorMessage(null);
 
     try {
@@ -1981,10 +1947,6 @@ export default function ComposePage() {
         error instanceof Error
           ? error.message
           : "No fue posible guardar la idea sugerida.",
-      );
-    } finally {
-      setSavingSuggestedIdeaKey((current) =>
-        current === suggestionKey ? null : current,
       );
     }
   };
@@ -2393,6 +2355,7 @@ export default function ComposePage() {
     setPillarSelectionMode("auto");
     setSelectedAngle(trend.angle);
     setAngles([]);
+    setShowAngleLibrary(false);
     setMode("idea");
     focusIdeaTextarea();
   };
@@ -2401,9 +2364,38 @@ export default function ComposePage() {
     setMode(nextMode);
 
     if (nextMode === "direct" && !selectedAngle) {
-      setSelectedAngle(directAngles[0]);
+      setSelectedAngle(
+        ANGLE_LIBRARY.find((angle) => angle.best_for.includes(activePlatform))
+          ?.id ?? ANGLE_LIBRARY[0]?.id ?? null,
+      );
+    }
+
+    if (nextMode !== "idea") {
+      setShowAngleLibrary(false);
     }
   };
+
+  useEffect(() => {
+    if (mode !== "direct") {
+      return;
+    }
+
+    const isCurrentAngleAvailable = selectedAngle
+      ? ANGLE_LIBRARY.some(
+          (angle) =>
+            angle.id === selectedAngle && angle.best_for.includes(activePlatform),
+        )
+      : false;
+
+    if (isCurrentAngleAvailable) {
+      return;
+    }
+
+    setSelectedAngle(
+      ANGLE_LIBRARY.find((angle) => angle.best_for.includes(activePlatform))
+        ?.id ?? ANGLE_LIBRARY[0]?.id ?? null,
+    );
+  }, [activePlatform, mode, selectedAngle]);
 
   const focusIdeaTextarea = () => {
     window.requestAnimationFrame(() => {
@@ -2783,6 +2775,68 @@ export default function ComposePage() {
         post_caption: value,
       },
     }));
+  };
+
+  const replaceLeadingLine = (value: string, newHook: string) => {
+    const lines = value.split(/\r?\n/);
+
+    if (lines.length === 0 || !value.trim()) {
+      return newHook;
+    }
+
+    lines[0] = newHook;
+    return lines.join("\n");
+  };
+
+  const replaceFirstLine = (
+    platform: Platform,
+    format: PostFormat,
+    content: Record<string, unknown>,
+    newHook: string,
+  ) => {
+    if (platform === "instagram") {
+      if (format === "carousel") {
+        const slides = readInstagramSlides(content.slides);
+        const coverSlide = slides.find((slide) => slide.type === "cover");
+        const fallbackIndex = coverSlide ? -1 : 0;
+
+        return {
+          ...content,
+          slides: slides.map((slide, index) => {
+            const shouldReplace = coverSlide
+              ? slide.slide_number === coverSlide.slide_number
+              : index === fallbackIndex;
+
+            return shouldReplace ? { ...slide, headline: newHook } : slide;
+          }),
+        };
+      }
+
+      return {
+        ...content,
+        caption: replaceLeadingLine(readString(content.caption), newHook),
+      };
+    }
+
+    if (platform === "linkedin") {
+      if (format === "document" || format === "carousel") {
+        const slides = readLinkedInSlides(content.slides);
+
+        return {
+          ...content,
+          slides: slides.map((slide, index) =>
+            index === 0 ? { ...slide, title: newHook } : slide,
+          ),
+        };
+      }
+
+      return {
+        ...content,
+        caption: replaceLeadingLine(readString(content.caption), newHook),
+      };
+    }
+
+    return content;
   };
 
   const handleTagsChange = (platform: Platform, tags: string[]) => {
@@ -3196,7 +3250,7 @@ export default function ComposePage() {
               onUpdateSlide={(slideNumber, updates) => {
                 setGeneratedResults((prev) => {
                   const r = prev[platform];
-                  if (!r) return prev;
+                  if (!r || !r.content) return prev;
                   const currentSlides = (r.content as any).slides || [];
                   const updatedSlides = currentSlides.map((s: any) => 
                     s.slide_number === slideNumber ? { ...s, ...updates } : s
@@ -3206,10 +3260,32 @@ export default function ComposePage() {
                     [platform]: {
                       ...r,
                       content: {
-                        ...r.content,
+                        ...(r.content as any),
                         slides: updatedSlides,
-                      }
-                    }
+                      },
+                    },
+                  };
+                });
+              }}
+              onReorderSlides={(newOrder) => {
+                setGeneratedResults((prev) => {
+                  const r = prev.instagram;
+                  if (!r || !r.content || !Array.isArray((r.content as any).slides)) return prev;
+                  const oldSlides = [...(r.content as any).slides];
+                  const newSlides = newOrder.map((originalPos, newIdx) => {
+                    const s = { ...oldSlides[originalPos - 1] };
+                    s.slide_number = newIdx + 1;
+                    return s;
+                  });
+                  return {
+                    ...prev,
+                    instagram: {
+                      ...r,
+                      content: {
+                        ...(r.content as any),
+                        slides: newSlides,
+                      },
+                    },
                   };
                 });
               }}
@@ -3934,6 +4010,45 @@ export default function ComposePage() {
           </div>
 
           <div className="mt-5">{renderPostContentBody(platform, result)}</div>
+
+          {!generating ? (
+            <div className="mt-5">
+              {(platform === "instagram" || platform === "linkedin") ? (
+                <div className="mb-5">
+                  <HookScore
+                    platform={platform}
+                    format={inferPostFormat(platform, result.content, result.format)}
+                    content={result.content}
+                    angle={result.angle}
+                    onReplaceHook={(newHook) => {
+                      updateGeneratedResult(platform, (current) => ({
+                        ...current,
+                        content: replaceFirstLine(
+                          platform,
+                          inferPostFormat(platform, current.content, current.format),
+                          current.content,
+                          newHook,
+                        ),
+                      }));
+                    }}
+                  />
+                </div>
+              ) : null}
+              <ContentScore
+                platform={platform}
+                format={inferPostFormat(platform, result.content, result.format)}
+                content={result.content}
+                angle={result.angle}
+                postId={result.post_id ?? undefined}
+                onRebalance={(newContent) => {
+                  updateGeneratedResult(platform, (current) => ({
+                    ...current,
+                    content: newContent,
+                  }));
+                }}
+              />
+            </div>
+          ) : null}
 
           {currentQuickGeneratedOutput?.note && (
             <p className="mt-4 text-xs text-[#4E576A]">
@@ -4723,90 +4838,22 @@ export default function ComposePage() {
                         </p>
                       </div>
                     ) : (
-                      <div
+                      <IdeaSwipeDeck
                         key={suggestedIdeas
                           .map((suggestedIdea) =>
                             getSuggestedIdeaKey(suggestedIdea),
                           )
                           .join("|")}
-                        className="grid gap-4 animate-fadeIn lg:grid-cols-3">
-                        {suggestedIdeas.map((suggestedIdea) => {
-                          const suggestionKey =
-                            getSuggestedIdeaKey(suggestedIdea);
-                          const isSaved = Boolean(
-                            savedSuggestedIdeaKeys[suggestionKey],
-                          );
-                          const isCopied =
-                            copiedSuggestedIdeaKey === suggestionKey;
-                          const isSaving =
-                            savingSuggestedIdeaKey === suggestionKey;
-
-                          return (
-                            <div
-                              key={suggestionKey}
-                              className="rounded-[28px] border border-white/10 bg-[#101417] p-5 text-left transition-colors hover:border-[#E0E5EB]/40">
-                              <div className="flex items-start justify-between gap-3">
-                                <p className="text-xs uppercase tracking-[0.24em] text-[#4E576A]">
-                                  {suggestedIdea.angle}
-                                </p>
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      void copySuggestedIdea(suggestedIdea)
-                                    }
-                                    className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1.5 text-xs text-[#8D95A6] transition-colors hover:border-white/20 hover:text-white">
-                                    {isCopied ? (
-                                      <Check className="h-3.5 w-3.5" />
-                                    ) : (
-                                      <Copy className="h-3.5 w-3.5" />
-                                    )}
-                                    {isCopied ? "Copiado" : "Copiar"}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      void saveSuggestedIdea(suggestedIdea)
-                                    }
-                                    disabled={isSaved || isSaving}
-                                    className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1.5 text-xs text-[#8D95A6] transition-colors hover:border-white/20 hover:text-white disabled:opacity-60">
-                                    {isSaving ? (
-                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                    ) : (
-                                      <Save className="h-3.5 w-3.5" />
-                                    )}
-                                    {isSaved ? "Guardada" : "Guardar como idea"}
-                                  </button>
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  selectSuggestedIdea(suggestedIdea)
-                                }
-                                className="mt-3 block w-full text-left">
-                                <p
-                                  className="text-xl font-medium text-[#E0E5EB]"
-                                  style={{
-                                    fontFamily: "var(--font-brand-display)",
-                                  }}>
-                                  {suggestedIdea.title}
-                                </p>
-                                <p className="mt-3 text-sm leading-6 text-[#E0E5EB]">
-                                  {suggestedIdea.hook}
-                                </p>
-                                <p className="mt-4 inline-flex rounded-full bg-[#462D6E]/15 px-3 py-1 text-xs text-[#D3C2F1]">
-                                  {suggestedIdea.why_now}
-                                </p>
-                                <div className="mt-5 inline-flex items-center gap-2 text-sm font-medium text-white underline-offset-2 hover:underline">
-                                  Desarrollar esta idea
-                                  <MoveRight className="h-4 w-4" />
-                                </div>
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
+                        activePlatform={activePlatform}
+                        ideas={suggestedIdeas}
+                        onDevelop={selectSuggestedIdea}
+                        onSave={(idea) => {
+                          void saveSuggestedIdea(idea);
+                        }}
+                        onSkip={() => {}}
+                        onRequestMore={() => void requestSuggestedIdeas()}
+                        savedKeys={savedSuggestedIdeaKeys}
+                      />
                     )}
                   </div>
                 )}
@@ -4863,32 +4910,56 @@ export default function ComposePage() {
                         </div>
 
                         {angles.length > 0 && (
-                          <div className="grid gap-3 md:grid-cols-2">
-                            {angles.map((angle) => (
+                          <div className="space-y-4">
+                            {showAngleLibrary ? (
+                              <AngleLibrary
+                                activePlatform={activePlatform}
+                                activeFormat={selectedFormats[activePlatform]}
+                                selectedAngle={selectedAngle}
+                                onSelect={(angleId) => setSelectedAngle(angleId)}
+                              />
+                            ) : (
+                              <div className="grid gap-3 md:grid-cols-2">
+                                {angles.map((angle) => (
+                                  <button
+                                    key={angle.type}
+                                    type="button"
+                                    onClick={() => setSelectedAngle(angle.type)}
+                                    className={`rounded-[28px] border p-4 text-left transition-colors ${
+                                      selectedAngle === angle.type
+                                        ? "border-[#E0E5EB]/50 bg-[#101417]"
+                                        : "border-white/10 bg-[#101417]/40 hover:border-white/20"
+                                    }`}>
+                                    <p className="text-xs uppercase tracking-[0.24em] text-[#4E576A]">
+                                      {angle.type}
+                                    </p>
+                                    <p
+                                      className="mt-3 text-lg font-medium text-[#E0E5EB]"
+                                      style={{
+                                        fontFamily: "var(--font-brand-display)",
+                                      }}>
+                                      {angle.hook}
+                                    </p>
+                                    <p className="mt-2 text-sm leading-6 text-[#8D95A6]">
+                                      {angle.one_liner}
+                                    </p>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                            <p className="text-sm text-[#8D95A6]">
+                              ¿Prefieres elegir directamente?{" "}
                               <button
-                                key={angle.type}
                                 type="button"
-                                onClick={() => setSelectedAngle(angle.type)}
-                                className={`rounded-[28px] border p-4 text-left transition-colors ${
-                                  selectedAngle === angle.type
-                                    ? "border-[#E0E5EB]/50 bg-[#101417]"
-                                    : "border-white/10 bg-[#101417]/40 hover:border-white/20"
-                                }`}>
-                                <p className="text-xs uppercase tracking-[0.24em] text-[#4E576A]">
-                                  {angle.type}
-                                </p>
-                                <p
-                                  className="mt-3 text-lg font-medium text-[#E0E5EB]"
-                                  style={{
-                                    fontFamily: "var(--font-brand-display)",
-                                  }}>
-                                  {angle.hook}
-                                </p>
-                                <p className="mt-2 text-sm leading-6 text-[#8D95A6]">
-                                  {angle.one_liner}
-                                </p>
+                                onClick={() =>
+                                  setShowAngleLibrary((current) => !current)
+                                }
+                                className="text-[#D3C2F1] underline decoration-[#462D6E]/70 underline-offset-4 transition-colors hover:text-[#E0E5EB]">
+                                {showAngleLibrary
+                                  ? "Ver sugerencias IA"
+                                  : "Ver biblioteca"}
                               </button>
-                            ))}
+                            </p>
                           </div>
                         )}
                       </div>
@@ -4903,21 +4974,12 @@ export default function ComposePage() {
                             &apos;Opinión&apos; o &apos;Historia&apos;
                           </p>
                         </div>
-                        <div className="flex flex-nowrap gap-2 overflow-x-auto pb-1">
-                          {directAngles.map((angle) => (
-                            <button
-                              key={angle}
-                              type="button"
-                              onClick={() => setSelectedAngle(angle)}
-                              className={`shrink-0 cursor-pointer whitespace-nowrap rounded-full px-4 py-2 text-sm transition-all duration-200 ${
-                                selectedAngle === angle
-                                  ? "bg-white font-medium text-black"
-                                  : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
-                              }`}>
-                              {angle}
-                            </button>
-                          ))}
-                        </div>
+                        <AngleLibrary
+                          activePlatform={activePlatform}
+                          activeFormat={selectedFormats[activePlatform]}
+                          selectedAngle={selectedAngle}
+                          onSelect={(angleId) => setSelectedAngle(angleId)}
+                        />
                         <div className="grid gap-2">
                           <span className="mb-2 text-xs font-semibold tracking-[0.28em] text-zinc-400">
                             IDEA BASE

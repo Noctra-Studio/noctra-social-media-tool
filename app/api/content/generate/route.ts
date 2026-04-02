@@ -25,6 +25,11 @@ import {
   parseAnthropicJson,
   saveGeneratedPost,
 } from '@/lib/social-server'
+import {
+  fetchMarketIntelligence,
+  formatMarketSignalsForPrompt,
+} from '@/lib/ai/market-intelligence'
+import { getNoctraPositioningPrompt } from '@/lib/ai/noctra-positioning'
 
 type GenerateBody = {
   angle?: string
@@ -119,8 +124,12 @@ Return ONLY valid JSON:
 
 function getXTweetPrompt(idea: string, angle: string, brandVoice: string, strategyContext: string) {
   return {
-    system: withUserInputLanguageRule(`You are writing a single tweet for Manu, founder of Noctra Studio in Queretaro, Mexico.
-Brand voice:
+    system: withUserInputLanguageRule(`You are Manu, founder of Noctra Studio,
+writing on X (Twitter) from a practitioner's perspective.
+You execute digital projects for SMBs in Mexico and LATAM.
+Your voice: direct, specific, earned credibility — not corporate.
+
+Brand voice context:
 ${brandVoice}
 
 ${strategyContext}
@@ -137,6 +146,11 @@ Rules:
 - No hashtags unless truly necessary.
 - Tight, punchy, specific.
 - No em dash.
+- The hook must create one of: curiosity, contradiction, threatened identity, or specific transformation promise.
+- If angle is "Contrarian": start with what the majority believes, then flip it with evidence.
+- If angle is "Historia": first person, past tense, specific moment.
+- If angle is "Tutorial": lead with the outcome, not the steps.
+- Never start with "En", "La", "El", "Los" — start with action or tension.
 
 Return ONLY valid JSON:
 {
@@ -245,19 +259,43 @@ export async function POST(req: Request) {
 
     if (pillarsError || audienceError) {
       if (isMissingStrategyTablesError(pillarsError) || isMissingStrategyTablesError(audienceError)) {
-        const context = await buildUserContext(user.id, platform)
-        const learningInjection =
-          context.total_posts_generated >= 5
-            ? `
-Context from previous posts:
-- Top performing references: ${context.top_performing_posts
-                .map((post) => (typeof post.content === 'object' && post.content ? readString((post.content as Record<string, unknown>).caption) : ''))
-                .filter(Boolean)
-                .join(' | ') || 'none'}
-- Avoided patterns: ${context.avoided_patterns.join(', ') || 'none'}
-- Style notes: ${context.style_notes.join(', ') || 'none'}
-- Recent topics to avoid repeating: ${context.recent_topics.join(', ') || 'none'}`
-            : ''
+        const [context, marketContext] = await Promise.allSettled([
+          buildUserContext(user.id, platform),
+          fetchMarketIntelligence(idea, platform),
+        ])
+
+        const userCtx = context.status === 'fulfilled'
+          ? context.value
+          : {
+              top_performing_posts: [],
+              avoided_patterns: [],
+              style_notes: [],
+              recent_topics: [],
+              total_posts_generated: 0,
+              editorial_principles: '',
+            }
+
+        const marketSignals = marketContext.status === 'fulfilled'
+          ? formatMarketSignalsForPrompt(marketContext.value)
+          : ''
+
+        const learningInjection = `
+${userCtx.editorial_principles ?? ''}
+${marketSignals}
+${userCtx.total_posts_generated >= 5 ? `
+## CONTEXTO DE POSTS ANTERIORES
+- Referencias de alto rendimiento: ${userCtx.top_performing_posts
+    .map(p => typeof p.content === 'object' && p.content
+      ? readString((p.content as Record<string,unknown>).caption)
+      : '')
+    .filter(Boolean)
+    .slice(0, 2)
+    .join(' | ') || 'ninguno aún'}
+- Patrones a evitar (basado en historial): ${userCtx.avoided_patterns.join(', ') || 'ninguno'}
+- Notas de estilo: ${userCtx.style_notes.join(', ') || 'ninguna'}
+- Temas recientes (no repetir): ${userCtx.recent_topics.slice(0, 5).join(', ') || 'ninguno'}
+` : ''}
+`
         const promptPayload = buildPlatformPrompt({
           angle,
           brandVoice: `${formatBrandVoice(customBrandVoice as never)}${learningInjection}`,
@@ -311,19 +349,44 @@ Calibra el lenguaje, ejemplos, y CTA del post para esta audiencia específica. U
       ((pillars as BrandPillar[] | null) || []).find((pillar) => pillar.id === selectedPillarId) || null
     const activeAudience = (audience as PlatformAudience | null) ?? null
 
-    const context = await buildUserContext(user.id, platform)
-    const learningInjection =
-      context.total_posts_generated >= 5
-        ? `
-Context from previous posts:
-- Top performing references: ${context.top_performing_posts
-            .map((post) => (typeof post.content === 'object' && post.content ? readString((post.content as Record<string, unknown>).caption) : ''))
-            .filter(Boolean)
-            .join(' | ') || 'none'}
-- Avoided patterns: ${context.avoided_patterns.join(', ') || 'none'}
-- Style notes: ${context.style_notes.join(', ') || 'none'}
-- Recent topics to avoid repeating: ${context.recent_topics.join(', ') || 'none'}`
-        : ''
+    const [context, marketContext] = await Promise.allSettled([
+      buildUserContext(user.id, platform),
+      fetchMarketIntelligence(idea, platform),
+    ])
+
+    const userCtx = context.status === 'fulfilled'
+      ? context.value
+      : {
+          top_performing_posts: [],
+          avoided_patterns: [],
+          style_notes: [],
+          recent_topics: [],
+          total_posts_generated: 0,
+          editorial_principles: '',
+        }
+
+    const marketSignals = marketContext.status === 'fulfilled'
+      ? formatMarketSignalsForPrompt(marketContext.value)
+      : ''
+
+    const learningInjection = `
+${getNoctraPositioningPrompt(idea)}
+${userCtx.editorial_principles ?? ''}
+${marketSignals}
+${userCtx.total_posts_generated >= 5 ? `
+## CONTEXTO DE POSTS ANTERIORES
+- Referencias de alto rendimiento: ${userCtx.top_performing_posts
+    .map(p => typeof p.content === 'object' && p.content
+      ? readString((p.content as Record<string,unknown>).caption)
+      : '')
+    .filter(Boolean)
+    .slice(0, 2)
+    .join(' | ') || 'ninguno aún'}
+- Patrones a evitar (basado en historial): ${userCtx.avoided_patterns.join(', ') || 'ninguno'}
+- Notas de estilo: ${userCtx.style_notes.join(', ') || 'ninguna'}
+- Temas recientes (no repetir): ${userCtx.recent_topics.slice(0, 5).join(', ') || 'ninguno'}
+` : ''}
+`
     const strategyContext = `${getPillarPrompt(activePillar)}
 
 ${getAudiencePrompt(activeAudience, platform)}

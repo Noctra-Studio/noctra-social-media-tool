@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { anthropic } from '@/lib/anthropic'
+import { buildUserContext } from '@/lib/ai/build-user-context'
 import { withUserInputLanguageRule } from '@/lib/ai/language-rule'
 import {
   getAudiencePrompt,
@@ -18,6 +19,11 @@ import {
   parseAnthropicJson,
   saveGeneratedPost,
 } from '@/lib/social-server'
+import {
+  fetchMarketIntelligence,
+  formatMarketSignalsForPrompt,
+} from '@/lib/ai/market-intelligence'
+import { getNoctraPositioningPrompt } from '@/lib/ai/noctra-positioning'
 
 type CarouselBody = {
   angle?: string
@@ -86,6 +92,45 @@ ${getAudiencePrompt(activeAudience, 'instagram')}
 
 Calibra el lenguaje, los ejemplos y el CTA para esta audiencia específica.`
 
+    const [context, marketContext] = await Promise.allSettled([
+      buildUserContext(user.id, 'instagram'),
+      fetchMarketIntelligence(idea, 'instagram'),
+    ])
+
+    const userCtx = context.status === 'fulfilled'
+      ? context.value
+      : {
+          top_performing_posts: [],
+          avoided_patterns: [],
+          style_notes: [],
+          recent_topics: [],
+          total_posts_generated: 0,
+          editorial_principles: '',
+        }
+
+    const marketSignals = marketContext.status === 'fulfilled'
+      ? formatMarketSignalsForPrompt(marketContext.value)
+      : ''
+
+    const learningInjection = `
+${getNoctraPositioningPrompt(idea)}
+${userCtx.editorial_principles ?? ''}
+${marketSignals}
+${userCtx.total_posts_generated >= 5 ? `
+## CONTEXTO DE POSTS ANTERIORES
+- Referencias de alto rendimiento: ${userCtx.top_performing_posts
+    .map(p => typeof p.content === 'object' && p.content
+      ? readString((p.content as Record<string,unknown>).caption)
+      : '')
+    .filter(Boolean)
+    .slice(0, 2)
+    .join(' | ') || 'ninguno aún'}
+- Patrones a evitar (basado en historial): ${userCtx.avoided_patterns.join(', ') || 'ninguno'}
+- Notas de estilo: ${userCtx.style_notes.join(', ') || 'ninguna'}
+- Temas recientes (no repetir): ${userCtx.recent_topics.slice(0, 5).join(', ') || 'ninguno'}
+` : ''}
+`
+
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 2200,
@@ -94,6 +139,8 @@ Brand voice:
 ${formatBrandVoice(brandVoice)}
 
 ${strategyContext}
+
+${learningInjection}
 
 Language: Spanish (LATAM).
 Return only valid JSON.`),

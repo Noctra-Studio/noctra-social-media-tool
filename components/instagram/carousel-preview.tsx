@@ -2,7 +2,7 @@
 
 import Image from 'next/image'
 import { AnimatePresence, motion } from 'framer-motion'
-import { useEffect, useState, useRef, type CSSProperties, type ChangeEvent, type FormEvent } from 'react'
+import { useEffect, useLayoutEffect, useState, useRef, type CSSProperties, type ChangeEvent, type FormEvent } from 'react'
 import { Bookmark, ChevronLeft, ChevronRight, Info, ImageIcon, Loader2, Palette, Pencil, Plus, Search, Square, Upload, Heart, MessageCircle, Send, MoreHorizontal } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -56,6 +56,7 @@ type CarouselPreviewProps = {
   slides: InstagramCarouselSlide[]
   onBackgroundChange?: (backgrounds: SlideBackgroundSelection[]) => void
   onUpdateSlide?: (slideNumber: number, updates: Partial<InstagramCarouselSlide>) => void
+  onReorderSlides?: (newOrder: number[]) => void
 }
 
 export type SlideTemplateProps = {
@@ -92,6 +93,78 @@ const BACKGROUND_TYPES = [
   icon: typeof ImageIcon
   label: string
 }>
+
+const SIZE_SCALE_HEADLINE = {
+  xs: toCanvasPx(10),
+  sm: toCanvasPx(14),
+  md: toCanvasPx(18),
+  lg: toCanvasPx(24),
+  xl: toCanvasPx(32),
+}
+
+const SIZE_SCALE_BODY = {
+  xs: toCanvasPx(8),
+  sm: toCanvasPx(10),
+  md: toCanvasPx(13),
+  lg: toCanvasPx(16),
+}
+
+const PRESET_STYLES: Array<{
+  id: string
+  label: string
+  template: string
+  background: SlideBackgroundState
+  textColor?: string
+}> = [
+  {
+    id: 'dark-editorial',
+    label: 'Editorial Oscuro',
+    template: 'editorial',
+    background: {
+      type: 'gradient',
+      gradientConfig: { angle: 145, stops: ['#101417', '#1C2028'], type: 'linear' }
+    }
+  },
+  {
+    id: 'purple-accent',
+    label: 'Noctra Purple',
+    template: 'editorial',
+    background: {
+      type: 'gradient',
+      gradientConfig: { angle: 155, stops: ['#1A0A2E', '#462D6E'], type: 'linear' }
+    }
+  },
+  {
+    id: 'navy-trust',
+    label: 'Trust Navy',
+    template: 'bold-statement',
+    background: {
+      type: 'gradient',
+      gradientConfig: { angle: 145, stops: ['#0A1628', '#1E3A5F'], type: 'linear' }
+    }
+  },
+  {
+    id: 'warm-launch',
+    label: 'Warm Launch',
+    template: 'split',
+    background: {
+      type: 'gradient',
+      gradientConfig: { angle: 135, stops: ['#2D1B00', '#7A3E00'], type: 'linear' }
+    }
+  },
+  {
+    id: 'pure-dark',
+    label: 'Pure Dark',
+    template: 'minimal-quote',
+    background: { type: 'solid', solidColor: '#0A0D0F' }
+  },
+  {
+    id: 'slate',
+    label: 'Slate',
+    template: 'editorial',
+    background: { type: 'solid', solidColor: '#212631' }
+  },
+]
 
 const slideVariants = {
   center: {
@@ -335,8 +408,11 @@ function CoverSlide({ angle, background, slide }: SlideTemplateProps) {
   const headline = sanitizeSlideText(slide.headline)
   const subtitle = sanitizeSlideText(slide.body)
 
+  const headlineSize = slide.headline_size ? SIZE_SCALE_HEADLINE[slide.headline_size] : toCanvasPx(28)
+  const bodySize = slide.body_size ? SIZE_SCALE_BODY[slide.body_size] : toCanvasPx(13)
+
   return (
-    <div className="relative h-[1080px] w-[1080px] overflow-hidden">
+    <div style={{ position: 'relative', height: 1080, width: 1080, overflow: 'hidden' }}>
       <SlideBackdrop background={background} slide={slide} />
 
       <div
@@ -371,7 +447,7 @@ function CoverSlide({ angle, background, slide }: SlideTemplateProps) {
                 ...clampLines(3),
                 color: '#E0E5EB',
                 fontFamily: 'var(--font-brand-display)',
-                fontSize: toCanvasPx(28),
+                fontSize: headlineSize,
                 fontWeight: 900,
                 letterSpacing: '-0.02em',
                 lineHeight: 1.15,
@@ -390,7 +466,7 @@ function CoverSlide({ angle, background, slide }: SlideTemplateProps) {
                 ...clampLines(2),
                 color: 'rgba(224, 229, 235, 0.6)',
                 fontFamily: 'var(--font-inter)',
-                fontSize: toCanvasPx(13),
+                fontSize: bodySize,
                 fontWeight: 400,
                 lineHeight: 1.45,
                 maxWidth: '72%',
@@ -427,7 +503,7 @@ function CoverSlide({ angle, background, slide }: SlideTemplateProps) {
               fontWeight: 400,
             }}
           >
-            noctra.studio
+            noctra_studio
           </span>
           <Image
             src={`/brand/favicon-${resolved.logoVariant}.svg`}
@@ -451,6 +527,7 @@ function ContentSlide({ background, slide, totalSlides }: SlideTemplateProps) {
 
   // Dynamic Font Scaling Logic (Simplified for CSS)
   const getHeadlineSize = (text: string) => {
+    if (slide.headline_size) return SIZE_SCALE_HEADLINE[slide.headline_size]
     const len = text.length
     if (len > 80) return toCanvasPx(12)
     if (len > 60) return toCanvasPx(14)
@@ -460,6 +537,7 @@ function ContentSlide({ background, slide, totalSlides }: SlideTemplateProps) {
   }
 
   const getBodySize = (text: string) => {
+    if (slide.body_size) return SIZE_SCALE_BODY[slide.body_size]
     const len = text.length
     if (len > 150) return toCanvasPx(8)
     if (len > 100) return toCanvasPx(10)
@@ -471,7 +549,7 @@ function ContentSlide({ background, slide, totalSlides }: SlideTemplateProps) {
     switch (template) {
       case 'bold-statement':
         return (
-          <div className="flex h-full flex-col items-center justify-center text-center p-12">
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: toCanvasPx(48), height: '100%', overflow: 'hidden' }}>
             <h3
               style={{
                 ...clampLines(4),
@@ -493,23 +571,23 @@ function ContentSlide({ background, slide, totalSlides }: SlideTemplateProps) {
         )
       case 'split':
         return (
-          <div className="flex h-full flex-col">
-            <div className="flex-1 flex flex-col justify-end pb-8">
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', paddingBottom: toCanvasPx(32) }}>
                <h3 style={{ ...clampLines(3), fontSize: getHeadlineSize(headline), fontWeight: 800, color: '#E0E5EB', lineHeight: 1.2, margin: 0 }}>{headline}</h3>
             </div>
-            <div className="flex-1 bg-white/5 rounded-t-2xl p-8 backdrop-blur-sm overflow-hidden">
+            <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', borderRadius: `${toCanvasPx(16)}px ${toCanvasPx(16)}px 0 0`, padding: toCanvasPx(32), backdropFilter: 'blur(8px)', overflow: 'hidden' }}>
                <p style={{ ...clampLines(5), fontSize: getBodySize(body), lineHeight: 1.6, color: 'rgba(224,229,235,0.8)', margin: 0 }}>{body}</p>
             </div>
           </div>
         )
       case 'list':
         return (
-          <div className="flex h-full flex-col justify-center gap-6 overflow-hidden">
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: toCanvasPx(24), overflow: 'hidden', height: '100%' }}>
             <h3 style={{ ...clampLines(2), fontSize: getHeadlineSize(headline), fontWeight: 700, color: resolved.accentColor, margin: 0 }}>{headline}</h3>
-            <div className="space-y-4">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: toCanvasPx(16) }}>
               {body.split('.').filter(s => s.trim()).slice(0, 4).map((item, i) => (
-                <div key={i} className="flex gap-4 items-start">
-                  <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-[10px] font-bold text-white shrink-0" style={{ fontSize: toCanvasPx(10) }}>{i+1}</div>
+                <div key={i} style={{ display: 'flex', gap: toCanvasPx(16), alignItems: 'flex-start' }}>
+                  <div style={{ width: toCanvasPx(24), height: toCanvasPx(24), borderRadius: '50%', background: 'rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: toCanvasPx(10), fontWeight: 700, color: 'white', flexShrink: 0 }}>{i+1}</div>
                   <p style={{ ...clampLines(2), fontSize: getBodySize(item), color: '#E0E5EB', lineHeight: 1.4, margin: 0 }}>{item.trim()}</p>
                 </div>
               ))}
@@ -518,7 +596,7 @@ function ContentSlide({ background, slide, totalSlides }: SlideTemplateProps) {
         )
       case 'stat-hero':
         return (
-          <div className="flex h-full flex-col items-center justify-center text-center overflow-hidden">
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', overflow: 'hidden', height: '100%' }}>
             <div style={{ fontSize: toCanvasPx(64), fontWeight: 900, color: resolved.accentColor, lineHeight: 1 }}>{stat || "50%"}</div>
             <h3 style={{ ...clampLines(2), fontSize: getHeadlineSize(headline), fontWeight: 700, color: '#E0E5EB', marginTop: toCanvasPx(12), margin: 0 }}>{headline}</h3>
             <p style={{ ...clampLines(3), fontSize: getBodySize(body), color: 'rgba(224,229,235,0.6)', marginTop: toCanvasPx(8), margin: 0 }}>{body} / {stat}</p>
@@ -526,17 +604,17 @@ function ContentSlide({ background, slide, totalSlides }: SlideTemplateProps) {
         )
       case 'minimal-quote':
         return (
-          <div className="flex h-full flex-col justify-center items-center text-center p-16 overflow-hidden">
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center', padding: toCanvasPx(64), overflow: 'hidden', height: '100%' }}>
             <span style={{ fontSize: toCanvasPx(48), color: resolved.accentColor, opacity: 0.5, lineHeight: 1 }}>"</span>
             <h3 style={{ ...clampLines(4), fontSize: getHeadlineSize(headline), fontStyle: 'italic', color: '#E0E5EB', lineHeight: 1.6, maxWidth: '80%', margin: 0 }}>{headline}</h3>
             <div style={{ height: 1, width: toCanvasPx(40), background: resolved.accentColor, margin: `${toCanvasPx(12)}px 0` }} />
-            <p style={{ fontSize: toCanvasPx(10), textTransform: 'uppercase', letterSpacing: '0.2em', color: 'rgba(224,229,235,0.5)', margin: 0 }}>@noctra.studio</p>
+            <p style={{ fontSize: toCanvasPx(10), textTransform: 'uppercase', letterSpacing: '0.2em', color: 'rgba(224,229,235,0.5)', margin: 0 }}>@noctra_studio</p>
           </div>
         )
       case 'editorial':
       default:
         return (
-          <div className="flex h-full flex-col justify-center overflow-hidden">
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', overflow: 'hidden', height: '100%' }}>
             <h3
               style={{
                 ...clampLines(3),
@@ -570,7 +648,7 @@ function ContentSlide({ background, slide, totalSlides }: SlideTemplateProps) {
   }
 
   return (
-    <div className="relative h-[1080px] w-[1080px] overflow-hidden">
+    <div style={{ position: 'relative', height: 1080, width: 1080, overflow: 'hidden' }}>
       <SlideBackdrop background={background} slide={slide} />
       <div className="relative z-10 h-full flex flex-col" style={{ padding: toCanvasPx(32) }}>
         <div className="flex justify-between items-center mb-8">
@@ -604,7 +682,7 @@ function CTASlide({ background, slide }: SlideTemplateProps) {
   const message = sanitizeSlideText(slide.headline) || sanitizeSlideText(slide.body)
 
   return (
-    <div className="relative h-[1080px] w-[1080px] overflow-hidden">
+    <div style={{ position: 'relative', height: 1080, width: 1080, overflow: 'hidden' }}>
       <SlideBackdrop background={background} slide={slide} />
 
       <div
@@ -658,7 +736,7 @@ function CTASlide({ background, slide }: SlideTemplateProps) {
             marginTop: toCanvasPx(14),
           }}
         >
-          @NoctraStudio
+          @noctra_studio
         </p>
 
         <div
@@ -714,19 +792,30 @@ export function SlideCanvas(props: SlideTemplateProps) {
 
   return <ContentSlide {...props} />
 }
-
 function SlideThumbnail({
   background,
   editedPreview,
   isSelected,
   onClick,
   slide,
+  draggable,
+  isDragOver,
+  onDragStart,
+  onDragOver,
+  onDragEnd,
+  onDrop,
 }: {
   background: SlideBackgroundState
   editedPreview: string | null
   isSelected: boolean
   onClick: () => void
   slide: InstagramCarouselSlide
+  draggable?: boolean
+  isDragOver?: boolean
+  onDragStart?: () => void
+  onDragOver?: () => void
+  onDragEnd?: () => void
+  onDrop?: () => void
 }) {
   const resolved = getResolvedBackground(slide, background)
 
@@ -734,9 +823,16 @@ function SlideThumbnail({
     <button
       type="button"
       onClick={onClick}
-      className={`relative h-11 aspect-square overflow-hidden rounded-[6px] border-2 transition-all ${
-        isSelected ? 'border-[#E0E5EB] opacity-100' : 'border-transparent opacity-50 hover:opacity-80'
-      }`}
+      draggable={draggable}
+      onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; onDragStart?.() }}
+      onDragOver={(e) => { e.preventDefault(); onDragOver?.() }}
+      onDrop={(e) => { e.preventDefault(); onDrop?.() }}
+      onDragEnd={() => onDragEnd?.()}
+      className={cn(
+        "group relative h-11 aspect-square overflow-hidden rounded-[6px] border-2 transition-all",
+        isSelected ? 'border-[#E0E5EB] opacity-100' : 'border-transparent opacity-50 hover:opacity-80',
+        isDragOver ? 'ring-2 ring-[#462D6E] ring-offset-1 ring-offset-black' : ''
+      )}
     >
       {editedPreview ? (
         <Image src={editedPreview} alt="" fill unoptimized sizes="44px" className="object-cover" />
@@ -763,6 +859,12 @@ function SlideThumbnail({
           opacity: 0.03,
         }}
       />
+      <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-[4px]">
+        <Pencil className="h-3 w-3 text-white" />
+      </div>
+      <span style={{ position: 'absolute', bottom: 2, right: 3, fontSize: 8, fontWeight: 700, color: 'rgba(255,255,255,0.7)', lineHeight: 1 }}>
+        {slide.slide_number}
+      </span>
     </button>
   )
 }
@@ -775,6 +877,7 @@ export function InstagramCarouselPreview({
   slides,
   onBackgroundChange,
   onUpdateSlide,
+  onReorderSlides,
 }: CarouselPreviewProps) {
   const [activeIndex, setActiveIndex] = useState(0)
   const [direction, setDirection] = useState(1)
@@ -785,9 +888,52 @@ export function InstagramCarouselPreview({
   const [recentColors, setRecentColors] = useState<string[]>([])
   const [savedGradients, setSavedGradients] = useState<CarouselGradientConfig[]>([])
   const [dynamicScale, setDynamicScale] = useState(DEFAULT_PREVIEW_SCALE)
+
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
+
+  const [imageSearchQuery, setImageSearchQuery] = useState('')
+  const [imageSearchResults, setImageSearchResults] = useState<Array<{
+    id: string; url: string; thumbUrl: string; photographer: string; source: string
+  }>>([])
+  const [imageSearchLoading, setImageSearchLoading] = useState(false)
+  const [previewingPreset, setPreviewingPreset] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const onBackgroundChangeRef = useRef(onBackgroundChange)
   const lastBackgroundSelectionSignatureRef = useRef<string | null>(null)
+
+  const searchImages = async (query: string) => {
+    if (!query.trim()) return
+    setImageSearchLoading(true)
+    try {
+      const res = await fetch('/api/visual/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query,
+          platform: 'instagram',
+          count: 9,
+          page: 1,
+          slideType: currentSlide?.type || 'content'
+        })
+      })
+      const data = await res.json()
+      setImageSearchResults(data.photos || [])
+    } catch (err) {
+      console.error('Image search failed', err)
+    } finally {
+      setImageSearchLoading(false)
+    }
+  }
+
+  useLayoutEffect(() => {
+    if (!containerRef.current) return
+
+    const width = containerRef.current.getBoundingClientRect().width
+    if (width > 0) {
+      setDynamicScale(width / SLIDE_SIZE)
+    }
+  }, [])
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -907,7 +1053,27 @@ export function InstagramCarouselPreview({
 
           <div 
             ref={containerRef}
-            className="flex aspect-square items-center justify-center bg-black overflow-hidden relative"
+            onDragOver={(e) => {
+              e.preventDefault()
+              e.currentTarget.classList.add('ring-2', 'ring-[#462D6E]', 'ring-inset')
+            }}
+            onDragLeave={(e) => {
+              e.currentTarget.classList.remove('ring-2', 'ring-[#462D6E]', 'ring-inset')
+            }}
+            onDrop={async (e) => {
+              e.preventDefault()
+              e.currentTarget.classList.remove('ring-2', 'ring-[#462D6E]', 'ring-inset')
+              const file = e.dataTransfer.files?.[0]
+              if (file && file.type.startsWith('image/')) {
+                const dataUrl = await new Promise<string>((resolve) => {
+                  const reader = new FileReader()
+                  reader.onload = (e) => resolve(e.target?.result as string)
+                  reader.readAsDataURL(file)
+                })
+                updateCurrentBackground((bg) => ({ ...bg, imageUrl: dataUrl, type: 'image' }))
+              }
+            }}
+            className="flex aspect-square items-center justify-center bg-black overflow-hidden relative transition-all duration-300"
           >
             <AnimatePresence initial={false} custom={direction}>
               <motion.div
@@ -917,21 +1083,24 @@ export function InstagramCarouselPreview({
                 initial="enter"
                 animate="center"
                 exit="exit"
-                className="absolute origin-top-left"
-                style={{
-                  height: SLIDE_SIZE,
-                  transform: `scale(${dynamicScale})`,
-                  transformOrigin: 'top left',
-                  width: SLIDE_SIZE,
-                }}
+                style={{ left: 0, position: 'absolute', top: 0 }}
               >
-                <SlideCanvas
-                  angle={angle}
-                  background={currentBg}
-                  isPreview
-                  slide={currentSlide}
-                  totalSlides={totalSlides}
-                />
+                <div
+                  style={{
+                    height: SLIDE_SIZE,
+                    transform: `scale(${dynamicScale})`,
+                    transformOrigin: 'top left',
+                    width: SLIDE_SIZE,
+                  }}
+                >
+                  <SlideCanvas
+                    angle={angle}
+                    background={previewingPreset ? PRESET_STYLES.find(p => p.id === previewingPreset)!.background : currentBg}
+                    isPreview
+                    slide={previewingPreset ? { ...currentSlide, suggested_template: PRESET_STYLES.find(p => p.id === previewingPreset)!.template } : currentSlide}
+                    totalSlides={totalSlides}
+                  />
+                </div>
               </motion.div>
             </AnimatePresence>
           </div>
@@ -964,18 +1133,72 @@ export function InstagramCarouselPreview({
       </div>
 
        <div className="mx-auto w-full max-w-[399px] flex flex-col gap-4">
-        <div className="flex h-[52px] items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
-          {slides.map((slide, index) => (
-            <SlideThumbnail
-              key={slide.slide_number}
-              background={slideBackgrounds[slide.slide_number] ?? getInitialBackground(slide)}
-              editedPreview={getEditedSlidePreview(editedSlides, slide.slide_number)}
-              isSelected={index === activeIndex}
+        <div className="flex items-center justify-between px-1">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] uppercase tracking-[0.2em] text-[#4E576A]">
+              Slide activo
+            </span>
+            <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-medium text-[#E0E5EB]">
+              {currentSlide.slide_number} / {totalSlides}
+            </span>
+            <span className="text-[10px] text-[#4E576A]">
+              {currentSlide.type === 'cover' ? 'Portada'
+                : currentSlide.type === 'cta' ? 'CTA'
+                : 'Contenido'}
+            </span>
+          </div>
+          <div className="flex gap-1">
+            <button
               onClick={() => {
-                setDirection(index > activeIndex ? 1 : -1)
-                setActiveIndex(index)
+                setDirection(-1)
+                setActiveIndex(Math.max(0, activeIndex - 1))
               }}
-              slide={slide}
+              disabled={activeIndex === 0}
+              className="rounded-lg border border-white/10 p-1.5 text-[#8D95A6] transition-colors hover:border-white/20 hover:text-white disabled:opacity-30"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => {
+                setDirection(1)
+                setActiveIndex(Math.min(totalSlides - 1, activeIndex + 1))
+              }}
+              disabled={activeIndex === totalSlides - 1}
+              className="rounded-lg border border-white/10 p-1.5 text-[#8D95A6] transition-colors hover:border-white/20 hover:text-white disabled:opacity-30"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex h-[52px] items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+          {slides.map((s, i) => (
+            <SlideThumbnail
+              key={s.slide_number}
+              background={slideBackgrounds[s.slide_number] ?? getInitialBackground(s)}
+              editedPreview={getEditedSlidePreview(editedSlides, s.slide_number)}
+              isSelected={i === activeIndex}
+              onClick={() => {
+                setDirection(i > activeIndex ? 1 : -1)
+                setActiveIndex(i)
+              }}
+              slide={s}
+              draggable
+              isDragOver={dragOverIndex === i}
+              onDragStart={() => setDragIndex(i)}
+              onDragOver={() => setDragOverIndex(i)}
+              onDragEnd={() => {
+                setDragIndex(null)
+                setDragOverIndex(null)
+              }}
+              onDrop={() => {
+                if (dragIndex !== null && dragIndex !== i) {
+                  const newOrder = Array.from({ length: totalSlides }, (_, idx) => idx + 1)
+                  const [moved] = newOrder.splice(dragIndex, 1)
+                  newOrder.splice(i, 0, moved)
+                  onReorderSlides?.(newOrder)
+                }
+              }}
             />
           ))}
         </div>
@@ -985,12 +1208,97 @@ export function InstagramCarouselPreview({
           className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 py-3 text-sm font-medium text-white transition-all hover:bg-white/10"
         >
           <Pencil className="h-4 w-4" />
-          Editar en detalle
+          Editar slide {currentSlide.slide_number} de {totalSlides}
         </button>
 
-        <div className="rounded-2xl border border-white/10 bg-[#161b24] p-4 shadow-lg space-y-4">
-           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-[#4E576A]">Fondo</span>
+        <div className="rounded-2xl border border-white/10 bg-[#0F1317] p-4 shadow-xl relative overflow-hidden">
+          {/* Sec: Estilos */}
+          <div className="mb-6">
+            <span className="mb-3 block text-[10px] uppercase tracking-[0.2em] text-[#4E576A]">
+              Estilos
+            </span>
+            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none">
+              {PRESET_STYLES.map((preset) => (
+                <button
+                  key={preset.id}
+                  onMouseEnter={() => setPreviewingPreset(preset.id)}
+                  onMouseLeave={() => setPreviewingPreset(null)}
+                  onClick={() => {
+                    updateCurrentBackground(() => preset.background)
+                    onUpdateSlide?.(currentSlide.slide_number, { 
+                      suggested_template: preset.template as any 
+                    })
+                  }}
+                  className="group relative flex h-14 w-24 shrink-0 flex-col items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-white/5 transition-all hover:border-white/20"
+                >
+                  <div 
+                    className="absolute inset-0 opacity-40 transition-opacity group-hover:opacity-60"
+                    style={{ 
+                      background: preset.background.type === 'solid' 
+                        ? preset.background.solidColor 
+                        : `linear-gradient(${preset.background.gradientConfig?.angle}deg, ${preset.background.gradientConfig?.stops.join(', ')})`
+                    }} 
+                  />
+                  <span className="relative z-10 text-[10px] font-medium text-[#E0E5EB] uppercase tracking-wider">
+                    {preset.label}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Sec: Tipografía */}
+          <div className="mb-6">
+            <span className="mb-3 block text-[10px] uppercase tracking-[0.2em] text-[#4E576A]">
+              Tipografía
+            </span>
+            <div className="space-y-4">
+              <div className="flex flex-col gap-2">
+                <span className="text-[11px] text-[#8D95A6]">Headline</span>
+                <div className="flex gap-1.5 p-1 bg-black/20 rounded-xl w-fit">
+                  {(['xs', 'sm', 'md', 'lg', 'xl'] as const).map((size) => (
+                    <button
+                      key={size}
+                      onClick={() => onUpdateSlide?.(currentSlide.slide_number, { headline_size: size })}
+                      className={cn(
+                        "px-3 py-1 text-[11px] font-medium rounded-lg transition-all",
+                        (currentSlide.headline_size || (currentSlide.headline.length > 40 ? 'md' : 'lg')) === size
+                          ? 'bg-[#E0E5EB] text-black shadow-lg' 
+                          : 'text-[#8D95A6] hover:text-white hover:bg-white/5'
+                      )}
+                    >
+                      {size.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <span className="text-[11px] text-[#8D95A6]">Cuerpo</span>
+                <div className="flex gap-1.5 p-1 bg-black/20 rounded-xl w-fit">
+                  {(['xs', 'sm', 'md', 'lg'] as const).map((size) => (
+                    <button
+                      key={size}
+                      onClick={() => onUpdateSlide?.(currentSlide.slide_number, { body_size: size })}
+                      className={cn(
+                        "px-3 py-1 text-[11px] font-medium rounded-lg transition-all",
+                        (currentSlide.body_size || (currentSlide.body.length > 100 ? 'sm' : 'md')) === size
+                          ? 'bg-[#E0E5EB] text-black shadow-lg'
+                          : 'text-[#8D95A6] hover:text-white hover:bg-white/5'
+                      )}
+                    >
+                      {size.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mb-4">
+            <span className="mb-3 block text-[10px] uppercase tracking-[0.2em] text-[#4E576A]">
+              Fondo
+            </span>
             <div className="flex rounded-lg border border-white/5 bg-black/20 p-1">
               {BACKGROUND_TYPES.map((type) => (
                 <button
@@ -1020,12 +1328,6 @@ export function InstagramCarouselPreview({
                    </button>
                    <label className="flex h-12 w-12 flex-shrink-0 cursor-pointer items-center justify-center rounded-lg border border-dashed border-[#4E576A] text-[#4E576A]">
                      <Upload className="h-4 w-4" />
-                     {/* TODO MOBILE TEST: iOS Safari - abrir galería */}
-                     {/* TODO MOBILE TEST: iOS Safari - tomar foto */}
-                     {/* TODO MOBILE TEST: Android Chrome - galería */}
-                     {/* TODO MOBILE TEST: Android Chrome - cámara */}
-                     {/* TODO MOBILE TEST: Desktop - drag & drop */}
-                     {/* TODO MOBILE TEST: Desktop - click to select */}
                      <input
                        type="file"
                        accept="image/*"
@@ -1084,15 +1386,92 @@ export function InstagramCarouselPreview({
             )}
 
             {currentBg.type === 'solid' && (
-              <div className="grid grid-cols-4 gap-2">
-                {previewQuickColors.slice(0, 8).map((color) => (
-                  <button
-                    key={color}
-                    onClick={() => updateCurrentBackground(bg => ({ ...bg, type: 'solid', solidColor: color }))}
-                    className={cn("h-10 rounded-lg border", currentBg.solidColor === color ? "border-white" : "border-white/10")}
-                    style={{ backgroundColor: color }}
+              <div className="mt-4 space-y-4">
+                <div className="grid grid-cols-8 gap-2">
+                  {previewQuickColors.map((color) => (
+                    <button
+                      key={color}
+                      onClick={() => updateCurrentBackground((bg) => ({ ...bg, solidColor: color }))}
+                      className={cn(
+                        "h-8 w-8 rounded-full border border-white/10 transition-transform active:scale-95",
+                        currentBg.solidColor === color && "ring-2 ring-[#E0E5EB] ring-offset-2 ring-offset-black"
+                      )}
+                      style={{ backgroundColor: color }}
+                    />
+                  ))}
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <input
+                      type="text"
+                      placeholder="#000000"
+                      value={currentBg.solidColor || ''}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        updateCurrentBackground((bg) => ({ ...bg, solidColor: val }))
+                        if (val.length === 7 && val.startsWith('#')) {
+                          setRecentColors((prev) => Array.from(new Set([val, ...prev])).slice(0, 8))
+                        }
+                      }}
+                      className="w-full h-10 rounded-xl bg-black/40 border border-white/10 px-3 text-sm font-mono uppercase text-[#E0E5EB] focus:outline-none focus:border-white/20"
+                    />
+                  </div>
+                  <div 
+                    className="h-10 w-10 rounded-xl border border-white/10"
+                    style={{ backgroundColor: currentBg.solidColor || 'transparent' }}
                   />
-                ))}
+                </div>
+              </div>
+            )}
+
+            {currentBg.type === 'gradient' && (
+              <div className="mt-4 space-y-4">
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] text-[#8D95A6]">Ángulo</span>
+                    <span className="text-[11px] font-mono text-[#E0E5EB]">{currentBg.gradientConfig?.angle || 0}°</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="360"
+                    value={currentBg.gradientConfig?.angle || 0}
+                    onChange={(e) => {
+                      const angle = parseInt(e.target.value)
+                      updateCurrentBackground((bg) => ({
+                        ...bg,
+                        gradientConfig: { ...(bg.gradientConfig || { stops: ['#14171C', '#0F1317'], type: 'linear' }), angle }
+                      }))
+                    }}
+                    className="w-full accent-white"
+                  />
+                </div>
+
+                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none">
+                  {[
+                    { label: 'Deep', stops: ['#101417', '#1C2028'] },
+                    { label: 'Navy', stops: ['#0A1628', '#1E3A5F'] },
+                    { label: 'Purp', stops: ['#1A0A2E', '#462D6E'] },
+                    { label: 'Warm', stops: ['#2D1B00', '#7A3E00'] },
+                  ].map((grad, i) => (
+                    <button
+                      key={i}
+                      onClick={() => updateCurrentBackground((bg) => ({
+                        ...bg,
+                        gradientConfig: { ...(bg.gradientConfig || { angle: 145, type: 'linear' }), stops: grad.stops }
+                      }))}
+                      className="group relative flex h-10 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/10"
+                    >
+                      <div 
+                        className="absolute inset-0" 
+                        style={{ background: `linear-gradient(135deg, ${grad.stops.join(', ')})` }} 
+                      />
+                      <span className="relative z-10 text-[9px] font-medium text-white/80 group-hover:text-white uppercase tracking-tighter">
+                        {grad.label}
+                      </span>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </div>

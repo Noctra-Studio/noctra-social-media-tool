@@ -103,13 +103,17 @@ export function FeedPreview({
           {/* Header */}
           <div className="flex items-center justify-between px-3 py-2.5">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-[#101417] flex items-center justify-center border border-white/10 p-1.5">
-                <svg width="20" height="20" viewBox="0 0 32 32" fill="none">
-                  <path d="M19.6 4.4C13.7 4.4 8.9 9.2 8.9 15.1c0 5.9 4.8 10.7 10.7 10.7 2.8 0 5.3-1 7.2-2.8-1.4.5-2.9.7-4.4.7-7 0-12.7-5.7-12.7-12.7 0-2 .5-4 1.4-5.7 1.5-.6 3-.9 4.5-.9 2.1 0 4 .5 5.9 1.4-.6-.9-1.2-1.5-1.9-2.2-.1-.1-.2-.2-.5-.2-.3-.2-.8-.3-1.5-.3Z" fill="white" />
-                </svg>
+              <div className="w-8 h-8 rounded-full bg-[#101417] flex items-center justify-center border border-white/10 relative overflow-hidden">
+                <Image 
+                  src="/brand/noctra-icon.jpg" 
+                  alt="Noctra Studio" 
+                  fill 
+                  sizes="32px"
+                  className="object-cover"
+                />
               </div>
               <div className="flex flex-col">
-                <span className="text-[13px] font-semibold leading-none">noctra.studio</span>
+                <span className="text-[13px] font-semibold leading-none">noctra_studio</span>
                 <span className="text-[11px] opacity-60 leading-tight">Patrocinado</span>
               </div>
             </div>
@@ -209,7 +213,7 @@ export function FeedPreview({
             </span>
             
             <div className="text-[13px] leading-snug">
-              <span className="font-bold mr-1.5">noctra.studio</span>
+              <span className="font-bold mr-1.5">noctra_studio</span>
               <span>{truncatedCaption}</span>
               {caption.length > 125 && !expanded && (
                 <button 

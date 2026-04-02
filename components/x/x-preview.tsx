@@ -23,7 +23,7 @@ interface XPostPreviewProps {
 export function XPostPreview({
   content,
   authorName = "Noctra Studio",
-  authorHandle = "noctrastudio",
+  authorHandle = "NoctraStudio",
   authorAvatar,
   mediaUrl,
   publishedAt = "1m",
@@ -49,12 +49,12 @@ export function XPostPreview({
       <div className="flex px-4 pt-3 gap-3">
         {/* Avatar & Thread Line */}
         <div className="flex flex-col items-center">
-          <div className="h-10 w-10 rounded-full bg-zinc-800 overflow-hidden flex-shrink-0 flex items-center justify-center">
-            {authorAvatar ? (
-              <img src={authorAvatar} alt={authorName} className="h-full w-full object-cover" />
-            ) : (
-              <span className="text-sm font-bold text-zinc-500">{authorName.charAt(0)}</span>
-            )}
+          <div className="h-10 w-10 rounded-full bg-[#101417] overflow-hidden flex-shrink-0 flex items-center justify-center relative border border-white/10">
+            <img 
+              src={authorAvatar || "/brand/noctra-icon.jpg"} 
+              alt={authorName} 
+              className="h-full w-full object-cover" 
+            />
           </div>
           {isThread && !isLastInThread && (
             <div className="mt-1 flex-1 w-0.5 bg-zinc-800" />

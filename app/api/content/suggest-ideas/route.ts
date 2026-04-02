@@ -5,6 +5,11 @@ import { stripMarkdownJSON } from '@/lib/ai/strip-markdown-json'
 import { getUser } from '@/lib/auth/get-user'
 import { createClient } from '@/lib/supabase/server'
 import type { Platform, SuggestedIdea } from '@/lib/product'
+import {
+  fetchMarketIntelligence,
+  formatMarketSignalsForPrompt,
+} from '@/lib/ai/market-intelligence'
+import { getNoctraPositioningPrompt } from '@/lib/ai/noctra-positioning'
 
 function isPlatform(value: unknown): value is Platform {
   return value === 'instagram' || value === 'linkedin' || value === 'x'
@@ -38,24 +43,28 @@ export async function POST(req: Request) {
     }
 
     const supabase = await createClient()
-    const [{ data: recentPosts, error: postsError }, { data: storedIdeas, error: ideasError }] =
-      await Promise.all([
-        supabase
-          .from('posts')
-          .select('platform, angle, content')
-          .eq('user_id', user.id)
-          .eq('platform', body.platform)
-          .neq('status', 'draft')
-          .order('created_at', { ascending: false })
-          .limit(12),
-        supabase
-          .from('content_ideas')
-          .select('raw_idea, platform')
-          .eq('user_id', user.id)
-          .eq('status', 'raw')
-          .order('created_at', { ascending: true })
-          .limit(10),
-      ])
+    const [
+      { data: recentPosts, error: postsError },
+      { data: storedIdeas, error: ideasError },
+      marketContextResult,
+    ] = await Promise.all([
+      supabase
+        .from('posts')
+        .select('platform, angle, content')
+        .eq('user_id', user.id)
+        .eq('platform', body.platform)
+        .neq('status', 'draft')
+        .order('created_at', { ascending: false })
+        .limit(12),
+      supabase
+        .from('content_ideas')
+        .select('raw_idea, platform')
+        .eq('user_id', user.id)
+        .eq('status', 'raw')
+        .order('created_at', { ascending: true })
+        .limit(10),
+      fetchMarketIntelligence('', body.platform),
+    ])
 
     if (postsError || ideasError) {
       throw new Error(postsError?.message || ideasError?.message || 'Failed to load context')
@@ -77,7 +86,14 @@ export async function POST(req: Request) {
       .map((idea) => `- ${idea.platform || 'sin plataforma'} | ${idea.raw_idea.slice(0, 180)}`)
       .join('\n')
 
+    const marketSignals = formatMarketSignalsForPrompt(marketContextResult)
+    const positioning = getNoctraPositioningPrompt('')
+
     const prompt = `You are a content strategist for Noctra Studio, a boutique digital agency in Querétaro serving LATAM clients.
+${positioning}
+
+${marketSignals}
+
 Generate exactly 3 fresh content ideas for ${body.platform}.
 
 Constraints:

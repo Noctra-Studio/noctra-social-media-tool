@@ -10,8 +10,9 @@ const inter = Inter({
 });
 
 const dmSans = DM_Sans({
-  variable: "--font-dm-sans",
+  variable: "--font-brand-display",
   subsets: ["latin"],
+  weight: ["400", "500", "700", "900"],
 });
 
 const geistMono = Geist_Mono({
@@ -54,6 +55,7 @@ export default async function RootLayout({
     <html lang={locale} suppressHydrationWarning>
       <body
         className={`${inter.variable} ${dmSans.variable} ${geistMono.variable} antialiased min-h-screen bg-zinc-950 text-zinc-50 relative`}
+        style={{ '--font-dm-sans': 'var(--font-brand-display)' } as React.CSSProperties}
       >
         <NextIntlClientProvider locale={locale} messages={messages}>
           {children}
