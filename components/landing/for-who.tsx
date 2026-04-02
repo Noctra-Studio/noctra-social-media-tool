@@ -5,57 +5,30 @@ import { SectionLabel, SectionReveal } from '@/components/landing/section-reveal
 
 export function ForWho({ locale }: { locale: LandingLocale }) {
   return (
-    <SectionReveal id="para-quien" className="border-t border-white/6 px-6 py-20 sm:px-8 lg:px-10 lg:py-28">
+    <SectionReveal id="esto-es-para-ti" className="border-t border-white/6 px-6 py-20 sm:px-8 lg:px-10 lg:py-28">
       <div className="mx-auto max-w-7xl">
         <div className="max-w-3xl">
           <SectionLabel>{landingContent.forWho.label[locale]}</SectionLabel>
           <h2
-            className="mt-4 text-4xl leading-[0.96] text-[#E0E5EB] sm:text-5xl"
+            className="mt-4 text-4xl leading-[1.1] text-[#E0E5EB] sm:text-5xl lg:text-6xl"
             style={{ fontFamily: 'var(--font-brand-display)' }}
           >
             {landingContent.forWho.heading[locale]}
           </h2>
+          <p className="mt-6 text-lg leading-relaxed text-[#8D95A6]">
+            {landingContent.forWho.intro[locale]}
+          </p>
         </div>
 
-        <div className="mt-12 grid gap-4 lg:grid-cols-2">
-          {landingContent.forWho.cards.map((card) => (
-            <div
-              key={card.title.es}
-              className="rounded-[24px] border border-white/8 bg-white/[0.03] px-5 py-5 sm:px-6"
-            >
-              <div className="flex flex-wrap items-center gap-3">
-                <h3
-                  className="text-2xl text-[#E0E5EB]"
-                  style={{ fontFamily: 'var(--font-brand-display)' }}
-                >
-                  {card.title[locale]}
-                </h3>
-                {card.note ? (
-                  <span className="rounded-full border border-[#462D6E] px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-[#E0E5EB]">
-                    {card.note[locale]}
-                  </span>
-                ) : null}
+        <div className="mt-16 grid gap-x-12 gap-y-8 sm:grid-cols-2">
+          {landingContent.forWho.bullets.map((bullet, index) => (
+            <div key={index} className="flex gap-4">
+              <div className="mt-1.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-[10px] text-[#A7AFBD]">
+                {index + 1}
               </div>
-
-              <div className="mt-5 space-y-4">
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.28em] text-[#4E576A]">
-                    {card.challengeLabel[locale]}
-                  </p>
-                  <p className="mt-2 text-sm leading-7 text-[#8D95A6] sm:text-[15px]">
-                    {card.challenge[locale]}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.28em] text-[#4E576A]">
-                    {card.solutionLabel[locale]}
-                  </p>
-                  <p className="mt-2 text-sm leading-7 text-[#E0E5EB] sm:text-[15px]">
-                    {card.solution[locale]}
-                  </p>
-                </div>
-              </div>
+              <p className="text-base leading-relaxed text-[#E0E5EB] sm:text-lg">
+                {bullet[locale]}
+              </p>
             </div>
           ))}
         </div>

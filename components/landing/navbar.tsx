@@ -98,7 +98,7 @@ export function LandingNavbar({ locale }: LandingNavbarProps) {
 
             <Link
               href="/login"
-              className="rounded-lg border border-[#4E576A] px-4 py-2 text-sm text-[#E0E5EB] transition hover:border-[#E0E5EB]"
+              className="rounded-xl border border-[#4E576A] px-5 py-2 text-sm font-bold text-[#E0E5EB] transition-all hover:border-[#E0E5EB] hover:bg-white/5"
             >
               {t('login')}
             </Link>
@@ -139,7 +139,7 @@ export function LandingNavbar({ locale }: LandingNavbarProps) {
             <Link
               href="/login"
               onClick={closeMenu}
-              className="inline-flex rounded-lg border border-[#4E576A] px-4 py-2 text-sm text-[#E0E5EB]"
+              className="inline-flex w-full items-center justify-center rounded-xl bg-[#E0E5EB] px-5 py-3 text-sm font-bold text-[#101417]"
             >
               {t('login')}
             </Link>

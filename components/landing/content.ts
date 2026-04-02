@@ -27,21 +27,12 @@ type Feature = {
   title: LocalizedText
 }
 
-type ComparisonValue = 'yes' | 'no' | 'partial' | 'manual' | 'separate'
-
-type ComparisonRow = {
-  label: LocalizedText
-  values: Record<'generic' | 'chatgpt' | 'noctra', ComparisonValue>
+type ComparisonItem = {
+  after: LocalizedText
+  before: LocalizedText
 }
 
-type AudienceCard = {
-  challenge: LocalizedText
-  challengeLabel: LocalizedText
-  note?: LocalizedText
-  solution: LocalizedText
-  solutionLabel: LocalizedText
-  title: LocalizedText
-}
+type AudienceBullet = LocalizedText
 
 type FaqItem = {
   answer: LocalizedText
@@ -58,7 +49,84 @@ type PlatformPreview = {
   label: string
 }
 
+type ExampleOutput = {
+  badge: LocalizedText
+  body: LocalizedText
+  cta: LocalizedText
+  hook: LocalizedText
+  id: string
+}
+
 export const landingContent = {
+  exampleOutputs: {
+    heading: {
+      en: 'Content that moves the needle.',
+      es: 'Contenido que mueve la aguja.',
+    },
+    label: {
+      en: 'OUTPUT SAMPLES',
+      es: 'EJEMPLOS DE SALIDA',
+    },
+    items: [
+      {
+        badge: {
+          en: 'Educational',
+          es: 'Educativo',
+        },
+        body: {
+          en: "Authority isn't about posting more; it's about saying the right idea enough times. Here are 3 filters to use before you hit post to ensure your content actually builds a brand.",
+          es: 'La autoridad no se trata de publicar más; se trata de decir la idea correcta las veces necesarias. Aquí tienes 3 filtros para usar antes de publicar y asegurar que tu contenido construye marca.',
+        },
+        cta: {
+          en: 'Explore the LinkedIn strategy',
+          es: 'Explorar la estrategia en LinkedIn',
+        },
+        hook: {
+          en: 'Most brand accounts confuse noise with presence. Precision wins.',
+          es: 'La mayoría de cuentas de marca confunden ruido con presencia. La precisión gana.',
+        },
+        id: 'educational',
+      },
+      {
+        badge: {
+          en: 'Storytelling',
+          es: 'Storytelling',
+        },
+        body: {
+          en: "I spent 4 years building in silence. Then I realized silence doesn't pay the bills. I started documenting the process, the failures, and the small wins. Here is how I turned my expertise into a client magnet.",
+          es: 'Pasé 4 años construyendo en silencio. Luego me di cuenta de que el silencio no paga las cuentas. Empecé a documentar el proceso, los fallos y las pequeñas victorias. Así convertí mi experiencia en un imán de clientes.',
+        },
+        cta: {
+          en: 'Read the X thread',
+          es: 'Leer el hilo de X',
+        },
+        hook: {
+          en: 'Expertise is invisible until you learn to document it properly.',
+          es: 'La experiencia es invisible hasta que aprendes a documentarla correctamente.',
+        },
+        id: 'storytelling',
+      },
+      {
+        badge: {
+          en: 'Authority',
+          es: 'Autoridad',
+        },
+        body: {
+          en: "Your category doesn't need another trend summary. It needs a point of view with operating details, tradeoffs, and examples from the real work you already do. Framework inside.",
+          es: 'Tu categoría no necesita otro resumen de tendencias. Necesita un punto de vista con detalles operativos, sacrificios y ejemplos del trabajo real que ya haces.',
+        },
+        cta: {
+          en: 'See the carousel framework',
+          es: 'Ver el framework de carrusel',
+        },
+        hook: {
+          en: 'If your content sounds like everyone else, the market assumes you are too.',
+          es: 'Si tu contenido suena como el de todos, el mercado asume que tú también.',
+        },
+        id: 'authority',
+      },
+    ] satisfies ExampleOutput[],
+  },
   navbar: {
     links: [
       {
@@ -76,10 +144,10 @@ export const landingContent = {
         },
       },
       {
-        href: '#para-quien',
+        href: '#esto-es-para-ti',
         label: {
-          en: 'Who it is for',
-          es: 'Para quién',
+          en: 'This is for you',
+          es: 'Esto es para ti',
         },
       },
       {
@@ -91,35 +159,35 @@ export const landingContent = {
       },
     ],
     signIn: {
-      en: 'Sign in',
-      es: 'Iniciar sesión',
+      en: 'Access the Engine',
+      es: 'Acceso al Motor',
     },
     wordmark: 'Social',
   },
   hero: {
     cta: {
-      en: 'Sign in',
-      es: 'Iniciar sesión',
+      en: 'Secure your founding invitation',
+      es: 'Asegura tu invitación fundadora',
     },
     label: {
-      en: 'NOCTRA SOCIAL — CONTENT SYSTEM',
-      es: 'NOCTRA SOCIAL — CONTENT SYSTEM',
+      en: 'NOCTRA SOCIAL — CONTENT AUTHORITY SYSTEM',
+      es: 'NOCTRA SOCIAL — SISTEMA DE AUTORIDAD DE CONTENIDO',
     },
     secondaryCta: {
-      en: 'See how it works',
-      es: 'Ver cómo funciona',
+      en: 'See the system in action',
+      es: 'Mira el sistema en acción',
     },
     subheadline: {
-      en: 'Generate, organize and export content for Instagram, LinkedIn and X with AI trained on your brand voice. No prompts. No friction. With purpose.',
-      es: 'Genera, organiza y exporta contenido para Instagram, LinkedIn y X con IA entrenada en tu voz de marca. Sin prompts. Sin fricción. Con criterio.',
+      en: 'The high-performance system for founders and experts to build authority and grow their business through consistent, publish-ready content.',
+      es: 'El sistema de alto rendimiento para que fundadores y expertos construyan autoridad y hagan crecer su negocio con contenido listo para publicar.',
     },
     title: {
-      en: 'Brand content that builds authority.',
-      es: 'Contenido de marca que construye autoridad.',
+      en: 'Get clients through content without the manual planning grind.',
+      es: 'Consigue clientes con contenido sin el desgaste de planear cada post.',
     },
     trustLine: {
-      en: '✦ Anthropic · ✦ Gemini · ✦ Unsplash — three engines, one interface',
-      es: '✦ Anthropic · ✦ Gemini · ✦ Unsplash — tres motores, una sola interfaz',
+      en: 'Internal Release — Accepting 3 new experts this week.',
+      es: 'Release Interno — Aceptando 3 nuevos expertos esta semana.',
     },
   },
   problem: {
@@ -138,8 +206,8 @@ export const landingContent = {
           es: 'Cada post sale de un prompt vacío y suena distinto al anterior.',
         },
         solution: {
-          en: 'The AI uses your configured brand voice in every generation.',
-          es: 'La IA usa tu voz de marca configurada en cada generación.',
+          en: 'Your brand is unmistakable in every post, with zero manual editing.',
+          es: 'Tu marca es inconfundible en cada post, sin esfuerzo manual.',
         },
       },
       {
@@ -148,8 +216,8 @@ export const landingContent = {
           es: 'Adaptar el mismo contenido a tres plataformas toma más tiempo que crearlo.',
         },
         solution: {
-          en: 'Generate one idea and export it in the right format for each network.',
-          es: 'Genera una idea y expórtala en el formato correcto para cada red.',
+          en: 'Generate once. Export three publish-ready assets for each network.',
+          es: 'Genera una vez. Exporta tres activos listos para publicar por red.',
         },
       },
       {
@@ -158,8 +226,8 @@ export const landingContent = {
           es: 'No sabes qué publicar, cuándo, ni en qué orden.',
         },
         solution: {
-          en: 'The calendar and quick actions organize your editorial week.',
-          es: 'El calendario y las acciones rápidas organizan tu semana editorial.',
+          en: 'Autonomous planning that prioritizes authority over noise.',
+          es: 'Planeación autónoma que prioriza autoridad sobre ruido.',
         },
       },
       {
@@ -168,8 +236,8 @@ export const landingContent = {
           es: 'El contenido no refleja lo que haces ni a quién le hablas.',
         },
         solution: {
-          en: 'Define your pillars and audience. The AI calibrates every post for them.',
-          es: 'Define tus pilares y audiencia. La IA calibra cada post para ellos.',
+          en: 'Deep calibration by audience, tone, and strategic brand pillars.',
+          es: 'Calibración profunda por audiencia, tono y pilares estratégicos.',
         },
       },
       {
@@ -178,8 +246,8 @@ export const landingContent = {
           es: 'Generas mucho contenido. Construyes poca autoridad.',
         },
         solution: {
-          en: 'Each post reinforces a brand pillar. Consistency is the system.',
-          es: 'Cada post refuerza un pilar de marca. La consistencia es el sistema.',
+          en: 'Every post is a piece of a high-performance growth system.',
+          es: 'Cada post es una pieza de un sistema de crecimiento de alto rendimiento.',
         },
       },
     ] satisfies ProblemPair[],
@@ -208,8 +276,8 @@ export const landingContent = {
       },
     ],
     subheading: {
-      en: "Noctra Social doesn't generate generic posts. It generates content calibrated to your tone, audience and brand pillars.",
-      es: 'Noctra Social no genera posts genéricos. Genera contenido calibrado a tu tono, tu audiencia y tus pilares de marca.',
+      en: "Noctra Social is not a generic generator. It’s a content authority system calibrated to your specific tone, audience, and brand pillars.",
+      es: "Noctra Social no es un generador genérico. Es un sistema de autoridad de contenido calibrado a tu tono, audiencia y pilares de marca.",
     },
   },
   howItWorks: {
@@ -224,60 +292,60 @@ export const landingContent = {
     steps: [
       {
         body: {
-          en: 'Define your tone, values, platform audience and content pillars. The AI uses them as the base of every generation.',
-          es: 'Define tu tono, valores, audiencia por plataforma y pilares de contenido. La IA los usa como base en cada generación.',
+          en: 'Instill your brand DNA, technical values and content pillars. The Engine uses them as the base of every generation.',
+          es: 'Instila el ADN de tu marca, valores técnicos y pilares de contenido. El Motor los usa como base en cada generación.',
         },
         title: {
-          en: 'Configure your brand voice',
-          es: 'Configura tu voz de marca',
+          en: 'Install brand DNA',
+          es: 'Instila el ADN de marca',
         },
       },
       {
         body: {
-          en: 'Save any thought with the floating button. The app organizes it in your idea bank.',
-          es: 'Guarda cualquier pensamiento con el botón flotante. La app los organiza en tu banco de ideas.',
+          en: 'Stop losing high-value thoughts. Capture any concept instantly and let the system organize your authority bank.',
+          es: 'Deja de perder pensamientos de alto valor. Captura cualquier concepto al instante y deja que el sistema lo organice.',
         },
         title: {
-          en: 'Capture ideas',
-          es: 'Captura ideas',
+          en: 'Build your Authority Bank',
+          es: 'Banco de Autoridad',
         },
       },
       {
         body: {
-          en: 'Choose the mode you need: AI idea suggestions, develop your idea or go straight to the editor. Select platform, angle and generate.',
-          es: 'Elige el modo que necesitas: que la IA sugiera ideas, que desarrolle la tuya, o acceso directo al editor. Selecciona plataforma, ángulo y genera.',
+          en: 'Transform thoughts into publish-ready assets. Choose your platform, angle and generation mode with one click.',
+          es: 'Transforma pensamientos en activos listos para publicar. Elige plataforma, ángulo y modo de generación.',
         },
         title: {
-          en: 'Generate with criteria',
-          es: 'Genera con criterio',
+          en: 'Strategic Generation',
+          es: 'Generación Estratégica',
         },
       },
       {
         body: {
-          en: 'The content is formatted for each platform. Export ZIP, TXT or PDF depending on the format you need.',
-          es: 'El contenido sale formateado para cada plataforma. Exporta el ZIP, TXT o PDF según el formato que necesitas.',
+          en: 'Instagram UHD images, LinkedIn PDF carousels, and X threads. Optimized, designed, and ready to post.',
+          es: 'Imágenes UHD para Instagram, carruseles PDF para LinkedIn e hilos para X. Optimizado para publicar al instante.',
         },
         title: {
-          en: 'Review and export',
-          es: 'Revisa y exporta',
+          en: 'Studio-Quality Exports',
+          es: 'Exportación de Studio',
         },
       },
       {
         body: {
-          en: 'Rate every post. The AI extracts learnings and improves the next generations with your real history.',
-          es: 'Califica cada post. La IA extrae aprendizajes y mejora las siguientes generaciones con tu historial real.',
+          en: 'Rate every post. The AI extracts patterns from your real history to perfect every subsequent generation.',
+          es: 'Califica cada post. La IA extrae patrones de tu historial real para perfeccionar cada generación siguiente.',
         },
         title: {
-          en: 'The system learns',
-          es: 'El sistema aprende',
+          en: 'The Machine Calibrates',
+          es: 'Calibración Continua',
         },
       },
     ] satisfies Step[],
   },
   features: {
     heading: {
-      en: 'Designed to build brand presence with discipline.',
-      es: 'Diseñado para construir presencia de marca con disciplina.',
+      en: 'The internal engine for high-performance experts.',
+      es: 'El motor interno para expertos de alto rendimiento.',
     },
     label: {
       en: 'CAPABILITIES',
@@ -286,287 +354,173 @@ export const landingContent = {
     items: [
       {
         description: {
-          en: 'Every post uses your tone, values and forbidden words. The content always sounds like you.',
-          es: 'Cada post usa tu tono, valores y palabras prohibidas. El contenido siempre suena como tú.',
+          en: 'Every post uses your specific tone, values and forbidden words. Your brand is unmistakably yours.',
+          es: 'Cada post usa tu tono, valores y palabras prohibidas específicas. Tu marca es inconfundiblemente tuya.',
         },
         icon: 'message',
         title: {
-          en: 'Persistent brand voice',
-          es: 'Voz de marca persistente',
+          en: 'Unmistakable Brand Voice',
+          es: 'Voz de Marca Inconfundible',
         },
       },
       {
         description: {
-          en: 'Define up to 4 thematic territories. The calendar shows whether your content is balanced.',
-          es: 'Define hasta 4 territorios temáticos. El calendario muestra si tu contenido está balanceado.',
-        },
-        icon: 'layers',
-        title: {
-          en: 'Content pillars',
-          es: 'Pilares de contenido',
-        },
-      },
-      {
-        description: {
-          en: 'Set who reads you on each network. The AI calibrates technical depth, examples and CTA for each audience.',
-          es: 'Configura quién te lee en cada red. La IA calibra tecnicidad, ejemplos y CTA para cada audiencia.',
-        },
-        icon: 'users',
-        title: {
-          en: 'Audience by platform',
-          es: 'Audiencia por plataforma',
-        },
-      },
-      {
-        description: {
-          en: 'No idea, partial idea or direct editor. The app adapts to how you arrive each day.',
-          es: 'Sin idea, con idea, o directo al editor. La app se adapta a cómo llegas cada día.',
-        },
-        icon: 'sparkles',
-        title: {
-          en: 'Three generation modes',
-          es: 'Tres modos de generación',
-        },
-      },
-      {
-        description: {
-          en: 'Plan the week, repurpose posts or generate case studies and thought leadership with one click.',
-          es: 'Planea la semana, repurpose posts, genera casos de estudio o thought leadership con un clic.',
+          en: 'Scale your ideas to 3 platforms instantly. Instagram UHD, LinkedIn PDF Carousels and X Threads.',
+          es: 'Escala tus ideas a 3 plataformas al instante. Instagram UHD, Carruseles para LinkedIn e Hilos de X.',
         },
         icon: 'lightning',
         title: {
-          en: 'Quick actions',
-          es: 'Acciones rápidas',
+          en: 'Omnichannel Engine',
+          es: 'Motor Omnicanal',
         },
       },
       {
         description: {
-          en: 'Instagram: ZIP with slides and suggested audio. X: numbered TXT. LinkedIn: carousel PDF.',
-          es: 'Instagram: ZIP con slides y audio sugerido. X: TXT numerado. LinkedIn: PDF de carrusel.',
+          en: 'Automatic gaussian blur, glassmorphism and contrast layers for a studio-quality visual impact.',
+          es: 'Desenfoque gaussiano, glassmorphism y capas de contraste automáticas para un impacto visual de estudio.',
         },
-        icon: 'folder',
+        icon: 'layers',
         title: {
-          en: 'Publish-ready export',
-          es: 'Exportación lista para publicar',
+          en: 'Studio-Grade Aesthetics',
+          es: 'Estética de Grado Studio',
         },
       },
       {
         description: {
-          en: 'Weekly and monthly view with drag and drop. Schedule, move and balance pillars visually.',
-          es: 'Vista semanal y mensual con drag & drop. Programa, mueve y balancea pilares visualmente.',
-        },
-        icon: 'calendar',
-        title: {
-          en: 'Editorial calendar',
-          es: 'Calendario editorial',
-        },
-      },
-      {
-        description: {
-          en: 'Every rating feeds the system. After 5 posts with feedback, quality improves noticeably.',
-          es: 'Cada rating alimenta el sistema. Después de 5 posts con feedback, la calidad mejora notablemente.',
-        },
-        icon: 'brain',
-        title: {
-          en: 'AI that learns',
-          es: 'IA que aprende',
-        },
-      },
-      {
-        description: {
-          en: "Capture thoughts before they escape. Filter them by platform, status and pillar.",
-          es: 'Captura pensamientos antes de que se escapen. Fíltralos por plataforma, estado y pilar.',
+          en: 'Define up to 4 strategic content territories. The visual grid ensures your message is balanced.',
+          es: 'Define hasta 4 territorios estratégicos. El grid visual asegura que tu mensaje esté balanceado.',
         },
         icon: 'target',
         title: {
-          en: 'Idea bank',
-          es: 'Banco de ideas',
+          en: 'Strategic Territories',
+          es: 'Territorios Estratégicos',
+        },
+      },
+      {
+        description: {
+          en: 'Deep calibration by specific audience. The system adjusts technical depth and examples for each reader.',
+          es: 'Calibración profunda por audiencia. El sistema ajusta tecnicidad y ejemplos para cada perfil de lector.',
+        },
+        icon: 'users',
+        title: {
+          en: 'Audience Calibration',
+          es: 'Calibración de Audiencia',
+        },
+      },
+      {
+        description: {
+          en: 'Every rating feeds the engine. Quality improves noticeably as the system aligns with your real work history.',
+          es: 'Cada calificación alimenta el motor. La calidad mejora mientras el sistema se alinea con tu historial real.',
+        },
+        icon: 'brain',
+        title: {
+          en: 'Closed-Loop Learning',
+          es: 'Aprendizaje de Ciclo Cerrado',
         },
       },
     ] satisfies Feature[],
   },
   comparison: {
-    columns: {
-      chatgpt: {
-        en: 'Direct ChatGPT',
-        es: 'ChatGPT directo',
-      },
-      generic: {
-        en: 'Generic tool',
-        es: 'Herramienta genérica',
-      },
-      noctra: 'Noctra Social',
-    },
     heading: {
-      en: 'Not another post generator.',
-      es: 'No es otro generador de posts.',
+      en: 'The transformation from chaos to authority.',
+      es: 'La transformación del caos a la autoridad.',
     },
     label: {
-      en: 'COMPARISON',
-      es: 'COMPARATIVA',
+      en: 'TRANSFORMATION',
+      es: 'TRANSFORMACIÓN',
     },
-    rows: [
-      {
-        label: {
-          en: 'Persistent brand voice',
-          es: 'Voz de marca persistente',
-        },
-        values: { chatgpt: 'no', generic: 'no', noctra: 'yes' },
-      },
-      {
-        label: {
-          en: 'Content pillars',
-          es: 'Pilares de contenido',
-        },
-        values: { chatgpt: 'no', generic: 'no', noctra: 'yes' },
-      },
-      {
-        label: {
-          en: 'Audience by platform',
-          es: 'Audiencia por plataforma',
-        },
-        values: { chatgpt: 'no', generic: 'no', noctra: 'yes' },
-      },
-      {
-        label: {
-          en: 'Native formats by network',
-          es: 'Formatos nativos por red',
-        },
-        values: { chatgpt: 'manual', generic: 'partial', noctra: 'yes' },
-      },
-      {
-        label: {
-          en: 'Publish-ready export',
-          es: 'Exportación lista para publicar',
-        },
-        values: { chatgpt: 'no', generic: 'no', noctra: 'yes' },
-      },
-      {
-        label: {
-          en: 'AI learns from history',
-          es: 'IA que aprende de tu historial',
-        },
-        values: { chatgpt: 'no', generic: 'no', noctra: 'yes' },
-      },
-      {
-        label: {
-          en: 'Editorial calendar',
-          es: 'Calendario editorial',
-        },
-        values: { chatgpt: 'no', generic: 'separate', noctra: 'yes' },
-      },
-      {
-        label: {
-          en: 'Integrated idea bank',
-          es: 'Banco de ideas integrado',
-        },
-        values: { chatgpt: 'no', generic: 'no', noctra: 'yes' },
-      },
-    ] satisfies ComparisonRow[],
     subheading: {
-      en: 'The difference is whether the AI knows your brand or just receives an empty prompt each time.',
-      es: 'La diferencia está en si la IA conoce tu marca o solo recibe un prompt vacío cada vez.',
+      en: 'Stop reacting to the algorithm. Start executing a high-performance system that turns your expertise into business growth.',
+      es: 'Deja de reaccionar al algoritmo. Empieza a ejecutar un sistema de alto rendimiento que convierte tu experiencia en crecimiento.',
     },
+    items: [
+      {
+        before: {
+          en: 'No clear posting plan.',
+          es: 'Sin plan de publicación claro.',
+        },
+        after: {
+          en: 'Clear content direction.',
+          es: 'Dirección de contenido clara.',
+        },
+      },
+      {
+        before: {
+          en: 'Inconsistent content.',
+          es: 'Contenido inconsistente.',
+        },
+        after: {
+          en: 'Repeatable content system.',
+          es: 'Sistema de contenido repetible.',
+        },
+      },
+      {
+        before: {
+          en: 'Too much time wasted.',
+          es: 'Demasiado tiempo perdido.',
+        },
+        after: {
+          en: 'Faster execution.',
+          es: 'Ejecución acelerada.',
+        },
+      },
+      {
+        before: {
+          en: 'No traction from social content.',
+          es: 'Contenido sin tracción ni impacto.',
+        },
+        after: {
+          en: 'More authority-building content.',
+          es: 'Más contenido que construye autoridad.',
+        },
+      },
+      {
+        before: {
+          en: 'Hard to turn expertise into posts.',
+          es: 'Difícil convertir experiencia en posts.',
+        },
+        after: {
+          en: 'Better client attraction.',
+          es: 'Atracción de clientes cualificados.',
+        },
+      },
+    ] satisfies ComparisonItem[],
   },
   forWho: {
-    cards: [
-      {
-        challenge: {
-          en: 'They need consistent presence without a content team or spare hours.',
-          es: 'Necesitan presencia consistente sin un equipo de contenido ni horas disponibles.',
-        },
-        challengeLabel: {
-          en: 'Challenge',
-          es: 'Reto',
-        },
-        solution: {
-          en: 'Noctra Social generates, organizes and exports in a single weekly session.',
-          es: 'Noctra Social genera, organiza y exporta en una sola sesión semanal.',
-        },
-        solutionLabel: {
-          en: 'Response',
-          es: 'Solución',
-        },
-        title: {
-          en: 'Founders and solopreneurs',
-          es: 'Fundadores y solopreneurs',
-        },
-      },
-      {
-        challenge: {
-          en: 'They produce content for multiple clients with different voices and audiences.',
-          es: 'Producen contenido para múltiples clientes con voces y audiencias distintas.',
-        },
-        challengeLabel: {
-          en: 'Challenge',
-          es: 'Reto',
-        },
-        solution: {
-          en: 'Each profile has its own brand voice, pillars and audience setup.',
-          es: 'Cada perfil tiene su propia voz de marca, pilares y configuración de audiencia.',
-        },
-        solutionLabel: {
-          en: 'Response',
-          es: 'Solución',
-        },
-        title: {
-          en: 'Digital agencies',
-          es: 'Agencias digitales',
-        },
-      },
-      {
-        challenge: {
-          en: "They want to position themselves as references but don't know how to structure the content.",
-          es: 'Quieren posicionarse como referentes pero no saben cómo estructurar el contenido.',
-        },
-        challengeLabel: {
-          en: 'Challenge',
-          es: 'Reto',
-        },
-        solution: {
-          en: 'The pillar system and quick actions guide what to publish, when and for whom.',
-          es: 'El sistema de pilares y las acciones rápidas guían qué publicar, cuándo y para quién.',
-        },
-        solutionLabel: {
-          en: 'Response',
-          es: 'Solución',
-        },
-        title: {
-          en: 'Independent professionals',
-          es: 'Profesionales independientes',
-        },
-      },
-      {
-        challenge: {
-          en: 'They coordinate content across several people without losing voice consistency.',
-          es: 'Coordinan contenido entre varias personas sin perder consistencia de voz.',
-        },
-        challengeLabel: {
-          en: 'Challenge',
-          es: 'Reto',
-        },
-        note: {
-          en: 'Coming soon',
-          es: 'Próximamente',
-        },
-        solution: {
-          en: 'One brand configuration that every generator uses as a base.',
-          es: 'Una sola configuración de marca que todos los generadores usan como base.',
-        },
-        solutionLabel: {
-          en: 'Response',
-          es: 'Solución',
-        },
-        title: {
-          en: 'Marketing teams',
-          es: 'Equipos de marketing',
-        },
-      },
-    ] satisfies AudienceCard[],
     heading: {
-      en: 'For those who build brand with intention.',
-      es: 'Para quien construye marca con intención.',
+      en: 'This is for you if...',
+      es: 'Esto es para ti si...',
     },
+    intro: {
+      en: 'You’re tired of shouting into the void. It’s time for a system that works as hard as you do.',
+      es: 'Estás cansado de gritar al vacío. Es momento de un sistema que trabaje tan duro como tú.',
+    },
+    bullets: [
+      {
+        en: 'Your calendar is full, but your sales pipeline is refreshingly empty.',
+        es: 'Tu calendario está lleno, pero tu flujo de clientes es impredecible.',
+      },
+      {
+        en: 'You spend weekends editing content that barely gets any engagement.',
+        es: 'Pasas tus fines de semana editando contenido que no genera impacto.',
+      },
+      {
+        en: 'You are a recognized expert, but your posts sound like everyone else.',
+        es: 'Eres un experto en lo tuyo, pero tus posts suenan genéricos.',
+      },
+      {
+        en: 'Consistency feels impossible because creating content manually is exhausting.',
+        es: 'La consistencia parece imposible porque crear manualmente te agota.',
+      },
+      {
+        en: 'Publishing feels like a secondary chore rather than a growth engine.',
+        es: 'Publicar se siente como una carga pesada, no como motor de negocio.',
+      },
+      {
+        en: 'You have plenty of views, but they never turn into actual clients.',
+        es: 'Tienes muchas visitas, pero nunca se traducen en clientes reales.',
+      },
+    ] satisfies AudienceBullet[],
     label: {
       en: 'WHO IT IS FOR',
       es: 'PARA QUIÉN',
@@ -574,39 +528,39 @@ export const landingContent = {
   },
   pricing: {
     badge: {
-      en: 'Private access',
-      es: 'Acceso privado',
+      en: 'Priority Access',
+      es: 'Acceso Prioritario',
     },
     button: {
-      en: 'Request access',
-      es: 'Solicitar acceso',
+      en: 'Join the priority list',
+      es: 'Unirme a la lista prioritaria',
     },
     heading: {
-      en: 'Early access — internal use.',
-      es: 'Acceso anticipado — uso interno.',
+      en: 'Internal Release — Founding Members.',
+      es: 'Release Interno — Miembros Fundadores.',
     },
     label: {
       en: 'PRICING',
       es: 'PRECIOS',
     },
     note: {
-      en: 'Noctra Social is currently in internal use. If you want early access for your brand or agency, reach out directly.',
-      es: 'Noctra Social está actualmente en uso interno. Si quieres acceso anticipado para tu marca o agencia, escríbenos directamente.',
+      en: 'Noctra Social is currently in an exclusive release phase. We only invite founding members that fit our high-performance profile.',
+      es: 'Noctra Social está actualmente en fase de release exclusiva. Solo invitamos a miembros fundadores que se ajusten a nuestro perfil.',
     },
     responseTime: {
-      en: 'Reply in under 48 hours.',
-      es: 'Respuesta en menos de 48 horas.',
+      en: 'Internal review in under 48 hours.',
+      es: 'Revisión interna en menos de 48 horas.',
     },
     subtitle: {
-      en: 'AI-native brand content system',
-      es: 'Sistema de contenido de marca nativo en IA',
+      en: 'AI-native Content Authority System',
+      es: 'Sistema de Autoridad de Contenido nativo en IA',
     },
     title: 'Noctra Social',
   },
   faq: {
     heading: {
-      en: 'What people usually ask before requesting access.',
-      es: 'Lo que suelen preguntar antes de solicitar acceso.',
+      en: 'What founders ask before joining.',
+      es: 'Lo que fundadores preguntan antes de unirse.',
     },
     items: [
       {
@@ -631,8 +585,8 @@ export const landingContent = {
       },
       {
         answer: {
-          en: 'Instagram exports a ZIP with the caption, slide structure and audio suggestion. X exports a TXT with the numbered thread. LinkedIn exports a ZIP with the upload-ready carousel PDF and the caption separately.',
-          es: 'Instagram exporta un ZIP con el caption, estructura de slides y selección de fondos. X exporta un TXT con el hilo numerado. LinkedIn exporta un ZIP con el PDF de carrusel listo para subir y el caption por separado.',
+          en: 'Instagram exports UHD images ready-to-post as stories or feed posts. X exports the optimized text for threads. LinkedIn exports the carousel PDF and text bundle separately and ready to upload.',
+          es: 'Instagram exporta imágenes UHD listas para publicar como historias o posts. X exporta el texto optimizado para hilos. LinkedIn exporta el PDF de carrusel y el texto optimizado listos para subir.',
         },
         question: {
           en: 'How does export work?',
@@ -661,8 +615,8 @@ export const landingContent = {
       },
       {
         answer: {
-          en: 'Anthropic (claude-sonnet) for text generation, Gemini Imagen 3 for visual generation and image scoring, and Unsplash for photo search. Everything runs on Next.js with Supabase as the database.',
-          es: 'Anthropic (claude-sonnet) para generación de texto, Gemini Imagen 3 para generación visual y scoring de imágenes, y Unsplash para búsqueda fotográfica. Todo corre en Next.js con Supabase como base de datos.',
+          en: 'Anthropic (claude-3-5-sonnet) for text generation, Gemini (Flash/Pro) for visual scoring and design analysis, and Unsplash for photo search. Everything runs on Next.js with Supabase.',
+          es: 'Anthropic (claude-3-5-sonnet) para texto, Gemini (Flash/Pro) para scoring visual y análisis de diseño, y Unsplash para búsqueda fotográfica. Todo corre sobre Next.js con Supabase.',
         },
         question: {
           en: 'What technologies does it use?',
@@ -681,8 +635,8 @@ export const landingContent = {
       es: 'El contenido que construye marca no se improvisa. Se sistematiza.',
     },
     button: {
-      en: 'Request access',
-      es: 'Solicitar acceso',
+      en: 'Secure your founding invitation',
+      es: 'Asegura tu invitación fundadora',
     },
   },
   footer: {
@@ -791,90 +745,71 @@ export const landingContent = {
         es: 'Estrategia de carrusel',
       },
       body: {
-        en: 'Most B2B brands do not need more volume. They need clearer repetition. Repeat one operating principle until the market can say it back to you.',
-        es: 'La mayoría de marcas B2B no necesita más volumen. Necesita repetición clara. Repite un principio operativo hasta que el mercado pueda devolvértelo con sus palabras.',
+        en: 'Authority isn’t about posting more. It’s about saying the right idea enough times.',
+        es: 'La autoridad no sale de publicar más. Sale de decir una idea precisa las veces necesarias.',
       },
       exportLabel: {
         en: 'Export ZIP',
         es: 'Exportar ZIP',
       },
       footer: {
-        en: '8 slides · background selection · authority pillar',
-        es: '8 slides · selección de fondos · pilar autoridad',
+        en: 'Instagram UHD Carousel — Optimized for authority.',
+        es: 'Carrusel UHD para Instagram — Optimizado para autoridad.',
       },
       hook: {
-        en: 'Authority does not come from publishing more. It comes from saying one sharp thing often enough.',
-        es: 'La autoridad no sale de publicar más. Sale de decir una idea precisa las veces necesarias.',
+        en: 'Brand precision beats social volume.',
+        es: 'La precisión de marca vence al volumen social.',
       },
       id: 'instagram',
       label: 'Instagram',
     },
     {
       badge: {
-        en: 'Document post',
-        es: 'Post tipo documento',
+        en: 'Network depth',
+        es: 'Profundidad de red',
       },
       body: {
-        en: 'Your category does not need another trend summary. It needs a point of view with operating details, tradeoffs and examples from the work you already do.',
-        es: 'Tu categoría no necesita otro resumen de tendencias. Necesita un punto de vista con detalles operativos, tradeoffs y ejemplos del trabajo que ya haces.',
+        en: 'LinkedIn builds trust through depth. Precision articles and PDF carousels that prove your expertise.',
+        es: 'LinkedIn construye confianza a través de la profundidad. Artículos y PDFs que prueban tu experiencia.',
       },
       exportLabel: {
         en: 'Export PDF',
         es: 'Exportar PDF',
       },
       footer: {
-        en: '12 pages · founder voice · CTA to call',
-        es: '12 páginas · voz fundador · CTA a llamada',
+        en: 'LinkedIn PDF Document — Calibrated for experts.',
+        es: 'Documento PDF para LinkedIn — Calibrado para expertos.',
       },
       hook: {
-        en: 'If your content sounds like everyone else in the category, the market assumes your service works the same way too.',
-        es: 'Si tu contenido suena igual al resto de la categoría, el mercado asume que tu servicio funciona igual también.',
+        en: 'Expertise is invisible until documented.',
+        es: 'La experiencia es invisible hasta que se documenta.',
       },
       id: 'linkedin',
       label: 'LinkedIn',
     },
     {
       badge: {
-        en: 'Thread draft',
-        es: 'Borrador de hilo',
+        en: 'Thread engine',
+        es: 'Motor de hilos',
       },
       body: {
-        en: 'Three observations. One take. No filler. The thread is built to open with tension, move with rhythm and end with a useful stance.',
-        es: 'Tres observaciones. Una postura. Sin relleno. El hilo abre con tensión, avanza con ritmo y cierra con una idea útil.',
+        en: 'Capture trends and build storytelling threads that stop the scroll. X threads optimized for reach.',
+        es: 'Captura tendencias y construye hilos de storytelling. Hilos de X optimizados para alcance.',
       },
       exportLabel: {
-        en: 'Export TXT',
-        es: 'Exportar TXT',
+        en: 'Export Text',
+        es: 'Exportar Texto',
       },
       footer: {
-        en: '7 posts · numbered thread · CTA to article',
-        es: '7 posts · hilo numerado · CTA a artículo',
+        en: 'X Thread Bundle — Designed for virality.',
+        es: 'Bundle de Hilos de X — Diseñado para viralidad.',
       },
       hook: {
-        en: 'Most brand accounts on X confuse noise with presence. Precision still wins.',
-        es: 'La mayoría de cuentas de marca en X confunde ruido con presencia. La precisión sigue ganando.',
+        en: 'Silence doesn’t pay the bills.',
+        es: 'El silencio no paga las cuentas.',
       },
       id: 'x',
-      label: 'X',
+      label: 'X (Twitter)',
     },
-  ] satisfies PlatformPreview[],
-}
-
-export function getComparisonValueLabel(
-  locale: LandingLocale,
-  value: ComparisonValue
-) {
-  switch (value) {
-    case 'yes':
-      return '✓'
-    case 'partial':
-      return locale === 'es' ? 'Parcial' : 'Partial'
-    case 'separate':
-      return locale === 'es' ? 'Separado' : 'Separate tool'
-    case 'manual':
-      return locale === 'es' ? 'Manual' : 'Manual'
-    case 'no':
-    default:
-      return '✗'
-  }
+  ],
 }

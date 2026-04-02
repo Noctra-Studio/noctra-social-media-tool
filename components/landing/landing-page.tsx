@@ -4,6 +4,7 @@ import { useLocale } from 'next-intl'
 import { Comparison } from '@/components/landing/comparison'
 import { CtaFinal } from '@/components/landing/cta-final'
 import { DemoMockup } from '@/components/landing/demo-mockup'
+import { ExampleOutputs } from '@/components/landing/example-outputs'
 import { LandingFooter } from '@/components/landing/footer'
 import { Faq } from '@/components/landing/faq'
 import { Features } from '@/components/landing/features'
@@ -14,9 +15,20 @@ import { LandingNavbar } from '@/components/landing/navbar'
 import { type LandingLocale } from '@/components/landing/content'
 import { Pricing } from '@/components/landing/pricing'
 import { Problem } from '@/components/landing/problem'
+import type { Platform } from '@/lib/product'
+import { useState } from 'react'
 
 export function LandingPage() {
   const locale = useLocale() as LandingLocale
+  const [activeDemoTab, setActiveDemoTab] = useState<Platform>('instagram')
+
+  const handleShowPlatformDemo = (platform: Platform) => {
+    setActiveDemoTab(platform)
+    const element = document.getElementById('demo')
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth' })
+    }
+  }
 
   return (
     <div className="min-h-screen bg-[#101417] text-[#E0E5EB]">
@@ -28,11 +40,16 @@ export function LandingPage() {
       <main>
         <Hero locale={locale} />
         <Problem locale={locale} />
-        <DemoMockup locale={locale} />
+        <DemoMockup
+          locale={locale}
+          activeTab={activeDemoTab}
+          onTabChange={setActiveDemoTab}
+        />
         <HowItWorks locale={locale} />
         <Features locale={locale} />
-        <Comparison locale={locale} />
         <ForWho locale={locale} />
+        <Comparison locale={locale} />
+        <ExampleOutputs locale={locale} onShowPlatformDemo={handleShowPlatformDemo} />
         <Pricing locale={locale} />
         <Faq locale={locale} />
         <CtaFinal locale={locale} />

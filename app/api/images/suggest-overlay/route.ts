@@ -9,7 +9,7 @@ export async function POST(req: Request) {
   try {
     const user = await getUser()
     const supabase = await createClient()
-    const { image, post_content, platform } = await req.json()
+    const { image, post_content, platform, focusTip } = await req.json()
 
     if (!image || !post_content) {
       return NextResponse.json({ error: 'Missing image or post content' }, { status: 400 })
@@ -29,6 +29,10 @@ export async function POST(req: Request) {
     IMAGE EVALUATION:
     Description: ${imageDescription}
     Composition/Subject Layout: ${imageDescription}
+    
+    ${focusTip ? `SPECIFIC OPTIMIZATION REQUEST:
+    The user wants to resolve this specific issue: "${focusTip}"
+    Prioritize fixing this issue above all else while maintaining overall balance.` : ""}
     
     Your goal is to choose settings that:
     1. Place text in "dead space" or areas with low visual complexity.

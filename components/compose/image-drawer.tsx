@@ -90,6 +90,7 @@ export function ImageDrawer({ isOpen, onClose, postContent, onConfirm }: ImageDr
   });
   const [autoPlacing, setAutoPlacing] = useState(false);
   const [isSuggesting, setIsSuggesting] = useState(false);
+  const [applyingTipId, setApplyingTipId] = useState<number | null>(null);
 
   const controls = useAnimation();
 
@@ -289,22 +290,59 @@ export function ImageDrawer({ isOpen, onClose, postContent, onConfirm }: ImageDr
     }
   };
 
-  const handleApplyTip = (tip: any) => {
-    if (!tip.action_values) {
-      handleSuggestOverlay();
+  const handleApplyTip = async (tip: any, index: number) => {
+    if (tip.action_values) {
+      const { action_values } = tip;
+      setOverlayConfig(prev => ({
+        ...prev,
+        ...(action_values.placement && { placement: action_values.placement }),
+        ...(action_values.textColor && { textColor: action_values.textColor }),
+        ...(action_values.textSize && { textSize: action_values.textSize }),
+        ...(action_values.dimming !== undefined && { dimming: action_values.dimming }),
+        ...(action_values.blur !== undefined && { blur: action_values.blur }),
+        ...(action_values.text && { text: action_values.text }),
+      }));
       return;
     }
 
-    const { action_values } = tip;
-    setOverlayConfig(prev => ({
-      ...prev,
-      ...(action_values.placement && { placement: action_values.placement }),
-      ...(action_values.textColor && { textColor: action_values.textColor }),
-      ...(action_values.textSize && { textSize: action_values.textSize }),
-      ...(action_values.dimming !== undefined && { dimming: action_values.dimming }),
-      ...(action_values.blur !== undefined && { blur: action_values.blur }),
-      ...(action_values.text && { text: action_values.text }),
-    }));
+    if (!tempSelection || applyingTipId !== null) return;
+    setApplyingTipId(index);
+    try {
+      const res = await fetch('/api/images/suggest-overlay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image: {
+            unsplashId: tempSelection.unsplashId,
+            url: tempSelection.url,
+            scores: (tempSelection as any).scores || { total: 0.5 },
+            verdict: (tempSelection as any).verdict || efficacyReport?.verdict || 'Manual selection'
+          },
+          post_content: postContent,
+          platform: postContent.platform,
+          focusTip: tip.tip
+        })
+      });
+      if (res.ok) {
+        const suggestion = await res.json();
+        setOverlayConfig(prev => ({
+          ...prev,
+          placement: suggestion.placement,
+          textColor: suggestion.textColor,
+          textSize: suggestion.textSize,
+          dimming: suggestion.dimming,
+          blur: suggestion.blur,
+          ...(suggestion.text && { text: suggestion.text }),
+        }));
+        
+        // Re-run efficacy check
+        runEfficacyCheck(tempSelection);
+      }
+    } catch (err) {
+      console.error('Failed to apply focused tip', err);
+    } finally {
+      setApplyingTipId(null);
+    }
   };
 
   const handleConfirm = () => {
@@ -676,19 +714,33 @@ export function ImageDrawer({ isOpen, onClose, postContent, onConfirm }: ImageDr
                           {efficacyReport.optimization_tips?.length > 0 && (
                             <div className="mt-3 flex flex-wrap gap-2">
                               {efficacyReport.optimization_tips.map((tip: any, i: number) => (
-                                <button 
+                                <div 
                                   key={i}
-                                  onClick={() => handleApplyTip(tip)}
-                                  className={cn(
-                                    "group relative rounded-lg bg-white/5 px-2 py-1.5 text-[9px] font-bold text-[#E0E5EB] transition-all hover:bg-white/10 active:scale-95 flex items-center gap-1.5",
-                                    tip.action_values && "border border-green-500/30 bg-green-500/5"
-                                  )}
+                                  className="group relative flex w-full flex-col gap-2 rounded-xl bg-white/5 p-2.5 transition-all hover:bg-white/10"
                                 >
-                                  <span>✨ {tip.tip}</span>
-                                  {tip.action_values && (
-                                    <MousePointerClick size={10} className="text-green-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                  )}
-                                </button>
+                                  <div className="flex items-start gap-2">
+                                    <Sparkles size={12} className="mt-0.5 text-amber-400" />
+                                    <span className="text-[10px] leading-relaxed text-[#E0E5EB]">{tip.tip}</span>
+                                  </div>
+                                  
+                                  <button 
+                                    onClick={() => handleApplyTip(tip, i)}
+                                    disabled={applyingTipId !== null}
+                                    className={cn(
+                                      "flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-[9px] font-bold transition-all active:scale-95",
+                                      applyingTipId === i 
+                                        ? "bg-white/10 text-white/40 cursor-wait" 
+                                        : "bg-green-500/10 text-green-400 hover:bg-green-500/20"
+                                    )}
+                                  >
+                                    {applyingTipId === i ? (
+                                      <Loader2 size={10} className="animate-spin" />
+                                    ) : (
+                                      <Wand2 size={10} />
+                                    )}
+                                    {applyingTipId === i ? 'Implementando...' : 'Implementar mejora'}
+                                  </button>
+                                </div>
                               ))}
                             </div>
                           )}

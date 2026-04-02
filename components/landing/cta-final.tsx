@@ -18,11 +18,11 @@ export function CtaFinal({ locale }: { locale: LandingLocale }) {
 
         <Link
           href="mailto:hello@noctra.design?subject=Acceso%20Noctra%20Social"
-          className="mt-8 inline-flex items-center gap-2 rounded-lg bg-[#E0E5EB] px-6 py-3 text-sm text-[#101417] transition hover:bg-white"
+          className="group mt-10 inline-flex items-center gap-2 rounded-xl bg-[#E0E5EB] px-8 py-4 text-sm font-bold text-[#101417] transition-all hover:bg-white hover:shadow-[0_0_30px_rgba(255,255,255,0.08)]"
           style={{ fontFamily: 'var(--font-brand-display)' }}
         >
           <span>{landingContent.finalCta.button[locale]}</span>
-          <ArrowRight className="h-4 w-4" />
+          <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
         </Link>
       </div>
     </SectionReveal>

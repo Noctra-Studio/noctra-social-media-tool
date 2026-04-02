@@ -1,31 +1,31 @@
 {
   "metadata": {
     "root": {
-      "title": "Noctra Social",
-      "description": "AI-native brand content system for Instagram, LinkedIn and X."
+      "title": "Noctra Social | Content Authority System",
+      "description": "The high-performance system for founders to turn ideas into content that attracts clients on LinkedIn, X, and Instagram."
     },
     "tutorial": {
       "title": "Tutorial — social.noctra.studio",
-      "description": "Interactive guide to learn how to use Noctra Social step by step."
+      "description": "Interactive guide to mastering the Noctra Social content authority system."
     }
   },
   "landing": {
     "nav": {
       "howItWorks": "How it works",
       "features": "Capabilities",
-      "forWho": "Who it is for",
+      "forWho": "This is for you",
       "pricing": "Pricing",
-      "login": "Sign in",
+      "login": "Access the Engine",
       "wordmark": "Social",
-      "openMenu": "Open menu"
+      "openMenu": "Open Menu"
     },
     "hero": {
-      "label": "NOCTRA SOCIAL — CONTENT SYSTEM",
-      "headline": "Brand content that builds authority.",
-      "subheadline": "Generate, organize and export content for Instagram, LinkedIn and X with AI trained on your brand voice. No prompts. No friction. With intent.",
-      "ctaPrimary": "Sign in",
-      "ctaSecondary": "See how it works",
-      "trustLine": "✦ Anthropic · ✦ Gemini · ✦ Unsplash — three engines, one interface"
+      "label": "NOCTRA SOCIAL — CONTENT AUTHORITY SYSTEM",
+      "headline": "Get clients through content without the manual planning grind.",
+      "subheadline": "The high-performance system for experts to build authority and scale their presence across LinkedIn, X, and Instagram.",
+      "ctaPrimary": "Build your authority system",
+      "ctaSecondary": "See the system in action",
+      "trustLine": "Calibrated for high-performance founders and experts. Reply in under 48 hours."
     }
   },
   "dashboard": {

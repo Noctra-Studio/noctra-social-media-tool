@@ -1,31 +1,31 @@
 {
   "metadata": {
     "root": {
-      "title": "Noctra Social",
-      "description": "Sistema de contenido de marca nativo en IA para Instagram, LinkedIn y X."
+      "title": "Noctra Social | Sistema de Autoridad de Contenido",
+      "description": "El sistema de alto rendimiento para que fundadores conviertan ideas en contenido que atrae clientes en LinkedIn, X e Instagram."
     },
     "tutorial": {
       "title": "Tutorial — social.noctra.studio",
-      "description": "Guía interactiva para aprender a usar Noctra Social paso a paso."
+      "description": "Guía interactiva para dominar el sistema de autoridad de contenido de Noctra Social."
     }
   },
   "landing": {
     "nav": {
       "howItWorks": "Cómo funciona",
       "features": "Capacidades",
-      "forWho": "Para quién",
+      "forWho": "Esto es para ti",
       "pricing": "Precios",
-      "login": "Iniciar sesión",
+      "login": "Acceso al Motor",
       "wordmark": "Social",
       "openMenu": "Abrir menú"
     },
     "hero": {
-      "label": "NOCTRA SOCIAL — CONTENT SYSTEM",
-      "headline": "Contenido de marca que construye autoridad.",
-      "subheadline": "Genera, organiza y exporta contenido para Instagram, LinkedIn y X con IA entrenada en tu voz de marca. Sin prompts. Sin fricción. Con criterio.",
-      "ctaPrimary": "Iniciar sesión",
-      "ctaSecondary": "Ver cómo funciona",
-      "trustLine": "✦ Anthropic · ✦ Gemini · ✦ Unsplash — tres motores, una sola interfaz"
+      "label": "NOCTRA SOCIAL — SISTEMA DE AUTORIDAD DE CONTENIDO",
+      "headline": "Consigue clientes con contenido sin el desgaste de planear cada post.",
+      "subheadline": "El sistema de alto rendimiento para que expertos construyan autoridad y hagan crecer su negocio con contenido listo para publicar.",
+      "ctaPrimary": "Crea tu sistema de autoridad",
+      "ctaSecondary": "Mira el sistema en acción",
+      "trustLine": "Calibrado para fundadores y expertos de alto rendimiento. Respuesta en menos de 48 horas."
     }
   },
   "dashboard": {
