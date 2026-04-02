@@ -152,6 +152,15 @@ import { TemplateSelector } from "@/components/editor/template-selector";
 import { SlideTemplate } from "@/lib/editor/templates";
 import { ImageDrawer, type SelectedImage, type OverlayConfig } from "@/components/compose/image-drawer";
 import { ImageTipsCard } from "@/components/compose/image-tips-card";
+import { ContentImageSlot } from "@/components/compose/content-image-slot";
+import {
+  buildStructuredPostFields,
+  isMissingStructuredPostColumnError,
+  omitStructuredPostFields,
+  resolveExternalImageSource,
+  type ImageSource,
+} from "@/lib/post-records";
+import { uploadPostImage } from "@/lib/post-image-upload";
 
 
 
@@ -254,6 +263,13 @@ type QuickActionOutput =
       posts: QuickActionFaqPost[];
       sourceLabel: string;
     };
+
+type ComposeImageTarget =
+  | { kind: "article-cover"; platform: "x" }
+  | { kind: "carousel-slide"; platform: "instagram"; slideNumber: number }
+  | { kind: "single-post"; platform: Platform }
+  | { kind: "slides-item"; platform: "linkedin"; slideNumber: number }
+  | { kind: "thread-item"; platform: "x"; tweetNumber: number };
 
 type AssistanceState = {
   dismissed: boolean;
@@ -520,7 +536,8 @@ export default function ComposePage() {
   // Image Drawer State
   const [selectedImage, setSelectedImage] = useState<SelectedImage | null>(null);
   const [overlayConfig, setOverlayConfig] = useState<OverlayConfig | null>(null);
-  const [isImageDrawerOpen, setIsImageDrawerOpen] = useState(false);
+  const [imagePickerTarget, setImagePickerTarget] =
+    useState<ComposeImageTarget | null>(null);
   const [regeneratingHook, setRegeneratingHook] = useState(false);
   const [exportingPlatform, setExportingPlatform] = useState<Platform | null>(
     null,
@@ -546,6 +563,7 @@ export default function ComposePage() {
     ? (modeCards.find((card) => card.key === mode) ?? null)
     : null;
   const currentResult = generatedResults[activePlatform];
+  const isImageDrawerOpen = imagePickerTarget !== null;
   const activePillar =
     brandPillars.find((pillar) => pillar.id === selectedPillarId) || null;
   const activeAudience = platformAudiences[activePlatform] || null;
@@ -1019,19 +1037,316 @@ export default function ComposePage() {
     });
   };
 
+  const ensureCurrentUserId = async () => {
+    if (userId) {
+      return userId;
+    }
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      throw new Error("Necesitas iniciar sesión para continuar.");
+    }
+
+    setUserId(user.id);
+    return user.id;
+  };
+
+  const buildPostPayload = (
+    platform: Platform,
+    result: GeneratedContent,
+    overrides?: Partial<GeneratedContent>,
+  ) => {
+    const nextResult = {
+      ...result,
+      ...overrides,
+      content: overrides?.content ?? result.content,
+      export_metadata: overrides?.export_metadata ?? result.export_metadata,
+    };
+    const inferredFormat = inferPostFormat(
+      platform,
+      nextResult.content,
+      nextResult.format,
+    );
+    const structuredFields = buildStructuredPostFields({
+      content: nextResult.content,
+      export_metadata: nextResult.export_metadata,
+      format: inferredFormat,
+      platform,
+    });
+
+    return {
+      angle: nextResult.angle,
+      article_data: structuredFields.article_data,
+      carousel_slides: structuredFields.carousel_slides,
+      content: nextResult.content,
+      export_metadata: nextResult.export_metadata ?? {},
+      format: inferredFormat,
+      image_url: structuredFields.image_url,
+      pillar_id: nextResult.pillar_id || selectedPillarId,
+      platform,
+      post_type: structuredFields.post_type,
+      slides_data: structuredFields.slides_data,
+      thread_items: structuredFields.thread_items,
+    };
+  };
+
+  const persistGeneratedPost = async (
+    platform: Platform,
+    nextResult: GeneratedContent,
+  ) => {
+    if (!nextResult.post_id) {
+      return;
+    }
+
+    const nextUserId = await ensureCurrentUserId();
+    let { error } = await supabase
+      .from("posts")
+      .update(buildPostPayload(platform, nextResult))
+      .eq("id", nextResult.post_id)
+      .eq("user_id", nextUserId);
+
+    if (error && isMissingStructuredPostColumnError(error)) {
+      const fallback = await supabase
+        .from("posts")
+        .update(omitStructuredPostFields(buildPostPayload(platform, nextResult)))
+        .eq("id", nextResult.post_id)
+        .eq("user_id", nextUserId);
+
+      error = fallback.error;
+    }
+
+    if (error) {
+      throw error;
+    }
+  };
+
+  const applyGeneratedResultUpdate = async (
+    platform: Platform,
+    updater: (result: GeneratedContent) => GeneratedContent,
+  ) => {
+    const current = generatedResults[platform];
+
+    if (!current) {
+      return;
+    }
+
+    const nextResult = updater(current);
+    updateGeneratedResult(platform, () => nextResult);
+
+    try {
+      await persistGeneratedPost(platform, nextResult);
+    } catch (error) {
+      console.error("Failed to persist post media", error);
+      setToastMessage("Se actualizó localmente, pero no se pudo guardar en Supabase.");
+    }
+  };
+
   const openVisualSearch = (query: string) => {
-    setIsImageDrawerOpen(true);
+    setImagePickerTarget({ kind: "single-post", platform: activePlatform });
   };
 
   const handleImageConfirm = (image: SelectedImage, config: OverlayConfig) => {
-    setSelectedImage(image);
-    setOverlayConfig(config);
-    setIsImageDrawerOpen(false);
+    const target = imagePickerTarget;
+    const source = resolveExternalImageSource(image.unsplashId);
+
+    if (!target) {
+      return;
+    }
+
+    if (target.kind === "single-post") {
+      setSelectedImage(image);
+      setOverlayConfig(config);
+      setImagePickerTarget(null);
+      return;
+    }
+
+    void applyGeneratedResultUpdate(target.platform, (current) => {
+      if (target.kind === "article-cover") {
+        return {
+          ...current,
+          content: {
+            ...current.content,
+            cover_image: image.url,
+            cover_image_source: source,
+          },
+        };
+      }
+
+      if (target.kind === "thread-item") {
+        const tweets = readXThreadTweets(current.content.tweets ?? current.content.thread).map(
+          (tweet) =>
+            tweet.number === target.tweetNumber
+              ? {
+                  ...tweet,
+                  id: tweet.id ?? `tweet-${tweet.number}`,
+                  media_source: source,
+                  media_url: image.url,
+                }
+              : tweet
+        );
+
+        return {
+          ...current,
+          content: {
+            ...current.content,
+            tweets,
+          },
+        };
+      }
+
+      if (target.kind === "slides-item") {
+        const slides = readLinkedInSlides(current.content.slides).map((slide) =>
+          slide.number === target.slideNumber
+            ? {
+                ...slide,
+                id: slide.id ?? `slide-${slide.number}`,
+                image_source: source,
+                image_url: image.url,
+              }
+            : slide
+        );
+
+        return {
+          ...current,
+          content: {
+            ...current.content,
+            slides,
+          },
+        };
+      }
+
+      const existingBackgrounds = Array.isArray((current.export_metadata as any)?.slide_backgrounds)
+        ? ([...(current.export_metadata as any).slide_backgrounds] as Array<Record<string, unknown>>)
+        : [];
+      const otherBackgrounds = existingBackgrounds.filter(
+        (background) => Number(background.slide_number) !== target.slideNumber
+      );
+
+      return {
+        ...current,
+        export_metadata: {
+          ...(isRecord(current.export_metadata) ? current.export_metadata : {}),
+          slide_backgrounds: [
+            ...otherBackgrounds,
+            {
+              bg_type: "image",
+              image_source: source,
+              image_url: image.url,
+              photographer: image.photographer,
+              slide_number: target.slideNumber,
+            },
+          ],
+        },
+      };
+    }).finally(() => {
+      setImagePickerTarget(null);
+    });
   };
 
   const removeImage = () => {
     setSelectedImage(null);
     setOverlayConfig(null);
+  };
+
+  const handleStructuredUpload = async (
+    target: Exclude<ComposeImageTarget, { kind: "single-post"; platform: Platform }>,
+    file: File,
+  ) => {
+    const current = generatedResults[target.platform];
+
+    if (!current?.post_id) {
+      setToastMessage("Genera el contenido antes de subir una imagen.");
+      return;
+    }
+
+    const nextUserId = await ensureCurrentUserId();
+    const upload = await uploadPostImage({
+      file,
+      postId: current.post_id,
+      userId: nextUserId,
+    });
+
+    await applyGeneratedResultUpdate(target.platform, (result) => {
+      if (target.kind === "article-cover") {
+        return {
+          ...result,
+          content: {
+            ...result.content,
+            cover_image: upload.url,
+            cover_image_source: "upload" satisfies ImageSource,
+          },
+        };
+      }
+
+      if (target.kind === "thread-item") {
+        const tweets = readXThreadTweets(result.content.tweets ?? result.content.thread).map(
+          (tweet) =>
+            tweet.number === target.tweetNumber
+              ? {
+                  ...tweet,
+                  id: tweet.id ?? `tweet-${tweet.number}`,
+                  media_source: "upload" satisfies ImageSource,
+                  media_url: upload.url,
+                }
+              : tweet
+        );
+
+        return {
+          ...result,
+          content: {
+            ...result.content,
+            tweets,
+          },
+        };
+      }
+
+      if (target.kind === "slides-item") {
+        const slides = readLinkedInSlides(result.content.slides).map((slide) =>
+          slide.number === target.slideNumber
+            ? {
+                ...slide,
+                id: slide.id ?? `slide-${slide.number}`,
+                image_source: "upload" satisfies ImageSource,
+                image_url: upload.url,
+              }
+            : slide
+        );
+
+        return {
+          ...result,
+          content: {
+            ...result.content,
+            slides,
+          },
+        };
+      }
+
+      const existingBackgrounds = Array.isArray((result.export_metadata as any)?.slide_backgrounds)
+        ? ([...(result.export_metadata as any).slide_backgrounds] as Array<Record<string, unknown>>)
+        : [];
+      const otherBackgrounds = existingBackgrounds.filter(
+        (background) => Number(background.slide_number) !== target.slideNumber
+      );
+
+      return {
+        ...result,
+        export_metadata: {
+          ...(isRecord(result.export_metadata) ? result.export_metadata : {}),
+          slide_backgrounds: [
+            ...otherBackgrounds,
+            {
+              bg_type: "image",
+              image_source: "upload" satisfies ImageSource,
+              image_url: upload.url,
+              slide_number: target.slideNumber,
+            },
+          ],
+        },
+      };
+    });
   };
 
   const openCarouselEditor = (activeIndex: number) => {
@@ -1410,9 +1725,6 @@ export default function ComposePage() {
 
   const saveAsDraft = async (platform: Platform) => {
     const result = generatedResults[platform];
-    const inferredFormat = result
-      ? inferPostFormat(platform, result.content, result.format)
-      : getDefaultFormat(platform);
 
     if (!result) {
       return null;
@@ -1477,22 +1789,34 @@ export default function ComposePage() {
         setSourceIdeaId(createdIdea.id);
       }
 
+      const postPayload = buildPostPayload(platform, result);
+
       if (result.post_id) {
-        const { error: updateError } = await supabase
+        let { error: updateError } = await supabase
           .from("posts")
           .update({
-            angle: result.angle,
-            content: result.content,
-            export_metadata: result.export_metadata ?? {},
-            format: inferredFormat,
+            ...postPayload,
             idea_id: ideaId,
-            pillar_id: result.pillar_id || selectedPillarId,
-            platform,
             status: "draft",
             user_id: nextUserId,
           })
           .eq("id", result.post_id)
           .eq("user_id", nextUserId);
+
+        if (updateError && isMissingStructuredPostColumnError(updateError)) {
+          const fallback = await supabase
+            .from("posts")
+            .update({
+              ...omitStructuredPostFields(postPayload),
+              idea_id: ideaId,
+              status: "draft",
+              user_id: nextUserId,
+            })
+            .eq("id", result.post_id)
+            .eq("user_id", nextUserId);
+
+          updateError = fallback.error;
+        }
 
         if (updateError) {
           throw updateError;
@@ -1505,23 +1829,36 @@ export default function ComposePage() {
         return result.post_id;
       }
 
-      const { data: postData, error: postError } = await supabase
+      let { data: postData, error: postError } = await supabase
         .from("posts")
         .insert([
           {
-            angle: result.angle,
-            content: result.content,
-            export_metadata: result.export_metadata ?? {},
-            format: inferredFormat,
+            ...postPayload,
             idea_id: ideaId,
-            pillar_id: result.pillar_id || selectedPillarId,
-            platform,
             status: "draft",
             user_id: nextUserId,
           },
         ])
         .select("id")
         .single();
+
+      if (postError && isMissingStructuredPostColumnError(postError)) {
+        const fallback = await supabase
+          .from("posts")
+          .insert([
+            {
+              ...omitStructuredPostFields(postPayload),
+              idea_id: ideaId,
+              status: "draft",
+              user_id: nextUserId,
+            },
+          ])
+          .select("id")
+          .single();
+
+        postData = fallback.data;
+        postError = fallback.error;
+      }
 
       const createdPost = postData as { id: string } | null;
 
@@ -2839,6 +3176,12 @@ export default function ComposePage() {
     if (platform === "instagram" && format === "carousel") {
       const slides = readInstagramSlides(content.slides);
       const { editedSlides, slideBackgrounds } = getCarouselEditorMeta(result);
+      const slideBackgroundMap = new Map(
+        slideBackgrounds.map((background) => [
+          background.slide_number,
+          background,
+        ])
+      );
 
       return (
         <div className="space-y-5">
@@ -2888,6 +3231,56 @@ export default function ComposePage() {
                 });
               }}
             />
+            <div className="grid gap-3 md:grid-cols-2">
+              {slides.map((slide) => {
+                const imageBackground = slideBackgroundMap.get(slide.slide_number);
+
+                return (
+                  <ContentImageSlot
+                    key={`carousel-image-slot-${slide.slide_number}`}
+                    aspectRatio="square"
+                    hint="Cada slide puede llevar su propia imagen."
+                    imageSource={
+                      (imageBackground?.image_source as ImageSource | null | undefined) ??
+                      null
+                    }
+                    imageUrl={imageBackground?.image_url ?? null}
+                    label={`Imagen slide ${slide.slide_number}`}
+                    onOpenPicker={() =>
+                      setImagePickerTarget({
+                        kind: "carousel-slide",
+                        platform: "instagram",
+                        slideNumber: slide.slide_number,
+                      })
+                    }
+                    onRemove={() => {
+                      void applyGeneratedResultUpdate("instagram", (current) => ({
+                        ...current,
+                        export_metadata: {
+                          ...(isRecord(current.export_metadata)
+                            ? current.export_metadata
+                            : {}),
+                          slide_backgrounds: getCarouselEditorMeta(current).slideBackgrounds.filter(
+                            (background) =>
+                              background.slide_number !== slide.slide_number
+                          ),
+                        },
+                      }));
+                    }}
+                    onUpload={async (file) => {
+                      await handleStructuredUpload(
+                        {
+                          kind: "carousel-slide",
+                          platform: "instagram",
+                          slideNumber: slide.slide_number,
+                        },
+                        file
+                      );
+                    }}
+                  />
+                );
+              })}
+            </div>
             <div className="rounded-[24px] border border-white/10 bg-[#101417] p-4 text-sm leading-7 text-[#E0E5EB]">
               <p className="whitespace-pre-wrap">{readString(content.caption)}</p>
               
@@ -3069,6 +3462,7 @@ export default function ComposePage() {
                 <div key={`thread-group-${tweet.number}`} className="space-y-3">
                   <XPostPreview 
                     content={tweet.content} 
+                    mediaUrl={tweet.media_url ?? undefined}
                     isThread={true} 
                     threadIndex={idx + 1} 
                     totalInThread={tweets.length} 
@@ -3091,6 +3485,52 @@ export default function ComposePage() {
                       }
                       className="mt-3 min-h-[90px] w-full resize-none bg-transparent text-sm leading-7 text-[#E0E5EB] focus:outline-none"
                     />
+                    <div className="mt-4">
+                      <ContentImageSlot
+                        buttonLabel="＋ Imagen"
+                        collapsedByDefault
+                        hint="Imagen opcional por tweet."
+                        imageSource={tweet.media_source ?? null}
+                        imageUrl={tweet.media_url ?? null}
+                        label={`Imagen para tweet ${tweet.number}`}
+                        onOpenPicker={() =>
+                          setImagePickerTarget({
+                            kind: "thread-item",
+                            platform: "x",
+                            tweetNumber: tweet.number,
+                          })
+                        }
+                        onRemove={() => {
+                          void applyGeneratedResultUpdate("x", (current) => ({
+                            ...current,
+                            content: {
+                              ...current.content,
+                              tweets: readXThreadTweets(
+                                current.content.tweets ?? current.content.thread
+                              ).map((item) =>
+                                item.number === tweet.number
+                                  ? {
+                                      ...item,
+                                      media_source: null,
+                                      media_url: null,
+                                    }
+                                  : item
+                              ),
+                            },
+                          }));
+                        }}
+                        onUpload={async (file) => {
+                          await handleStructuredUpload(
+                            {
+                              kind: "thread-item",
+                              platform: "x",
+                              tweetNumber: tweet.number,
+                            },
+                            file
+                          );
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
               ))}
@@ -3102,27 +3542,58 @@ export default function ComposePage() {
 
     if (platform === "x" && format === "article") {
       return (
-        <article className="rounded-[28px] border border-white/10 bg-[#101417] p-6">
-          <div className="flex flex-wrap gap-2">
-            <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-[#8D95A6]">
-              {String(content.word_count ?? "")} palabras
-            </span>
-            <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-[#8D95A6]">
-              {String(content.read_time_minutes ?? "")} min de lectura
-            </span>
-          </div>
-          <p
-            className="mt-5 text-3xl font-medium text-[#E0E5EB]"
-            style={{ fontFamily: "var(--font-brand-display)" }}>
-            {readString(content.title)}
-          </p>
-          <p className="mt-3 text-base leading-7 text-[#8D95A6]">
-            {readString(content.subtitle)}
-          </p>
-          <div className="mt-8">
-            {renderMarkdownBody(readString(content.body))}
-          </div>
-        </article>
+        <div className="space-y-4">
+          <ContentImageSlot
+            aspectRatio="landscape"
+            hint="Portada sugerida 16:9 para el artículo."
+            imageSource={
+              (content.cover_image_source as ImageSource | null | undefined) ??
+              null
+            }
+            imageUrl={readOptionalString(content.cover_image)}
+            label="Portada del artículo"
+            onOpenPicker={() =>
+              setImagePickerTarget({ kind: "article-cover", platform: "x" })
+            }
+            onRemove={() => {
+              void applyGeneratedResultUpdate("x", (current) => ({
+                ...current,
+                content: {
+                  ...current.content,
+                  cover_image: null,
+                  cover_image_source: null,
+                },
+              }));
+            }}
+            onUpload={async (file) => {
+              await handleStructuredUpload(
+                { kind: "article-cover", platform: "x" },
+                file
+              );
+            }}
+          />
+          <article className="rounded-[28px] border border-white/10 bg-[#101417] p-6">
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-[#8D95A6]">
+                {String(content.word_count ?? "")} palabras
+              </span>
+              <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-[#8D95A6]">
+                {String(content.read_time_minutes ?? "")} min de lectura
+              </span>
+            </div>
+            <p
+              className="mt-5 text-3xl font-medium text-[#E0E5EB]"
+              style={{ fontFamily: "var(--font-brand-display)" }}>
+              {readString(content.title)}
+            </p>
+            <p className="mt-3 text-base leading-7 text-[#8D95A6]">
+              {readString(content.subtitle)}
+            </p>
+            <div className="mt-8">
+              {renderMarkdownBody(readString(content.body))}
+            </div>
+          </article>
+        </div>
       );
     }
 
@@ -3138,7 +3609,7 @@ export default function ComposePage() {
             {slides.map((slide) => (
               <div
                 key={`linkedin-slide-${slide.number}`}
-                className="rounded-[24px] border border-white/10 bg-[#101417] p-4">
+                className="space-y-4 rounded-[24px] border border-white/10 bg-[#101417] p-4">
                 <div className="flex items-center justify-between gap-3">
                   <span className="rounded-full bg-white/5 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-[#B5BDCA]">
                     {slide.type}
@@ -3184,6 +3655,50 @@ export default function ComposePage() {
                     <p className="text-sm text-[#D3C2F1]">{slide.handle}</p>
                   ) : null}
                 </div>
+                <ContentImageSlot
+                  aspectRatio="portrait"
+                  buttonLabel="＋ Imagen"
+                  collapsedByDefault
+                  hint="Imagen opcional por diapositiva."
+                  imageSource={slide.image_source ?? null}
+                  imageUrl={slide.image_url ?? null}
+                  label={`Imagen para slide ${slide.number}`}
+                  onOpenPicker={() =>
+                    setImagePickerTarget({
+                      kind: "slides-item",
+                      platform: "linkedin",
+                      slideNumber: slide.number,
+                    })
+                  }
+                  onRemove={() => {
+                    void applyGeneratedResultUpdate("linkedin", (current) => ({
+                      ...current,
+                      content: {
+                        ...current.content,
+                        slides: readLinkedInSlides(current.content.slides).map(
+                          (item) =>
+                            item.number === slide.number
+                              ? {
+                                  ...item,
+                                  image_source: null,
+                                  image_url: null,
+                                }
+                              : item
+                        ),
+                      },
+                    }));
+                  }}
+                  onUpload={async (file) => {
+                    await handleStructuredUpload(
+                      {
+                        kind: "slides-item",
+                        platform: "linkedin",
+                        slideNumber: slide.number,
+                      },
+                      file
+                    );
+                  }}
+                />
               </div>
             ))}
           </div>
@@ -3278,7 +3793,9 @@ export default function ComposePage() {
               <ImageTipsCard 
                 brief={visualBrief} 
                 loading={briefLoading} 
-                onClick={() => setIsImageDrawerOpen(true)}
+                onClick={() =>
+                  setImagePickerTarget({ kind: "single-post", platform: activePlatform })
+                }
               />
             )}
             
@@ -4818,12 +5335,20 @@ export default function ComposePage() {
       {/* Image Drawer */}
       <ImageDrawer 
         isOpen={isImageDrawerOpen}
-        onClose={() => setIsImageDrawerOpen(false)}
+        onClose={() => setImagePickerTarget(null)}
         onConfirm={handleImageConfirm}
         postContent={{
-          platform: activePlatform,
+          platform: imagePickerTarget?.platform || activePlatform,
           angle: selectedAngle || "General",
-          caption: getCaptionText(activePlatform, inferPostFormat(activePlatform, generatedResults[activePlatform]?.content || {}, generatedResults[activePlatform]?.format || "tweet"), generatedResults[activePlatform]?.content || {}),
+          caption: getCaptionText(
+            imagePickerTarget?.platform || activePlatform,
+            inferPostFormat(
+              imagePickerTarget?.platform || activePlatform,
+              generatedResults[imagePickerTarget?.platform || activePlatform]?.content || {},
+              generatedResults[imagePickerTarget?.platform || activePlatform]?.format || "tweet"
+            ),
+            generatedResults[imagePickerTarget?.platform || activePlatform]?.content || {}
+          ),
           keywords: []
         }}
       />

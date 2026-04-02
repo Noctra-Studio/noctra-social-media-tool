@@ -95,7 +95,17 @@ export function LinkedInPostPreview({
         <div className="mt-2 px-3 pb-2">
           <div className="aspect-[4/5] w-full bg-[#101417] rounded-sm border border-[#D0D7DE] shadow-sm overflow-hidden relative flex flex-col p-8 group">
             {slides.length > 0 ? (
-              <div className="flex flex-col h-full justify-between">
+              <div className="relative z-10 flex h-full flex-col justify-between">
+                {slides[0].image_url ? (
+                  <div className="absolute inset-0">
+                    <img
+                      src={slides[0].image_url}
+                      alt=""
+                      className="h-full w-full object-cover opacity-25"
+                    />
+                    <div className="absolute inset-0 bg-[#101417]/75" />
+                  </div>
+                ) : null}
                 <div className="space-y-4">
                   <div className="h-0.5 w-12 bg-[#462D6E]" />
                   <h3 className="text-2xl font-bold text-[#E0E5EB] leading-tight font-display">

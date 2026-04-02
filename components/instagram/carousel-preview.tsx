@@ -883,6 +883,7 @@ export function InstagramCarouselPreview({
       reader.readAsDataURL(file)
     })
     updateCurrentBackground((bg) => ({ ...bg, imageUrl: dataUrl, type: 'image' }))
+    event.target.value = ''
   }
 
   if (!currentSlide || !currentBg) return null
@@ -1019,7 +1020,19 @@ export function InstagramCarouselPreview({
                    </button>
                    <label className="flex h-12 w-12 flex-shrink-0 cursor-pointer items-center justify-center rounded-lg border border-dashed border-[#4E576A] text-[#4E576A]">
                      <Upload className="h-4 w-4" />
-                     <input type="file" className="hidden" onChange={(e) => void handlePreviewBackgroundUpload(e)} />
+                     {/* TODO MOBILE TEST: iOS Safari - abrir galería */}
+                     {/* TODO MOBILE TEST: iOS Safari - tomar foto */}
+                     {/* TODO MOBILE TEST: Android Chrome - galería */}
+                     {/* TODO MOBILE TEST: Android Chrome - cámara */}
+                     {/* TODO MOBILE TEST: Desktop - drag & drop */}
+                     {/* TODO MOBILE TEST: Desktop - click to select */}
+                     <input
+                       type="file"
+                       accept="image/*"
+                       capture={undefined}
+                       className="hidden"
+                       onChange={(e) => void handlePreviewBackgroundUpload(e)}
+                     />
                    </label>
                 </div>
 

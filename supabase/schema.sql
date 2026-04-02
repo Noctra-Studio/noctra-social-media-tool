@@ -40,6 +40,14 @@ create table content_ideas (
   created_at timestamptz default now()
 );
 
+create type post_type as enum (
+  'single_post',
+  'carousel',
+  'thread',
+  'article',
+  'slides'
+);
+
 -- table: posts
 create table posts (
   id uuid primary key default gen_random_uuid(),
@@ -47,10 +55,15 @@ create table posts (
   pillar_id uuid references brand_pillars(id) on delete set null,
   platform text not null,
   format text,
+  post_type post_type default 'single_post',
   angle text,
   content jsonb not null default '{}'::jsonb,
   export_metadata jsonb,
   image_url text,
+  thread_items jsonb,
+  article_data jsonb,
+  carousel_slides jsonb,
+  slides_data jsonb,
   scheduled_at timestamptz,
   published_at timestamptz,
   status text default 'draft',
@@ -60,6 +73,7 @@ create table posts (
 CREATE INDEX idx_posts_scheduled_at ON posts(scheduled_at);
 CREATE INDEX idx_posts_platform ON posts(platform);
 CREATE INDEX idx_posts_status ON posts(status);
+CREATE INDEX idx_posts_post_type ON posts(post_type);
 
 -- table: image_library
 create table image_library (

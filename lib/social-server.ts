@@ -1,5 +1,10 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { getUser } from '@/lib/auth/get-user'
+import {
+  buildStructuredPostFields,
+  isMissingStructuredPostColumnError,
+  omitStructuredPostFields,
+} from '@/lib/post-records'
 import { createClient } from '@/lib/supabase/server'
 import type { Platform } from '@/lib/product'
 import type { ExportMetadata, PostFormat } from '@/lib/social-content'
@@ -81,23 +86,54 @@ export async function saveGeneratedPost(params: {
 }) {
   const { angle, content, exportMetadata, format, idea, pillarId, platform, postId, userId } = params
   const supabase = await createClient()
+  const structuredFields = buildStructuredPostFields({
+    content,
+    export_metadata: exportMetadata,
+    format,
+    platform,
+  })
+  const postPayload = {
+    angle,
+    article_data: structuredFields.article_data,
+    carousel_slides: structuredFields.carousel_slides,
+    content,
+    export_metadata: exportMetadata ?? {},
+    format,
+    image_url: structuredFields.image_url,
+    pillar_id: pillarId ?? null,
+    platform,
+    post_type: structuredFields.post_type,
+    slides_data: structuredFields.slides_data,
+    thread_items: structuredFields.thread_items,
+  }
 
   if (postId) {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('posts')
       .update({
-        angle,
-        content,
-        export_metadata: exportMetadata ?? {},
-        format,
-        pillar_id: pillarId ?? null,
-        platform,
+        ...postPayload,
         status: 'generated',
       })
       .eq('id', postId)
       .eq('user_id', userId)
       .select('id')
       .single()
+
+    if (error && isMissingStructuredPostColumnError(error)) {
+      const fallback = await supabase
+        .from('posts')
+        .update({
+          ...omitStructuredPostFields(postPayload),
+          status: 'generated',
+        })
+        .eq('id', postId)
+        .eq('user_id', userId)
+        .select('id')
+        .single()
+
+      data = fallback.data
+      error = fallback.error
+    }
 
     if (error || !data) {
       throw error || new Error('No fue posible actualizar el post generado')
@@ -106,22 +142,34 @@ export async function saveGeneratedPost(params: {
     return (data as SavedPostRow).id
   }
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('posts')
     .insert([
       {
-        angle,
-        content,
-        export_metadata: exportMetadata ?? {},
-        format,
-        pillar_id: pillarId ?? null,
-        platform,
+        ...postPayload,
         status: 'generated',
         user_id: userId,
       },
     ])
     .select('id')
     .single()
+
+  if (error && isMissingStructuredPostColumnError(error)) {
+    const fallback = await supabase
+      .from('posts')
+      .insert([
+        {
+          ...omitStructuredPostFields(postPayload),
+          status: 'generated',
+          user_id: userId,
+        },
+      ])
+      .select('id')
+      .single()
+
+    data = fallback.data
+    error = fallback.error
+  }
 
   if (error || !data) {
     throw error || new Error(`No fue posible guardar el resultado generado para: ${idea}`)

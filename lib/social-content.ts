@@ -1,5 +1,6 @@
 import type { Platform } from '@/lib/product'
 import { normalizeGradientConfig, type CarouselGradientConfig } from '@/lib/carousel-backgrounds'
+import type { ImageSource } from '@/lib/post-records'
 
 export type InstagramFormat = 'single' | 'carousel'
 export type XFormat = 'tweet' | 'thread' | 'article'
@@ -32,6 +33,9 @@ export type InstagramCarouselSlide = {
 export type XThreadTweet = {
   char_count: number
   content: string
+  id?: string
+  media_source?: ImageSource | null
+  media_url?: string | null
   number: number
 }
 
@@ -41,6 +45,9 @@ export type LinkedInCarouselSlide = {
   content?: string
   handle?: string
   headline?: string
+  id?: string
+  image_source?: ImageSource | null
+  image_url?: string | null
   message?: string
   number: number
   stat_or_example?: string | null
@@ -53,6 +60,7 @@ export type SlideBackgroundSelection = {
   slide_number: number
   bg_type: 'image' | 'gradient' | 'solid'
   gradient_config?: CarouselGradientConfig
+  image_source?: ImageSource | null
   image_url?: string
   photographer?: string
   gradient_style?: string
@@ -95,7 +103,7 @@ export const platformFormatOptions: Record<Platform, SocialFormatOption[]> = {
   instagram: [
     {
       value: 'single',
-      label: 'Publicacion unica',
+      label: 'Single post',
       description: '1 imagen + caption. Ideal para quotes, fotos, anuncios.',
     },
     {
@@ -107,7 +115,7 @@ export const platformFormatOptions: Record<Platform, SocialFormatOption[]> = {
   x: [
     {
       value: 'tweet',
-      label: 'Tweet unico',
+      label: 'Single post',
       description: '1 idea directa, con margen para editar antes de publicar.',
     },
     {
@@ -124,18 +132,18 @@ export const platformFormatOptions: Record<Platform, SocialFormatOption[]> = {
   linkedin: [
     {
       value: 'text',
-      label: 'Solo texto',
+      label: 'Single post',
       description: 'Texto puro para feed, con saltos de linea y lectura limpia.',
     },
     {
       value: 'image',
-      label: 'Imagen + texto',
+      label: 'Single post + imagen',
       description: 'Post de texto con direccion visual lista para buscar imagen.',
     },
     {
       value: 'document',
-      label: 'Carrusel / Documento',
-      description: 'PDF de 5-15 paginas pensado para swipe-through en LinkedIn.',
+      label: 'Slides',
+      description: 'Presentacion de 5-15 paginas pensada para swipe-through en LinkedIn.',
     },
   ],
 }
@@ -283,35 +291,47 @@ export function readXThreadTweets(value: unknown): XThreadTweet[] {
     return []
   }
 
-  return value
-    .map((item, index) => {
-      if (typeof item === 'string') {
-        return {
-          char_count: item.length,
-          content: item,
-          number: index + 1,
-        }
-      }
+  const tweets: XThreadTweet[] = []
 
-      if (!isRecord(item)) {
-        return null
-      }
+  value.forEach((item, index) => {
+    if (typeof item === 'string') {
+      tweets.push({
+        char_count: item.length,
+        content: item,
+        number: index + 1,
+      })
+      return
+    }
 
-      const char_count = typeof item.char_count === 'number' ? item.char_count : readString(item.content).length
-      const content = readString(item.content)
-      const number = typeof item.number === 'number' ? item.number : index + 1
+    if (!isRecord(item)) {
+      return
+    }
 
-      if (!content) {
-        return null
-      }
+    const char_count = typeof item.char_count === 'number' ? item.char_count : readString(item.content).length
+    const content = readString(item.content)
+    const id = readOptionalString(item.id) ?? undefined
+    const media_source: ImageSource | null =
+      item.media_source === 'unsplash' || item.media_source === 'pexels' || item.media_source === 'upload'
+        ? item.media_source
+        : null
+    const media_url = readOptionalString(item.media_url)
+    const number = typeof item.number === 'number' ? item.number : index + 1
 
-      return {
-        char_count,
-        content,
-        number,
-      }
+    if (!content) {
+      return
+    }
+
+    tweets.push({
+      char_count,
+      content,
+      id,
+      media_source,
+      media_url,
+      number,
     })
-    .filter((item): item is XThreadTweet => item !== null)
+  })
+
+  return tweets
 }
 
 export function readLinkedInSlides(value: unknown): LinkedInCarouselSlide[] {
@@ -337,6 +357,12 @@ export function readLinkedInSlides(value: unknown): LinkedInCarouselSlide[] {
       content: readOptionalString(item.content) ?? undefined,
       handle: readOptionalString(item.handle) ?? undefined,
       headline: readOptionalString(item.headline) ?? undefined,
+      id: readOptionalString(item.id) ?? undefined,
+      image_source:
+        item.image_source === 'unsplash' || item.image_source === 'pexels' || item.image_source === 'upload'
+          ? item.image_source
+          : null,
+      image_url: readOptionalString(item.image_url) ?? undefined,
       message: readOptionalString(item.message) ?? undefined,
       number,
       stat_or_example: readOptionalString(item.stat_or_example),

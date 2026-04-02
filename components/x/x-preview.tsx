@@ -10,6 +10,7 @@ interface XPostPreviewProps {
   authorName?: string;
   authorHandle?: string;
   authorAvatar?: string;
+  mediaUrl?: string;
   publishedAt?: string;
   isThread?: boolean;
   threadIndex?: number;
@@ -24,6 +25,7 @@ export function XPostPreview({
   authorName = "Noctra Studio",
   authorHandle = "noctrastudio",
   authorAvatar,
+  mediaUrl,
   publishedAt = "1m",
   isThread = false,
   threadIndex = 1,
@@ -108,6 +110,12 @@ export function XPostPreview({
           <div className="mt-0.5 text-[15px] leading-normal whitespace-pre-wrap break-words">
             {content}
           </div>
+
+          {mediaUrl ? (
+            <div className="mt-3 overflow-hidden rounded-2xl border border-zinc-800">
+              <img src={mediaUrl} alt="" className="h-full w-full object-cover" />
+            </div>
+          ) : null}
 
           {/* Interaction Bar */}
            <div className="flex items-center justify-between mt-3 text-zinc-500 max-w-[425px] -ml-2">

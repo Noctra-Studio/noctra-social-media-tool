@@ -143,6 +143,7 @@ export function InstagramPostPreview({
         image_url: dataUrl,
         bg_type: 'image',
       }))
+      e.target.value = ''
     }
     reader.readAsDataURL(file)
   }
@@ -276,7 +277,19 @@ export function InstagramPostPreview({
                    </button>
                    <label className="flex h-12 w-12 flex-shrink-0 cursor-pointer items-center justify-center rounded-lg border border-dashed border-[#4E576A] text-[#4E576A] transition-colors hover:border-white/20 hover:text-white">
                      <Upload className="h-4 w-4" />
-                     <input type="file" className="hidden" onChange={handleUpload} />
+                     {/* TODO MOBILE TEST: iOS Safari - abrir galería */}
+                     {/* TODO MOBILE TEST: iOS Safari - tomar foto */}
+                     {/* TODO MOBILE TEST: Android Chrome - galería */}
+                     {/* TODO MOBILE TEST: Android Chrome - cámara */}
+                     {/* TODO MOBILE TEST: Desktop - drag & drop */}
+                     {/* TODO MOBILE TEST: Desktop - click to select */}
+                     <input
+                       type="file"
+                       accept="image/*"
+                       capture={undefined}
+                       className="hidden"
+                       onChange={handleUpload}
+                     />
                    </label>
                 </div>
 
