@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import { usePathname, useRouter } from 'next/navigation'
 import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
-import { BookOpen, CalendarDays, Home, Lightbulb, Menu, SquarePen, X } from 'lucide-react'
+import { BookOpen, CalendarDays, Home, Layout, Lightbulb, Menu, SquarePen, X } from 'lucide-react'
 import { LocaleToggle } from '@/components/landing/locale-toggle'
 import { createClient } from '@/lib/supabase/client'
 
@@ -41,6 +41,7 @@ export function TopNavbar({ userAvatarUrl, userEmail, userName }: TopNavbarProps
   const profileMenuRef = useRef<HTMLDivElement | null>(null)
   const navigation = [
     { href: '/home', icon: Home, label: t('home') },
+    { href: '/templates', icon: Layout, label: 'Plantillas' },
     { href: '/compose', icon: SquarePen, label: t('compose') },
     { href: '/calendar', icon: CalendarDays, label: t('calendar') },
     { href: '/ideas', icon: Lightbulb, label: t('ideas') },

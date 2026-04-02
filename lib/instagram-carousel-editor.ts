@@ -6,13 +6,14 @@ import {
   type CarouselGradientConfig,
 } from '@/lib/carousel-backgrounds'
 
-export type EditorTool = 'select' | 'text' | 'rect' | 'circle' | 'line'
+export type EditorTool = 'select' | 'text' | 'rect' | 'circle' | 'line' | 'pen'
 
 export type CarouselEditorBackground = {
   gradientConfig?: CarouselGradientConfig
   imageThumb?: string
   imageUrl?: string
   overlayOpacity?: number
+  blur?: number
   photographer?: string
   solidColor?: string
   type: 'solid' | 'gradient' | 'image'
@@ -86,7 +87,8 @@ export function getDefaultBackgroundForSlide(
     return {
       imageThumb: selection?.image_url,
       imageUrl: resolved.url,
-      overlayOpacity: 0.55,
+      overlayOpacity: selection?.overlayOpacity ?? 0.55,
+      blur: selection?.blur ?? 0,
       photographer: selection?.photographer,
       type: 'image',
     }
@@ -158,6 +160,8 @@ export function editorBackgroundToSelection(
       bg_type: 'image',
       image_url: background.imageUrl,
       photographer: background.photographer,
+      overlayOpacity: background.overlayOpacity,
+      blur: background.blur,
     }
   }
 

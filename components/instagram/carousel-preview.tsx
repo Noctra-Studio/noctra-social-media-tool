@@ -232,6 +232,32 @@ function sanitizeSlideText(value: string | null | undefined) {
     .trim()
 }
 
+function splitPreviewCopy(text: string) {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  if (!normalized) {
+    return { body: '', headline: '' }
+  }
+
+  const sentences = normalized.split(/(?<=[.!?])\s+/).filter(Boolean)
+  const firstSentence = sentences[0]?.trim() ?? normalized
+
+  if (firstSentence.length <= 96 && sentences.length > 1) {
+    return {
+      headline: firstSentence,
+      body: sentences.slice(1).join(' ').trim(),
+    }
+  }
+
+  const preferredBreak = normalized.lastIndexOf(' ', 88)
+  const fallbackBreak = normalized.indexOf(' ', 64)
+  const splitIndex = preferredBreak > 48 ? preferredBreak : fallbackBreak > 0 ? fallbackBreak : Math.min(96, normalized.length)
+
+  return {
+    headline: normalized.slice(0, splitIndex).trim(),
+    body: normalized.slice(splitIndex).trim(),
+  }
+}
+
 function getInitialBackground(slide: InstagramCarouselSlide): SlideBackgroundState {
   const resolved = resolveSlideBackground(slide)
 
@@ -410,8 +436,8 @@ function CoverSlide({ angle, background, slide, onUpdateSlide }: SlideTemplatePr
   const headline = sanitizeSlideText(slide.headline)
   const subtitle = sanitizeSlideText(slide.body)
 
-  const headlineSize = slide.headline_size ? SIZE_SCALE_HEADLINE[slide.headline_size] : toCanvasPx(28)
-  const bodySize = slide.body_size ? SIZE_SCALE_BODY[slide.body_size] : toCanvasPx(13)
+  const headlineSize = slide.headline_size ? SIZE_SCALE_HEADLINE[slide.headline_size] : toCanvasPx(34)
+  const bodySize = slide.body_size ? SIZE_SCALE_BODY[slide.body_size] : toCanvasPx(16)
 
   // Vertical alignment mapping
   const verticalAlign = slide.vertical_alignment || 'bottom'
@@ -543,10 +569,16 @@ function CoverSlide({ angle, background, slide, onUpdateSlide }: SlideTemplatePr
 
 function ContentSlide({ background, slide, totalSlides, onUpdateSlide }: SlideTemplateProps & { onUpdateSlide?: (slideNumber: number, updates: Partial<InstagramCarouselSlide>) => void }) {
   const resolved = getResolvedBackground(slide, background)
-  const headline = sanitizeSlideText(slide.headline)
-  const body = sanitizeSlideText(slide.body)
+  const rawHeadline = sanitizeSlideText(slide.headline)
+  const rawBody = sanitizeSlideText(slide.body)
+  const promotedCopy = rawHeadline ? null : splitPreviewCopy(rawBody)
   const stat = sanitizeSlideText(slide.stat_or_example)
+  const eyebrow = sanitizeSlideText(slide.visual_direction)?.toUpperCase()
   const template = slide.suggested_template || 'editorial'
+  const showCounter = totalSlides > 1
+  const headline = rawHeadline || promotedCopy?.headline || rawBody
+  const body = rawHeadline ? rawBody : promotedCopy?.body || ''
+  const contentOrder = slide.text_order === 'body-first' ? ['body', 'headline'] : ['headline', 'body']
 
   // Vertical alignment mapping
   const verticalAlign = slide.vertical_alignment || 'middle'
@@ -556,20 +588,20 @@ function ContentSlide({ background, slide, totalSlides, onUpdateSlide }: SlideTe
   const getHeadlineSize = (text: string) => {
     if (slide.headline_size) return SIZE_SCALE_HEADLINE[slide.headline_size]
     const len = text.length
-    if (len > 80) return toCanvasPx(12)
-    if (len > 60) return toCanvasPx(14)
-    if (len > 40) return toCanvasPx(16)
-    if (len > 25) return toCanvasPx(18)
-    return toCanvasPx(24)
+    if (len > 80) return toCanvasPx(15)
+    if (len > 60) return toCanvasPx(18)
+    if (len > 40) return toCanvasPx(20)
+    if (len > 25) return toCanvasPx(24)
+    return toCanvasPx(32)
   }
 
   const getBodySize = (text: string) => {
     if (slide.body_size) return SIZE_SCALE_BODY[slide.body_size]
     const len = text.length
-    if (len > 150) return toCanvasPx(8)
-    if (len > 100) return toCanvasPx(10)
-    if (len > 60) return toCanvasPx(11)
-    return toCanvasPx(13)
+    if (len > 150) return toCanvasPx(10)
+    if (len > 100) return toCanvasPx(12)
+    if (len > 60) return toCanvasPx(14)
+    return toCanvasPx(16)
   }
 
   // ... (renderTemplate case switch remains the same internal logic but used inside the motion.div)
@@ -601,23 +633,43 @@ function ContentSlide({ background, slide, totalSlides, onUpdateSlide }: SlideTe
             </h3>
           </div>
         )
-      case 'split':
+      case 'split': {
+        const topSection = slide.text_order === 'body-first'
+          ? (
+            <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', borderRadius: `${toCanvasPx(16)}px ${toCanvasPx(16)}px 0 0`, padding: toCanvasPx(32), backdropFilter: 'blur(8px)' }}>
+              <p style={{ ...clampLines(rawHeadline ? 5 : 7), fontSize: bodySize, lineHeight: 1.6, color: 'rgba(224,229,235,0.8)', margin: 0 }}>{body || headline}</p>
+            </div>
+          )
+          : (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', paddingBottom: toCanvasPx(32) }}>
+              <h3 style={{ ...clampLines(rawHeadline ? 3 : 5), fontSize: headlineSize, fontWeight: 800, color: '#E0E5EB', lineHeight: 1.2, margin: 0 }}>{headline}</h3>
+            </div>
+          )
+        const bottomSection = slide.text_order === 'body-first'
+          ? (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', paddingBottom: toCanvasPx(32) }}>
+              <h3 style={{ ...clampLines(rawHeadline ? 3 : 5), fontSize: headlineSize, fontWeight: 800, color: '#E0E5EB', lineHeight: 1.2, margin: 0 }}>{headline}</h3>
+            </div>
+          )
+          : (
+            <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', borderRadius: `${toCanvasPx(16)}px ${toCanvasPx(16)}px 0 0`, padding: toCanvasPx(32), backdropFilter: 'blur(8px)' }}>
+              <p style={{ ...clampLines(rawHeadline ? 5 : 7), fontSize: bodySize, lineHeight: 1.6, color: 'rgba(224,229,235,0.8)', margin: 0 }}>{body || headline}</p>
+            </div>
+          )
+
         return (
           <div style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', paddingBottom: toCanvasPx(32) }}>
-               <h3 style={{ ...clampLines(3), fontSize: headlineSize, fontWeight: 800, color: '#E0E5EB', lineHeight: 1.2, margin: 0 }}>{headline}</h3>
-            </div>
-            <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', borderRadius: `${toCanvasPx(16)}px ${toCanvasPx(16)}px 0 0`, padding: toCanvasPx(32), backdropFilter: 'blur(8px)' }}>
-               <p style={{ ...clampLines(5), fontSize: bodySize, lineHeight: 1.6, color: 'rgba(224,229,235,0.8)', margin: 0 }}>{body}</p>
-            </div>
+            {topSection}
+            {bottomSection}
           </div>
         )
+      }
       case 'list':
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: toCanvasPx(24), width: '100%' }}>
             <h3 style={{ ...clampLines(2), fontSize: headlineSize, fontWeight: 700, color: resolved.accentColor, margin: 0 }}>{headline}</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: toCanvasPx(16) }}>
-              {body.split('.').filter(s => s.trim()).slice(0, 4).map((item, i) => (
+              {(body || headline).split('.').filter(s => s.trim()).slice(0, 4).map((item, i) => (
                 <div key={i} style={{ display: 'flex', gap: toCanvasPx(16), alignItems: 'flex-start' }}>
                   <div style={{ width: toCanvasPx(24), height: toCanvasPx(24), borderRadius: '50%', background: 'rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: toCanvasPx(10), fontWeight: 700, color: 'white', flexShrink: 0 }}>{i+1}</div>
                   <p style={{ ...clampLines(2), fontSize: bodySize, color: '#E0E5EB', lineHeight: 1.4, margin: 0 }}>{item.trim()}</p>
@@ -646,34 +698,75 @@ function ContentSlide({ background, slide, totalSlides, onUpdateSlide }: SlideTe
       case 'editorial':
       default:
         return (
-          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', width: '100%' }}>
-            <h3
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', width: '100%' }}>
+            <div
               style={{
-                ...clampLines(3),
-                color: '#E0E5EB',
-                fontFamily: 'var(--font-brand-display)',
-                fontSize: headlineSize * 1.2,
-                fontWeight: 700,
-                lineHeight: 1.2,
-                marginBottom: toCanvasPx(12),
-                margin: 0,
+                background: resolved.accentColor,
+                height: toCanvasPx(2),
+                marginBottom: toCanvasPx(16),
+                width: toCanvasPx(56),
               }}
-            >
-              {headline}
-            </h3>
-            <p
-              style={{
-                ...clampLines(5),
-                color: 'rgba(224, 229, 235, 0.7)',
-                fontFamily: 'var(--font-inter)',
-                fontSize: bodySize,
-                lineHeight: 1.6,
-                maxWidth: '92%',
-                margin: 0,
-              }}
-            >
-              {body}
-            </p>
+            />
+            {eyebrow ? (
+              <p
+                style={{
+                  ...clampLines(1),
+                  color: '#4E576A',
+                  fontFamily: 'var(--font-inter)',
+                  fontSize: toCanvasPx(10),
+                  fontWeight: 600,
+                  letterSpacing: '0.18em',
+                  margin: `0 0 ${toCanvasPx(14)}px 0`,
+                  textTransform: 'uppercase',
+                }}
+              >
+                {eyebrow}
+              </p>
+            ) : null}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: toCanvasPx(12), width: '100%' }}>
+              {contentOrder.map((section) => {
+                if (section === 'headline' && headline) {
+                  return (
+                    <h3
+                      key="headline"
+                      style={{
+                        ...clampLines(rawHeadline ? 3 : 6),
+                        color: '#E0E5EB',
+                        fontFamily: 'var(--font-brand-display)',
+                        fontSize: rawHeadline ? headlineSize * 1.15 : headlineSize * 1.2,
+                        fontWeight: 800,
+                        lineHeight: rawHeadline ? 1.15 : 1.28,
+                        maxWidth: rawHeadline ? '92%' : '100%',
+                        margin: 0,
+                      }}
+                    >
+                      {headline}
+                    </h3>
+                  )
+                }
+
+                if (section === 'body' && body) {
+                  return (
+                    <p
+                      key="body"
+                      style={{
+                        ...clampLines(5),
+                        color: 'rgba(224, 229, 235, 0.72)',
+                        fontFamily: 'var(--font-inter)',
+                        fontSize: bodySize,
+                        lineHeight: 1.58,
+                        maxWidth: '82%',
+                        margin: 0,
+                      }}
+                    >
+                      {body}
+                    </p>
+                  )
+                }
+
+                return null
+              })}
+            </div>
           </div>
         )
     }
@@ -683,12 +776,7 @@ function ContentSlide({ background, slide, totalSlides, onUpdateSlide }: SlideTe
     <div style={{ position: 'relative', height: 1080, width: 1080, overflow: 'hidden' }}>
       <SlideBackdrop background={background} slide={slide} />
       <div className="relative z-10 h-full flex flex-col" style={{ padding: toCanvasPx(32) }}>
-        <div className="flex justify-between items-center mb-4">
-           <span style={{ fontSize: toCanvasPx(10), color: 'rgba(224,229,235,0.4)', fontWeight: 500, letterSpacing: '0.1em' }}>
-              {getCounterLabel(slide.slide_number, totalSlides)}
-           </span>
-           <div style={{ width: toCanvasPx(40), height: 1, background: 'rgba(224,229,235,0.1)' }} />
-        </div>
+        {/* Slide counter removed per user request */}
         
         <div 
           className="flex-1 flex flex-col"

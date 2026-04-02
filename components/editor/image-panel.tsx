@@ -17,7 +17,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { MOOD_CATEGORIES, generateSmartQuery } from '@/lib/unsplash/query-engine';
+import { MOOD_CATEGORIES } from '@/lib/unsplash/query-engine';
 import { setCanvasBackground, updateDimmingOverlay, removeCanvasBackground } from '@/lib/editor/canvas-background';
 import { ImageRecommendations } from '@/components/editor/image-recommendations';
 import type { ScoredImage } from '@/lib/social-content';
@@ -53,6 +53,45 @@ type ProcessingStyle = 'natural' | 'dark-minimal' | 'editorial' | 'monochrome' |
 
 type SubTab = 'buscar' | 'mood' | 'ia' | 'biblioteca' | 'subir';
 
+function generateContextualQuery(
+  caption: string | undefined,
+  angle: string | undefined,
+  slideType: string | undefined
+): string {
+  const lower = (caption || '').toLowerCase();
+
+  if (lower.includes('seo') || lower.includes('búsqueda') || lower.includes('google')) {
+    return 'dark minimal search analytics dashboard technology';
+  }
+  if (lower.includes('geo') || lower.includes('ia') || lower.includes('inteligencia')) {
+    return 'abstract dark technology neural network minimal';
+  }
+  if (lower.includes('inmobiliaria') || lower.includes('propiedad') || lower.includes('casa')) {
+    return 'modern architecture interior minimal dark';
+  }
+  if (lower.includes('marca') || lower.includes('branding') || lower.includes('identidad')) {
+    return 'dark studio brand identity minimal editorial';
+  }
+  if (lower.includes('médico') || lower.includes('clinica') || lower.includes('clínica') || lower.includes('salud')) {
+    return 'clean medical professional minimal dark';
+  }
+  if (lower.includes('negocio') || lower.includes('empresa') || lower.includes('ventas')) {
+    return 'minimal dark workspace professional business';
+  }
+  if (lower.includes('redes') || lower.includes('contenido') || lower.includes('marketing')) {
+    return 'dark social media content creation workspace';
+  }
+
+  if (angle?.toLowerCase().includes('caso')) return 'dark results success growth minimal';
+  if (angle?.toLowerCase().includes('opinión')) return 'editorial dark moody minimal portrait';
+  if (angle?.toLowerCase().includes('tutorial')) return 'dark minimal step process clean';
+
+  if (slideType === 'cover') return 'dark minimal editorial hero background';
+  if (slideType === 'cta') return 'dark minimal conversion background professional';
+
+  return 'dark minimal professional abstract';
+}
+
 export const ImagePanel: React.FC<ImagePanelProps> = ({
   canvas,
   caption,
@@ -80,17 +119,11 @@ export const ImagePanel: React.FC<ImagePanelProps> = ({
   // Ref to track search debounce
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Initialize smart query
-  useEffect(() => {
-    if (caption && activeSubTab === 'buscar' && !searchQuery) {
-      const { query } = generateSmartQuery(caption, angle || 'editorial', platform, slideType);
-      setSearchQuery(query);
-      handleSearch(query, 1);
-    }
-  }, [caption, angle, platform, slideType]);
-
   const handleSearch = useCallback(async (query: string, p: number = 1, moodId?: string) => {
-    if (!query && !moodId) return;
+    const contextualQuery = generateContextualQuery(caption, angle, slideType);
+    const effectiveQuery = moodId ? undefined : (query || contextualQuery);
+
+    if (!effectiveQuery && !moodId) return;
     
     setIsLoading(true);
     try {
@@ -98,7 +131,8 @@ export const ImagePanel: React.FC<ImagePanelProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          query: query || undefined,
+          query: effectiveQuery,
+          caption,
           moodId: moodId || undefined,
           platform,
           page: p,
@@ -109,10 +143,15 @@ export const ImagePanel: React.FC<ImagePanelProps> = ({
 
       const data = await response.json();
       if (data.photos) {
+        const relevantPhotos = (data.photos || []).filter((photo: UnifiedPhoto) =>
+          (photo.onBrandScore ?? 0.5) >= 0.4
+        );
+        const nextPhotos = relevantPhotos.length >= 4 ? relevantPhotos : (data.photos || []);
+
         if (p === 1) {
-          setResults(data.photos);
+          setResults(nextPhotos);
         } else {
-          setResults(prev => [...prev, ...data.photos]);
+          setResults(prev => [...prev, ...nextPhotos]);
         }
         setPage(p);
       }
@@ -121,7 +160,16 @@ export const ImagePanel: React.FC<ImagePanelProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [platform, slideType]);
+  }, [angle, caption, platform, slideType]);
+
+  // Initialize search with a topic-specific visual query when the search tab opens.
+  useEffect(() => {
+    if (caption && activeSubTab === 'buscar' && !searchQuery) {
+      const contextualQuery = generateContextualQuery(caption, angle, slideType);
+      setSearchQuery(contextualQuery);
+      handleSearch(contextualQuery, 1);
+    }
+  }, [activeSubTab, angle, caption, handleSearch, searchQuery, slideType]);
 
   const onSearchInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;

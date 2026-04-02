@@ -73,6 +73,8 @@ export const BRAND_GRADIENT_SUGGESTIONS: Array<{
 ]
 
 const HEX_COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/
+const RGB_COLOR_PATTERN =
+  /^rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}(?:\s*,\s*(?:0|1|0?\.\d+))?\s*\)$/i
 
 function clampAngle(angle: number) {
   if (!Number.isFinite(angle)) {
@@ -99,8 +101,51 @@ function componentToHex(value: number) {
     .toUpperCase()
 }
 
+function parseGradientColorToRgb(value: string | null | undefined) {
+  if (!value) {
+    return null
+  }
+
+  const normalized = normalizeGradientColor(value, '')
+
+  if (!normalized) {
+    return null
+  }
+
+  if (normalized.startsWith('#')) {
+    return {
+      b: Number.parseInt(normalized.slice(5, 7), 16),
+      g: Number.parseInt(normalized.slice(3, 5), 16),
+      r: Number.parseInt(normalized.slice(1, 3), 16),
+    }
+  }
+
+  const match = normalized.match(
+    /rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*(?:0|1|0?\.\d+))?\s*\)/i
+  )
+
+  if (!match) {
+    return null
+  }
+
+  return {
+    b: Math.max(0, Math.min(255, Number(match[3]))),
+    g: Math.max(0, Math.min(255, Number(match[2]))),
+    r: Math.max(0, Math.min(255, Number(match[1]))),
+  }
+}
+
 export function isValidHexColor(value: string | null | undefined): value is string {
   return Boolean(value && HEX_COLOR_PATTERN.test(value.trim()))
+}
+
+export function isValidGradientColor(value: string | null | undefined): value is string {
+  if (!value) {
+    return false
+  }
+
+  const trimmed = value.trim()
+  return HEX_COLOR_PATTERN.test(trimmed) || RGB_COLOR_PATTERN.test(trimmed)
 }
 
 export function normalizeHexColor(value: string | null | undefined, fallback = '#101417') {
@@ -115,6 +160,24 @@ export function normalizeHexColor(value: string | null | undefined, fallback = '
   }
 
   return expandHex(trimmed)
+}
+
+export function normalizeGradientColor(value: string | null | undefined, fallback = '#101417') {
+  if (!value) {
+    return fallback
+  }
+
+  const trimmed = value.trim()
+
+  if (HEX_COLOR_PATTERN.test(trimmed)) {
+    return expandHex(trimmed)
+  }
+
+  if (RGB_COLOR_PATTERN.test(trimmed)) {
+    return trimmed
+  }
+
+  return fallback
 }
 
 export function extractHexColors(value: string | null | undefined) {
@@ -132,12 +195,12 @@ export function normalizeGradientConfig(
   fallback?: Partial<CarouselGradientConfig>
 ): CarouselGradientConfig {
   const fallbackStops =
-    fallback?.stops?.filter((stop) => isValidHexColor(stop)).map((stop) => normalizeHexColor(stop)) ??
+    fallback?.stops?.filter((stop) => isValidGradientColor(stop)).map((stop) => normalizeGradientColor(stop)) ??
     ['#101417', '#1C2028']
   const rawStops = Array.isArray(value?.stops) ? value.stops : fallbackStops
   const normalizedStops = rawStops
     .filter((stop): stop is string => typeof stop === 'string')
-    .map((stop) => normalizeHexColor(stop))
+    .map((stop) => normalizeGradientColor(stop))
     .slice(0, 3)
 
   const stops = normalizedStops.length >= 2 ? normalizedStops : fallbackStops.slice(0, 2)
@@ -173,13 +236,15 @@ export function gradientStopsToColorStops(stops: string[]) {
   const safeStops = stops.length >= 2 ? stops : ['#101417', '#1C2028']
 
   return safeStops.map((stop, index) => ({
-    color: normalizeHexColor(stop),
+    color: normalizeGradientColor(stop),
     offset: safeStops.length === 1 ? 0 : index / (safeStops.length - 1),
   }))
 }
 
 export function averageHexColors(colors: string[]) {
-  const normalized = colors.filter((color) => isValidHexColor(color)).map((color) => normalizeHexColor(color))
+  const normalized = colors
+    .map((color) => parseGradientColorToRgb(color))
+    .filter((color): color is { b: number; g: number; r: number } => Boolean(color))
 
   if (!normalized.length) {
     return '#101417'
@@ -187,9 +252,9 @@ export function averageHexColors(colors: string[]) {
 
   const aggregate = normalized.reduce(
     (result, color) => {
-      result.r += Number.parseInt(color.slice(1, 3), 16)
-      result.g += Number.parseInt(color.slice(3, 5), 16)
-      result.b += Number.parseInt(color.slice(5, 7), 16)
+      result.r += color.r
+      result.g += color.g
+      result.b += color.b
       return result
     },
     { b: 0, g: 0, r: 0 }

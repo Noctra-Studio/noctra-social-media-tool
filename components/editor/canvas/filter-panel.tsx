@@ -1,15 +1,16 @@
-"use client";
+'use client'
 
-import Image from "next/image";
-import { FILTER_PRESETS } from "@/lib/editor/filter-presets";
-import { cn } from "@/lib/utils";
+import Image from 'next/image'
+import { X } from 'lucide-react'
+import { FILTER_PRESETS } from '@/lib/editor/filter-presets'
+import { cn } from '@/lib/utils'
 
 export type FilterPanelProps = {
-  activeFilterId: string;
-  onFilterChange: (filterId: string, filterCSS: string) => void;
-  canvasPreviewDataURL: string | null;
-  className?: string;
-};
+  activeFilterId: string
+  onFilterChange: (filterId: string, filterCSS: string) => void
+  canvasPreviewDataURL: string | null
+  className?: string
+}
 
 export function FilterPanel({
   activeFilterId,
@@ -17,81 +18,83 @@ export function FilterPanel({
   canvasPreviewDataURL,
   className,
 }: FilterPanelProps) {
-  const hasActiveFilter = activeFilterId !== "none";
+  const hasActiveFilter = activeFilterId !== 'none'
 
   return (
-    <div className={cn("flex flex-col", className)}>
-      <div className="flex items-center justify-between px-3 pb-2">
-        <h3 className="text-sm font-medium text-neutral-200">Filtros</h3>
-        {hasActiveFilter ? (
+    <div className={cn('flex flex-col gap-3', className)}>
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-[#4E576A]">
+          Filtros
+        </span>
+        {hasActiveFilter && (
           <button
             type="button"
-            onClick={() => onFilterChange("none", "")}
-            className="text-xs text-blue-400 transition-colors hover:text-blue-300"
+            onClick={() => onFilterChange('none', '')}
+            className="flex items-center gap-1 rounded-lg border border-white/10 px-2 py-1 text-[10px] text-[#8D95A6] transition-colors hover:border-white/20 hover:text-[#E0E5EB]"
           >
-            Sin filtro
+            <X className="h-3 w-3" />
+            Quitar
           </button>
-        ) : null}
+        )}
       </div>
 
-      <div className="grid grid-cols-3 gap-2 p-3">
+      <p className="text-[10px] leading-relaxed text-[#4E576A]">
+        Se aplica al exportar. El canvas no se modifica.
+      </p>
+
+      <div className="grid grid-cols-2 gap-2">
         {FILTER_PRESETS.map((preset) => {
-          const isActive = preset.id === activeFilterId;
+          const isActive = preset.id === activeFilterId
 
           return (
             <button
               key={preset.id}
               type="button"
               onClick={() => onFilterChange(preset.id, preset.css)}
-              className="group flex flex-col items-center gap-1.5 rounded-xl p-1 text-center transition-transform hover:scale-105"
+              className={cn(
+                'group flex flex-col overflow-hidden rounded-xl border-2 transition-all hover:scale-[1.03]',
+                isActive
+                  ? 'border-[#E0E5EB] shadow-[0_0_0_1px_rgba(224,229,235,0.2)]'
+                  : 'border-transparent hover:border-white/15'
+              )}
             >
-              <div
-                className={cn(
-                  "relative h-20 w-20 overflow-hidden rounded-2xl border border-white/10 bg-[#171B22]",
-                  isActive && "border-2 border-white ring-2 ring-blue-500",
-                )}
-              >
+              <div className="relative aspect-square w-full overflow-hidden bg-[#0F1317]">
                 {canvasPreviewDataURL ? (
                   <Image
                     src={canvasPreviewDataURL}
                     alt={preset.label}
-                    width={80}
-                    height={80}
+                    fill
+                    sizes="(max-width: 220px) 50vw, 90px"
                     unoptimized
-                    className="h-20 w-20 object-cover"
-                    style={{ filter: preset.css || "none" }}
+                    className="object-cover"
+                    style={{ filter: preset.css || 'none' }}
                   />
                 ) : (
                   <div
                     className="h-full w-full bg-gradient-to-br from-[#462D6E] via-[#1B2430] to-[#0F1419]"
-                    style={{ filter: preset.css || "none" }}
-                    aria-hidden="true"
+                    style={{ filter: preset.css || 'none' }}
                   />
                 )}
 
-                {isActive ? (
-                  <span className="absolute bottom-1.5 right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-[11px] font-bold text-white shadow-lg">
+                {isActive && (
+                  <div className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-[#E0E5EB] text-[10px] font-bold text-[#101417] shadow-lg">
                     ✓
-                  </span>
-                ) : null}
+                  </div>
+                )}
               </div>
 
-              <span
+              <div
                 className={cn(
-                  "text-center text-xs text-neutral-300",
-                  isActive && "font-bold text-white",
+                  'bg-[#0F1317] px-1.5 py-1.5 text-center text-[10px] font-medium transition-colors',
+                  isActive ? 'text-[#E0E5EB]' : 'text-[#4E576A] group-hover:text-[#8D95A6]'
                 )}
               >
                 {preset.label}
-              </span>
+              </div>
             </button>
-          );
+          )
         })}
       </div>
-
-      <p className="p-2 text-center text-xs text-neutral-500">
-        El filtro se aplica al exportar. No modifica el canvas original.
-      </p>
     </div>
-  );
+  )
 }

@@ -240,14 +240,24 @@ export async function POST(req: Request) {
 
         try {
           const { data, mimeType } = await fetchImageAsBase64(photo.thumbUrl);
-          const prompt = `You are an expert design judge. Score this image (0.0-1.0) on how well it fits as a social media post background for this context: "${scoringContext}".
-          
-          Think about:
-          - Style: Professional, clean, and modern.
-          - Text legibility: High.
-          - Relevance: High.
-          
-          Respond ONLY with JSON: { "score": float }`;
+          const prompt = `You are a professional art director for a B2B digital agency in Mexico creating social media carousels.
+
+Score this image (0.0-1.0) for use as a slide background for this specific content: "${scoringContext}"
+
+Criteria:
+- Dark, professional aesthetic (prefer dark backgrounds): +0.3
+- Abstract, minimal, or architectural: +0.2
+- Relevant to the topic without being literal: +0.2
+- Text legibility when overlaid: +0.2
+- Avoid: stock photo clichés, generic AI imagery, bright colors: -0.3
+- Avoid: people's faces unless the post is about people: -0.2
+
+For topic "${scoringContext}":
+- If about technology/AI/SEO: prefer abstract tech, code, dark gradients
+- If about real estate: prefer architecture, spaces, urban
+- If about business: prefer minimal workspaces, not handshakes
+
+Respond ONLY: { "score": float }`;
 
           const result = await model.generateContent([
             { inlineData: { data, mimeType } },

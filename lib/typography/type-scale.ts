@@ -58,6 +58,7 @@ export function applyTypeScaleToCanvas(
   baseSize: number = 40
 ) {
   const scale = generateTypeScale(baseSize, ratioKey);
+  const maxFontSize = 200;
   const objects = canvas.getObjects();
 
   objects.forEach(obj => {
@@ -65,14 +66,15 @@ export function applyTypeScaleToCanvas(
       const textObj = obj as any; // Still using any here to reach custom 'data' safely in Fabric 6
       const fs = textObj.fontSize;
       const role = textObj.data?.role;
+      let calculatedSize = scale.p;
 
       if (role === 'headline' || fs >= 60) {
-        textObj.set('fontSize', scale.h1);
+        calculatedSize = scale.h1;
       } else if (role === 'subheadline' || (fs >= 18 && fs < 60)) {
-        textObj.set('fontSize', scale.h2);
-      } else {
-        textObj.set('fontSize', scale.p);
+        calculatedSize = scale.h2;
       }
+
+      textObj.set('fontSize', Math.min(calculatedSize, maxFontSize));
     }
   });
 

@@ -76,12 +76,15 @@ export type SlideBackgroundSelection = {
   photographer?: string
   gradient_style?: string
   solid_color?: string
+  overlayOpacity?: number
+  blur?: number
   filters?: {
     brightness?: number
     contrast?: number
     saturate?: number
     sepia?: number
     grayscale?: number
+    blur?: number
   }
 }
 
@@ -559,6 +562,14 @@ export type EfficacyReport = {
   optimization_tips: Array<{
     tip: string
     type: 'text' | 'overlay' | 'crop' | 'color' | 'placement'
+    action_values?: {
+      placement?: 'top' | 'center' | 'bottom'
+      textColor?: string
+      textSize?: 'S' | 'M' | 'L' | 'XL'
+      dimming?: number
+      blur?: number
+      text?: string
+    }
   }>
   alternative_suggestion: {
     should_reconsider: boolean

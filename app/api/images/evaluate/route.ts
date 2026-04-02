@@ -52,10 +52,18 @@ export async function POST(req: Request) {
      "strengths": ["string"],
      "risks": ["string"],
      "optimization_tips": [
-       {
-         "tip": "string",
-         "type": "text" | "overlay" | "crop" | "color" | "placement"
-       }
+        {
+          "tip": "string",
+          "type": "text" | "overlay" | "crop" | "color" | "placement",
+          "action_values": {
+            "placement": "top" | "center" | "bottom",
+            "textColor": "string (hex)",
+            "textSize": "S" | "M" | "L" | "XL",
+            "dimming": number (0-0.8),
+            "blur": number (0-20),
+            "text": "string (suggested new overlay text if type is 'text')"
+          }
+        }
      ],
      "alternative_suggestion": {
        "should_reconsider": boolean,

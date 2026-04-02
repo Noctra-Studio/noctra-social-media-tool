@@ -64,6 +64,7 @@ create table posts (
   article_data jsonb,
   carousel_slides jsonb,
   slides_data jsonb,
+  score_data jsonb,
   scheduled_at timestamptz,
   published_at timestamptz,
   status text default 'draft',

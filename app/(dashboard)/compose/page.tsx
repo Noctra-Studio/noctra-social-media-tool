@@ -151,7 +151,7 @@ const FabricEditor = dynamic(
 );
 
 import { TemplateSelector } from "@/components/editor/template-selector";
-import { SlideTemplate } from "@/lib/editor/templates";
+import { templates, SlideTemplate } from "@/lib/editor/templates";
 import { AngleLibrary } from "@/components/compose/angle-library";
 import { ImageDrawer, type SelectedImage, type OverlayConfig } from "@/components/compose/image-drawer";
 import { IdeaSwipeDeck } from "@/components/compose/idea-swipe-deck";
@@ -595,26 +595,52 @@ export default function ComposePage() {
 
   const createInstagramSingleSlide = (
     content: Record<string, unknown>,
-  ): InstagramCarouselSlide => ({
-    body: readString(content.body || content.caption),
-    color_suggestion: readOptionalString(content.color_suggestion),
-    design_note: readString(content.design_note),
-    headline: readString(content.headline),
-    slide_number: 1,
-    type: "content",
-    visual_direction: readString(content.visual_direction),
-    stat_or_example: readOptionalString(content.stat_or_example),
-    bg_type:
-      (readString(content.bg_type) as InstagramCarouselSlide["bg_type"]) ||
-      "solid",
-    bg_reasoning: readString(content.bg_reasoning),
-    unsplash_query: readOptionalString(content.unsplash_query),
-    gradient_style:
-      (readOptionalString(
-        content.gradient_style,
-      ) as InstagramCarouselSlide["gradient_style"]) ?? null,
-    suggested_template: readOptionalString(content.suggested_template),
-  });
+  ): InstagramCarouselSlide => {
+    const slideType = readString(content.type)
+    const textOrder = readOptionalString(content.text_order) as InstagramCarouselSlide["text_order"] | null
+    const headlineSize = readOptionalString(content.headline_size) as InstagramCarouselSlide["headline_size"] | null
+    const bodySize = readOptionalString(content.body_size) as InstagramCarouselSlide["body_size"] | null
+    const verticalAlignment = readOptionalString(content.vertical_alignment) as InstagramCarouselSlide["vertical_alignment"] | null
+    const verticalOffset =
+      typeof content.vertical_offset === "number" ? content.vertical_offset : undefined
+
+    return {
+      body: readString(content.body || content.caption),
+      color_suggestion: readOptionalString(content.color_suggestion),
+      design_note: readString(content.design_note),
+      headline: readString(content.headline),
+      slide_number: 1,
+      type:
+        slideType === "cover" || slideType === "cta" || slideType === "content"
+          ? slideType
+          : "content",
+      visual_direction: readString(content.visual_direction),
+      stat_or_example: readOptionalString(content.stat_or_example),
+      bg_type:
+        (readString(content.bg_type) as InstagramCarouselSlide["bg_type"]) ||
+        "solid",
+      bg_reasoning: readString(content.bg_reasoning),
+      unsplash_query: readOptionalString(content.unsplash_query),
+      gradient_style:
+        (readOptionalString(
+          content.gradient_style,
+        ) as InstagramCarouselSlide["gradient_style"]) ?? null,
+      suggested_template: readOptionalString(content.suggested_template),
+      text_order:
+        textOrder === "body-first" || textOrder === "headline-first"
+          ? textOrder
+          : undefined,
+      headline_size: headlineSize ?? undefined,
+      body_size: bodySize ?? undefined,
+      vertical_alignment:
+        verticalAlignment === "top" ||
+        verticalAlignment === "middle" ||
+        verticalAlignment === "bottom"
+          ? verticalAlignment
+          : undefined,
+      vertical_offset: verticalOffset,
+    }
+  };
 
   const getInstagramEditorPayload = () => {
     const instagramResult = generatedResults.instagram;
@@ -822,6 +848,14 @@ export default function ComposePage() {
   useEffect(() => {
     if (isPlatform(platformParam)) {
       setActivePlatform(platformParam);
+    }
+
+    const templateIdParam = searchParams.get("templateId");
+    if (templateIdParam && templates[templateIdParam]) {
+      setPreSelectedTemplate(templates[templateIdParam]);
+      setIsCarouselEditorOpen(true);
+      setMode("direct");
+      setActivePlatform("instagram");
     }
 
     if (
@@ -1220,6 +1254,8 @@ export default function ComposePage() {
               image_url: image.url,
               photographer: image.photographer,
               slide_number: target.slideNumber,
+              overlayOpacity: config.dimming,
+              blur: config.blur,
             },
           ],
         },

@@ -18,7 +18,8 @@ import {
   AlignRight,
   Sun,
   Moon,
-  Sparkles
+  Sparkles,
+  MousePointerClick
 } from 'lucide-react';
 import { ImageRecommendations } from '@/components/editor/image-recommendations';
 import { EfficacyReport } from '@/lib/social-content';
@@ -39,6 +40,7 @@ export type OverlayConfig = {
   textColor: string;
   textSize: 'S' | 'M' | 'L' | 'XL';
   dimming: number; // 0-0.8
+  blur: number; // 0-20
 };
 
 type ImageDrawerProps = {
@@ -84,8 +86,10 @@ export function ImageDrawer({ isOpen, onClose, postContent, onConfirm }: ImageDr
     textColor: '#E0E5EB',
     textSize: 'M',
     dimming: 0,
+    blur: 0,
   });
   const [autoPlacing, setAutoPlacing] = useState(false);
+  const [isSuggesting, setIsSuggesting] = useState(false);
 
   const controls = useAnimation();
 
@@ -244,6 +248,63 @@ export function ImageDrawer({ isOpen, onClose, postContent, onConfirm }: ImageDr
     } finally {
       setCheckingEfficacy(false);
     }
+  };
+
+  const handleSuggestOverlay = async () => {
+    if (!tempSelection || isSuggesting) return;
+    setIsSuggesting(true);
+    try {
+      const res = await fetch('/api/images/suggest-overlay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image: {
+            unsplashId: tempSelection.unsplashId,
+            url: tempSelection.url,
+            scores: (tempSelection as any).scores || { total: 0.5 },
+            verdict: (tempSelection as any).verdict || 'Manual selection'
+          },
+          post_content: postContent,
+          platform: postContent.platform
+        })
+      });
+      if (res.ok) {
+        const suggestion = await res.json();
+        setOverlayConfig({
+          text: suggestion.text || overlayConfig.text,
+          placement: suggestion.placement,
+          textColor: suggestion.textColor,
+          textSize: suggestion.textSize,
+          dimming: suggestion.dimming,
+          blur: suggestion.blur,
+        });
+        
+        // Re-run efficacy check after suggestion
+        runEfficacyCheck(tempSelection);
+      }
+    } catch (err) {
+      console.error('Failed to suggest overlay', err);
+    } finally {
+      setIsSuggesting(false);
+    }
+  };
+
+  const handleApplyTip = (tip: any) => {
+    if (!tip.action_values) {
+      handleSuggestOverlay();
+      return;
+    }
+
+    const { action_values } = tip;
+    setOverlayConfig(prev => ({
+      ...prev,
+      ...(action_values.placement && { placement: action_values.placement }),
+      ...(action_values.textColor && { textColor: action_values.textColor }),
+      ...(action_values.textSize && { textSize: action_values.textSize }),
+      ...(action_values.dimming !== undefined && { dimming: action_values.dimming }),
+      ...(action_values.blur !== undefined && { blur: action_values.blur }),
+      ...(action_values.text && { text: action_values.text }),
+    }));
   };
 
   const handleConfirm = () => {
@@ -539,8 +600,13 @@ export function ImageDrawer({ isOpen, onClose, postContent, onConfirm }: ImageDr
                   
                   <div className="relative aspect-square w-full max-w-md self-center overflow-hidden rounded-2xl bg-zinc-900 shadow-2xl md:aspect-square">
                     {tempSelection && (
-                      <div className="relative h-full w-full">
-                        <img src={tempSelection.url} alt="" className="h-full w-full object-cover" />
+                      <div className="relative h-full w-full overflow-hidden">
+                        <img 
+                          src={tempSelection.url} 
+                          alt="" 
+                          className="h-full w-full object-cover transition-all duration-300" 
+                          style={{ filter: `blur(${overlayConfig.blur}px)` }}
+                        />
                         
                         {/* Dimming Layer */}
                         <div 
@@ -591,6 +657,41 @@ export function ImageDrawer({ isOpen, onClose, postContent, onConfirm }: ImageDr
                             <span className="text-[10px] font-bold uppercase tracking-wider text-[#4E576A]">Score: {efficacyReport.efficacy_score}/10</span>
                           </div>
                           <p className="mt-1 text-[11px] leading-relaxed text-[#8D95A6]">{efficacyReport.verdict}</p>
+                          
+                          {(efficacyReport.strengths?.length > 0 || efficacyReport.risks?.length > 0) && (
+                            <div className="mt-3 flex flex-col gap-2 border-t border-white/5 pt-3">
+                              {efficacyReport.strengths?.slice(0, 2).map((s: string, i: number) => (
+                                <div key={i} className="flex items-center gap-1.5 text-[9px] text-green-400/80">
+                                  <Check size={8} /> {s}
+                                </div>
+                              ))}
+                              {efficacyReport.risks?.slice(0, 2).map((r: string, i: number) => (
+                                <div key={i} className="flex items-center gap-1.5 text-[9px] text-amber-400/80">
+                                  <X size={8} /> {r}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {efficacyReport.optimization_tips?.length > 0 && (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {efficacyReport.optimization_tips.map((tip: any, i: number) => (
+                                <button 
+                                  key={i}
+                                  onClick={() => handleApplyTip(tip)}
+                                  className={cn(
+                                    "group relative rounded-lg bg-white/5 px-2 py-1.5 text-[9px] font-bold text-[#E0E5EB] transition-all hover:bg-white/10 active:scale-95 flex items-center gap-1.5",
+                                    tip.action_values && "border border-green-500/30 bg-green-500/5"
+                                  )}
+                                >
+                                  <span>✨ {tip.tip}</span>
+                                  {tip.action_values && (
+                                    <MousePointerClick size={10} className="text-green-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                  )}
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </motion.div>
                     )}
@@ -609,9 +710,17 @@ export function ImageDrawer({ isOpen, onClose, postContent, onConfirm }: ImageDr
                     />
                     <div className="mt-1 flex justify-between">
                       <span className="text-[10px] text-[#4E576A]">{overlayConfig.text?.length || 0}/60 caracteres</span>
-                      {overlayConfig.text && (
-                        <button className="flex items-center gap-1 text-[10px] font-bold text-green-400 hover:text-green-300">
-                          <Wand2 size={10} /> Sugerir ubicación con IA
+                      {overlayConfig.text !== undefined && (
+                        <button 
+                          onClick={handleSuggestOverlay}
+                          disabled={isSuggesting}
+                          className={cn(
+                            "flex items-center gap-1 text-[10px] font-bold transition-colors",
+                            isSuggesting ? "text-[#4E576A]" : "text-green-400 hover:text-green-300"
+                          )}
+                        >
+                          {isSuggesting ? <Loader2 size={10} className="animate-spin" /> : <Wand2 size={10} />}
+                          Sugerir ubicación con IA
                         </button>
                       )}
                     </div>
@@ -688,6 +797,29 @@ export function ImageDrawer({ isOpen, onClose, postContent, onConfirm }: ImageDr
                       onChange={(e) => setOverlayConfig({...overlayConfig, dimming: parseFloat(e.target.value)})}
                       className="h-1 w-full cursor-pointer appearance-none rounded-lg bg-white/5 accent-[#E0E5EB]"
                     />
+                  </div>
+
+                  <div>
+                    <div className="mb-2 flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <label className="text-[10px] uppercase tracking-wider text-[#4E576A]">Desenfocar (Blur)</label>
+                        <Sparkles size={10} className="text-[#4E576A]" />
+                      </div>
+                      <span className="text-[10px] font-medium text-[#E0E5EB]">{overlayConfig.blur}px</span>
+                    </div>
+                    <input 
+                      type="range"
+                      min="0"
+                      max="20"
+                      step="1"
+                      value={overlayConfig.blur}
+                      onChange={(e) => setOverlayConfig({...overlayConfig, blur: parseInt(e.target.value)})}
+                      className="h-1 w-full cursor-pointer appearance-none rounded-lg bg-white/5 accent-[#E0E5EB]"
+                    />
+                    <div className="mt-1 flex justify-between">
+                      <span className="text-[8px] text-[#4E576A]">Nítido</span>
+                      <span className="text-[8px] text-[#4E576A]">Glassmorphism</span>
+                    </div>
                   </div>
                 </div>
               </div>

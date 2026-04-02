@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Palette, Baseline, Droplets, Check, Save } from 'lucide-react'
+import { Palette, CheckCircle2, Save } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CarouselTheme, PRESET_THEMES } from '@/lib/editor/carousel-theme'
 import { ColorPicker } from './color-picker'
@@ -19,8 +19,6 @@ type ThemePanelProps = {
 export function ThemePanel({
   currentThemeId,
   onSelectTheme,
-  activeTheme,
-  customThemes,
   onApplyAll,
   editingCustomTheme,
   setEditingCustomTheme,
@@ -28,8 +26,6 @@ export function ThemePanel({
   coherenceScore,
 }: ThemePanelProps & { coherenceScore: number }) {
   const [isExpandingCustom, setIsExpandingCustom] = useState(currentThemeId === 'custom')
-
-  const allThemes = [...PRESET_THEMES.filter(t => t.id !== 'custom'), ...customThemes]
 
   const getCoherenceColor = (score: number) => {
     if (score >= 90) return 'bg-[#22c55e]'
@@ -180,10 +176,10 @@ export function ThemePanel({
 
       <button
         onClick={onApplyAll}
-        className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-[#E0E5EB] py-3 text-sm font-bold text-[#E0E5EB] transition-colors hover:bg-[#E0E5EB] hover:text-[#101417]"
+        className="mt-4 flex w-full items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-[12px] font-medium text-[#E0E5EB] transition-all hover:bg-white/10"
       >
-        <Check className="h-4 w-4" />
-        Aplicar tema a todos los slides
+        <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-green-500" />
+        Aplicar a todos los slides
       </button>
     </div>
   )

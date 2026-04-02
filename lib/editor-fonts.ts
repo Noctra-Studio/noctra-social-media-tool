@@ -198,3 +198,101 @@ export async function ensureEditorFontLoaded(option: EditorFontOption) {
     document.fonts.load(`700 16px ${option.family}`),
   ])
 }
+
+let googleFontsCache: GoogleFontEntry[] | null = null
+let googleFontsCacheTime = 0
+const GOOGLE_FONTS_CLIENT_TTL = 60 * 60 * 1000
+
+export type GoogleFontEntry = {
+  family: string
+  category: string
+  variants: string[]
+  popularity: number
+}
+
+export async function fetchGoogleFonts(options?: {
+  query?: string
+  category?: string
+  limit?: number
+}): Promise<GoogleFontEntry[]> {
+  const now = Date.now()
+
+  if (!options?.query && !options?.category) {
+    if (googleFontsCache && now - googleFontsCacheTime < GOOGLE_FONTS_CLIENT_TTL) {
+      return googleFontsCache
+    }
+  }
+
+  const params = new URLSearchParams()
+  if (options?.query) params.set('q', options.query)
+  if (options?.category) params.set('category', options.category)
+  if (options?.limit) params.set('limit', String(options.limit))
+
+  const queryString = params.toString()
+  const res = await fetch(`/api/fonts/google${queryString ? `?${queryString}` : ''}`)
+  if (!res.ok) return []
+
+  const data = (await res.json()) as { fonts: GoogleFontEntry[] }
+  const fonts = data.fonts || []
+
+  if (!options?.query && !options?.category) {
+    googleFontsCache = fonts
+    googleFontsCacheTime = now
+  }
+
+  return fonts
+}
+
+export async function ensureGoogleFontLoaded(
+  family: string,
+  variants: string[] = ['400', '700']
+): Promise<void> {
+  if (typeof document === 'undefined') return
+
+  const linkId = `noctra-gf-${family.replace(/\s+/g, '-').toLowerCase()}`
+  if (document.getElementById(linkId)) {
+    await document.fonts.ready
+    return
+  }
+
+  const familyParam = family.replace(/\s+/g, '+')
+  const weights = variants
+    .filter((variant) => !variant.includes('italic'))
+    .map((variant) => (variant === 'regular' ? '400' : variant))
+    .filter((variant) => /^\d+$/.test(variant))
+    .join(';')
+
+  const weightParam = weights || '400;700'
+  const url = `https://fonts.googleapis.com/css2?family=${familyParam}:wght@${weightParam}&display=swap`
+
+  const link = document.createElement('link')
+  link.id = linkId
+  link.rel = 'stylesheet'
+  link.href = url
+  document.head.appendChild(link)
+
+  await document.fonts.ready
+  await Promise.allSettled([
+    document.fonts.load(`400 16px "${family}"`),
+    document.fonts.load(`700 16px "${family}"`),
+  ])
+}
+
+export function googleFontToEditorOption(font: GoogleFontEntry): EditorFontOption {
+  const categoryMap: Record<string, EditorFontCategory> = {
+    'sans-serif': 'Display / Headings',
+    serif: 'Accent / Editorial',
+    display: 'Display / Headings',
+    monospace: 'Monospace',
+    handwriting: 'Accent / Editorial',
+  }
+
+  return {
+    category: categoryMap[font.category] ?? 'Body / Supporting',
+    family: `"${font.family}", ${font.category}`,
+    id: font.family.toLowerCase().replace(/\s+/g, '-'),
+    label: font.family,
+    loader: 'google',
+    previewFamily: `"${font.family}", ${font.category}`,
+  }
+}

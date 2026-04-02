@@ -9,8 +9,6 @@ import {
   useState,
   type ChangeEvent,
   type DragEvent as ReactDragEvent,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type PointerEvent as ReactPointerEvent,
 } from 'react'
 import {
   Canvas,
@@ -20,13 +18,13 @@ import {
   Gradient,
   Group,
   Line,
+  Path,
   Rect,
   Shadow,
   StaticCanvas,
   Textbox,
   ActiveSelection,
-  Point,
-  type TextboxProps
+  filters,
 } from 'fabric'
 import { makeTextOnArc, makeTextOnCircle } from '@/lib/editor/text-effects'
 import { ExportModal } from './export-modal'
@@ -39,84 +37,48 @@ import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type D
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
-  ChevronLeft,
-  ChevronRight,
   Circle as CircleIcon,
-  Bookmark,
-  ChevronDown,
   GripVertical,
   Image as ImageIcon,
   Minus,
   MousePointer2,
   RectangleHorizontal,
   Redo2,
-  Search,
   Type,
   Undo2,
-  Upload,
   X,
   Sparkles,
   CaseSensitive,
   AlignJustify,
   Palette,
-  CheckCircle2,
-  AlertCircle,
   Plus,
-  Trash2,
   Grid,
   Ruler,
-  Sliders,
-  Maximize2,
-  Minimize2,
-  Settings2,
   Baseline,
-  Droplets,
-  Layers,
-  ArrowUpDown,
   Type as TypeIcon,
-  Italic,
-  AlignLeft,
-  AlignCenter,
-  AlignRight,
-  MoveRight,
   Download,
-  Send,
-  Camera,
-  Briefcase,
   Zap,
   Eye,
   Square,
   History as HistoryIcon,
   Monitor,
+  PenLine,
 } from 'lucide-react'
-import { AlignmentToolbar } from './alignment-toolbar'
 import { CanvasRuler } from './canvas-ruler'
 import type { InstagramCarouselSlide, SlideBackgroundSelection } from '@/lib/social-content'
 import {
   BRAND_GRADIENT_SUGGESTIONS,
-  averageHexColors,
-  getLogoVariant,
-  gradientConfigToCss,
   gradientStopsToColorStops,
   normalizeGradientConfig,
   type CarouselGradientConfig,
 } from '@/lib/carousel-backgrounds'
-import { ColorPicker } from '@/components/editor/color-picker'
 import {
   CarouselTheme,
   PRESET_THEMES,
-  getCustomThemes,
   saveCustomTheme,
 } from '@/lib/editor/carousel-theme'
-import { applyThemeToAllSlides, applyThemeToCanvas } from '@/lib/editor/apply-theme'
-import {
-  ensureEditorFontLoaded,
-  findEditorFontByFamily,
-  findEditorFontById,
-  EDITOR_FONT_OPTIONS,
-  type EditorFontOption,
-} from '@/lib/editor-fonts'
-import { getRecentFonts, getSavedGradients, saveGradient, saveRecentFont } from '@/lib/editor-preferences'
+import { applyThemeToAllSlides } from '@/lib/editor/apply-theme'
+import { getRecentFonts, getSavedGradients } from '@/lib/editor-preferences'
 import {
   createEditorSlides,
   createSlideId,
@@ -131,7 +93,6 @@ import {
 } from '@/lib/instagram-carousel-editor'
 import { templates, type SlideTemplate } from '@/lib/editor/templates'
 import { initSlideFromTemplate } from '@/lib/editor/init-from-template'
-import { TemplateSelector } from '@/components/editor/template-selector'
 import { PropertiesPanel } from '@/components/editor/properties-panel'
 import { ThemePanel } from '@/components/editor/theme-panel'
 import { AssetPanel } from '@/components/editor/asset-panel'
@@ -139,20 +100,19 @@ import { ImagePanel } from '@/components/editor/image-panel'
 import { FilterPanel } from '@/components/editor/canvas/filter-panel'
 import { FeedPreview } from '@/components/instagram/feed-preview'
 import { CritiquePanel } from '@/components/editor/critique-panel'
-import { setCanvasBackground, removeCanvasBackground } from '@/lib/editor/canvas-background'
 import '@/lib/editor/text-effects'
 import { cn } from '@/lib/utils'
 import type { Platform } from '@/lib/product'
 
 import { VersionPanel } from './version-panel'
-import { versionToSlides, saveDesignVersion } from '@/lib/editor/versions'
-import { applyTypeScaleToCanvas, getRecommendedRatio, type TypeScaleRatioKey } from '@/lib/typography/type-scale'
+import { saveDesignVersion } from '@/lib/editor/versions'
 import { ContextualBar } from './contextual-bar'
+import { TextToolbar } from './text-toolbar'
 import { addShapeToCanvas } from '@/lib/editor/shape-utils'
-import { TEXTURE_PATTERNS } from "@/lib/editor/asset-utils";
 import type { ExportOptions } from '@/types/editor'
 
-type LeftTab = 'slides' | 'tema' | 'assets' | 'imagen' | 'filtros' | 'historico'
+type LeftTab = 'slides' | 'tema' | 'imagen' | 'filtros' | 'historico'
+type RightTab = 'properties' | 'assets'
 
 type FabricEditorProps = {
   platform?: Platform
@@ -186,14 +146,127 @@ type DragState = {
   shape: FabricObject | null
 } | null
 
+type PenPoint = {
+  x: number
+  y: number
+}
+
+type CritiqueIssue = {
+  element: string
+  fix: string
+  problem: string
+  severity: 'high' | 'low' | 'medium'
+}
+
+type CritiqueResult = {
+  grade: 'A' | 'B' | 'C' | 'D'
+  issues: CritiqueIssue[]
+  overall_score: number
+  quick_wins: string[]
+  strengths: string[]
+  summary: string
+  thumbnail?: string
+  timestamp: number
+}
+
+type BackgroundHighlightData = {
+  color: string
+  enabled: boolean
+  padding: number
+  radius: number
+  rectId?: string | null
+}
+
+type GradientStrokeData = {
+  angle?: number
+  color1?: string
+  color2?: string
+  enabled?: boolean
+}
+
+type PathTextData = {
+  enabled?: boolean
+  endAngle?: number
+  radius?: number
+  startAngle?: number
+  type?: 'arc' | 'circle' | 'rect'
+}
+
+type EditorObjectRole = 'body' | 'counter' | 'decorator' | 'eyebrow' | 'headline' | 'icon' | 'stat' | 'text-highlight'
+
+type EditorObjectData = {
+  arcOptions?: {
+    endAngle?: number
+    radius?: number
+    startAngle?: number
+  }
+  backgroundHighlight?: BackgroundHighlightData
+  gradientStroke?: GradientStrokeData
+  isLocked?: boolean
+  name?: string
+  originalText?: string
+  originalTextbox?: ReturnType<Textbox['toObject']>
+  pathText?: PathTextData
+  role?: EditorObjectRole
+  textTransform?: 'original' | 'upper'
+  type?: 'arc-text' | 'icon'
+}
+
+type FabricObjectWithData = FabricObject & {
+  data?: EditorObjectData
+  fontFamily?: string
+  fontSize?: number
+  id?: string
+  stroke?: string
+  strokeWidth?: number
+  text?: string
+}
+
+type GroupableActiveSelection = ActiveSelection & {
+  toGroup: () => Group
+}
+
+type UngroupableFabricObject = FabricObject & {
+  toActiveSelection?: () => void
+  type?: string
+}
+
+type PathWithInternals = Path & {
+  _setPath?: (path: string, adjustPosition?: boolean) => void
+  setDimensions?: () => void
+}
+
+type ParsedFabricObject = {
+  data?: EditorObjectData
+  fill?: string
+  fontFamily?: string
+  stroke?: string
+}
+
+type ParsedFabricJson = {
+  canvas?: {
+    objects?: ParsedFabricObject[]
+  }
+  objects?: ParsedFabricObject[]
+}
+
+type NoctraEditorDropData = {
+  category?: string
+  name?: string
+  shapeType?: string
+  type: 'icon' | 'image' | 'shape'
+  url: string
+}
+
+type TextboxPropertyUpdate = Partial<Textbox> & {
+  backgroundHighlight?: Partial<BackgroundHighlightData>
+  gradientStroke?: Partial<GradientStrokeData>
+  pathText?: Partial<PathTextData>
+}
+
 const CANVAS_SIZE = 1080
 const MAX_CANVAS_DISPLAY = 540
-const FONT_WEIGHT_OPTIONS = [
-  { label: 'Regular', value: '400' },
-  { label: 'Medium', value: '500' },
-  { label: 'Bold', value: '700' },
-  { label: 'Black', value: '900' },
-] as const
+const PEN_PREVIEW_ID = 'pen-preview'
 const SLIDE_TYPE_LABELS: Record<InstagramCarouselSlide['type'], string> = {
   cover: 'Portada',
   content: 'Contenido',
@@ -204,10 +277,28 @@ const TOOL_BUTTON_CLASS =
 const PANEL_CLASS = 'rounded-[24px] border border-white/8 bg-[#10151A]'
 
 FabricObject.customProperties = ['id', 'slideType', 'isLocked', 'data', 'shadow', 'styles', 'paintFirst']
+FabricObject.ownDefaults = {
+  ...FabricObject.ownDefaults,
+  borderColor: '#462D6E',
+  borderScaleFactor: 1.5,
+  cornerColor: '#E0E5EB',
+  cornerSize: 12,
+  cornerStrokeColor: '#462D6E',
+  cornerStyle: 'circle',
+  padding: 6,
+  transparentCorners: false,
+}
 
 function getScaleForCanvas(viewportWidth: number, viewportHeight: number) {
   const side = Math.min(MAX_CANVAS_DISPLAY, viewportWidth - 120, viewportHeight - 180)
   return Math.max(0.24, Math.min(side / CANVAS_SIZE, 0.5))
+}
+
+function ensureCanvasHasDesignSize(canvas: Canvas | StaticCanvas) {
+  if (canvas.width !== CANVAS_SIZE || canvas.height !== CANVAS_SIZE) {
+    canvas.setWidth(CANVAS_SIZE)
+    canvas.setHeight(CANVAS_SIZE)
+  }
 }
 
 function parseHexWithOpacity(color: string | undefined, fallback: string) {
@@ -267,8 +358,29 @@ function isImage(object: FabricObject | null): object is FabricImage {
   return object instanceof FabricImage
 }
 
-function isShape(object: FabricObject | null) {
-  return isRect(object) || isEllipse(object) || isLine(object)
+function getEditorData(object: FabricObject | null | undefined): EditorObjectData | undefined {
+  return (object as FabricObjectWithData | null | undefined)?.data
+}
+
+function getFabricObjectId(object: FabricObject | null | undefined) {
+  if (!object) {
+    return undefined
+  }
+
+  const objectId = object.get('id')
+  return typeof objectId === 'string' ? objectId : (object as FabricObjectWithData).id
+}
+
+function getParsedFabricObjects(json: ParsedFabricJson) {
+  if (Array.isArray(json.objects)) {
+    return json.objects
+  }
+
+  if (Array.isArray(json.canvas?.objects)) {
+    return json.canvas.objects
+  }
+
+  return []
 }
 
 function getScenePoint(event: unknown) {
@@ -314,11 +426,40 @@ function createTextbox(options: ConstructorParameters<typeof Textbox>[1]) {
 function applyDefaultObjectControls(object: FabricObject) {
   object.set({
     borderColor: '#462D6E',
+    borderScaleFactor: 1.5,
     cornerColor: '#E0E5EB',
-    cornerSize: 8,
-    cornerStrokeColor: '#101417',
+    cornerSize: 12,
+    cornerStrokeColor: '#462D6E',
+    cornerStyle: 'circle',
+    padding: 6,
     transparentCorners: false,
   })
+}
+
+function buildPenPath(points: PenPoint[], currentPoint?: PenPoint) {
+  if (points.length === 0) {
+    return ''
+  }
+
+  let d = `M ${points[0].x} ${points[0].y}`
+
+  for (let index = 1; index < points.length; index += 1) {
+    const prev = points[index - 1]
+    const curr = points[index]
+    const cpx = (prev.x + curr.x) / 2
+    const cpy = (prev.y + curr.y) / 2
+    d += ` Q ${prev.x} ${prev.y} ${cpx} ${cpy}`
+  }
+
+  if (currentPoint) {
+    const last = points[points.length - 1]
+    d += ` L ${currentPoint.x} ${currentPoint.y}`
+    if (points.length === 1) {
+      d = `M ${last.x} ${last.y} L ${currentPoint.x} ${currentPoint.y}`
+    }
+  }
+
+  return d
 }
 
 function applyLockedObjectOptions(object: FabricObject) {
@@ -355,28 +496,12 @@ function setObjectLockState(object: FabricObject, locked: boolean) {
   object.set('isLocked', locked)
 }
 
-function buildSlideCounter(slideNumber: number, totalSlides: number) {
-  return `${String(slideNumber).padStart(2, '0')} / ${String(totalSlides).padStart(2, '0')}`
-}
-
-function createLogoURL(_variant: 'light' | 'dark' = 'light') {
+function createLogoURL() {
   return '/brand/noctra-icon.jpg'
 }
 
-function getLogoVariantForBackground(background: CarouselEditorBackground) {
-  if (background.type === 'image') {
-    return 'light'
-  }
-
-  if (background.type === 'gradient') {
-    return getLogoVariant(averageHexColors(background.gradientConfig?.stops ?? ['#101417', '#1C2028']))
-  }
-
-  return getLogoVariant(background.solidColor ?? '#101417')
-}
-
-async function createLogoObject(variant: 'light' | 'dark' = 'light') {
-  const logo = await FabricImage.fromURL(createLogoURL(variant))
+async function createLogoObject() {
+  const logo = await FabricImage.fromURL(createLogoURL())
 
   applyDefaultObjectControls(logo)
 
@@ -395,12 +520,11 @@ async function createLogoObject(variant: 'light' | 'dark' = 'light') {
   return logo
 }
 
-async function syncCanvasLogos(canvas: Canvas, background: CarouselEditorBackground) {
-  const variant = getLogoVariantForBackground(background)
+async function syncCanvasLogos(canvas: Canvas) {
   const updates = canvas
     .getObjects()
     .filter((object): object is FabricImage => isImage(object) && String(object.get('id')).startsWith('logo-'))
-    .map((logo) => logo.setSrc(createLogoURL(variant)))
+    .map((logo) => logo.setSrc(createLogoURL()))
 
   await Promise.allSettled(updates)
 }
@@ -477,6 +601,7 @@ async function applySlideBackground(canvas: Canvas, background: CarouselEditorBa
       : parseHexWithOpacity(background.solidColor, '#101417')
 
   const baseRect = new Rect({
+    data: { role: 'background' },
     fill,
     height: CANVAS_SIZE,
     id: 'background-base',
@@ -496,16 +621,24 @@ async function applySlideBackground(canvas: Canvas, background: CarouselEditorBa
     const scale = Math.max(CANVAS_SIZE / sourceWidth, CANVAS_SIZE / sourceHeight)
 
     image.set({
+      data: { role: 'background' },
       id: 'background-image',
       left: (CANVAS_SIZE - sourceWidth * scale) / 2,
       top: (CANVAS_SIZE - sourceHeight * scale) / 2,
     })
     image.scale(scale)
+
+    if (background.blur && background.blur > 0) {
+      image.filters.push(new filters.Blur({ blur: background.blur / 20 }))
+      image.applyFilters()
+    }
+
     applyLockedObjectOptions(image)
     canvas.add(image)
     canvas.sendObjectToBack(image)
 
     const overlay = new Rect({
+      data: { role: 'background' },
       fill: `rgba(10,12,15,${background.overlayOpacity ?? 0.55})`,
       height: CANVAS_SIZE,
       id: 'background-overlay',
@@ -519,7 +652,7 @@ async function applySlideBackground(canvas: Canvas, background: CarouselEditorBa
   }
 
   canvas.sendObjectToBack(baseRect)
-  await syncCanvasLogos(canvas, background)
+  await syncCanvasLogos(canvas)
 }
 
 async function initSlideFromData(args: {
@@ -529,7 +662,7 @@ async function initSlideFromData(args: {
   slide: InstagramCarouselSlide
   totalSlides: number
 }) {
-  const { angle, background, canvas, slide, totalSlides } = args
+  const { angle, background, canvas, slide } = args
 
   canvas.clear()
   await applySlideBackground(canvas, background)
@@ -539,7 +672,7 @@ async function initSlideFromData(args: {
       const eyebrow = new Textbox(angle.toUpperCase(), {
         fill: '#E0E5EB',
         fontFamily: '"Inter", system-ui, sans-serif',
-        fontSize: 28,
+        fontSize: 34,
         fontWeight: '500',
         id: 'cover-eyebrow',
         left: 80,
@@ -564,7 +697,7 @@ async function initSlideFromData(args: {
     const headline = new Textbox(slide.headline, {
       fill: '#E0E5EB',
       fontFamily: '"Satoshi", "DM Sans", system-ui, sans-serif',
-      fontSize: 72,
+      fontSize: 96,
       fontWeight: '900',
       id: 'headline',
       left: 80,
@@ -576,7 +709,7 @@ async function initSlideFromData(args: {
     const subtitle = new Textbox(slide.body, {
       fill: 'rgba(224,229,235,0.7)',
       fontFamily: '"Inter", system-ui, sans-serif',
-      fontSize: 34,
+      fontSize: 48,
       id: 'body',
       left: 80,
       lineHeight: 1.45,
@@ -594,13 +727,13 @@ async function initSlideFromData(args: {
     const handle = new Textbox('@noctra_studio', {
       fill: '#4E576A',
       fontFamily: '"Inter", system-ui, sans-serif',
-      fontSize: 24,
+      fontSize: 30,
       id: 'cover-handle',
       left: 80,
       top: 1036,
       width: 240,
     })
-    const logo = await createLogoObject(getLogoVariantForBackground(background))
+    const logo = await createLogoObject()
 
     ;[headline, subtitle, separator, handle, logo].forEach((object) => {
       applyDefaultObjectControls(object)
@@ -609,28 +742,10 @@ async function initSlideFromData(args: {
   }
 
   if (slide.type === 'content') {
-    const counter = new Textbox(buildSlideCounter(slide.slide_number, totalSlides), {
-      fill: '#4E576A',
-      fontFamily: '"Inter", system-ui, sans-serif',
-      fontSize: 28,
-      fontWeight: '500',
-      id: 'slide-counter',
-      left: 80,
-      top: 70,
-      width: 220,
-    })
-    const topLine = new Rect({
-      fill: '#2A3040',
-      height: 4,
-      id: 'content-top-line',
-      left: 960,
-      top: 84,
-      width: 120,
-    })
     const headline = new Textbox(slide.headline, {
       fill: '#E0E5EB',
       fontFamily: '"Satoshi", "DM Sans", system-ui, sans-serif',
-      fontSize: 60,
+      fontSize: 88,
       fontWeight: '700',
       id: 'headline',
       left: 80,
@@ -641,7 +756,7 @@ async function initSlideFromData(args: {
     const body = new Textbox(slide.body, {
       fill: 'rgba(224,229,235,0.75)',
       fontFamily: '"Inter", system-ui, sans-serif',
-      fontSize: 36,
+      fontSize: 54,
       id: 'body',
       left: 80,
       lineHeight: 1.6,
@@ -649,11 +764,9 @@ async function initSlideFromData(args: {
       width: 920,
     })
 
-    applyDefaultObjectControls(counter)
-    applyDefaultObjectControls(topLine)
     applyDefaultObjectControls(headline)
     applyDefaultObjectControls(body)
-    canvas.add(counter, topLine, headline, body)
+    canvas.add(headline, body)
 
     if (slide.stat_or_example) {
       const statRect = new Rect({
@@ -671,7 +784,7 @@ async function initSlideFromData(args: {
       const statText = new Textbox(slide.stat_or_example, {
         fill: '#E0E5EB',
         fontFamily: '"Inter", system-ui, sans-serif',
-        fontSize: 30,
+        fontSize: 38,
         fontWeight: '500',
         id: 'stat-text',
         left: 116,
@@ -684,7 +797,7 @@ async function initSlideFromData(args: {
       canvas.add(statRect, statText)
     }
 
-    const logo = await createLogoObject(getLogoVariantForBackground(background))
+    const logo = await createLogoObject()
     canvas.add(logo)
   }
 
@@ -702,7 +815,7 @@ async function initSlideFromData(args: {
     const message = new Textbox(slide.headline || slide.body, {
       fill: '#E0E5EB',
       fontFamily: '"Satoshi", "DM Sans", system-ui, sans-serif',
-      fontSize: 60,
+      fontSize: 92,
       fontWeight: '700',
       id: 'headline',
       left: 120,
@@ -722,7 +835,7 @@ async function initSlideFromData(args: {
     const handle = new Textbox('@noctra_studio', {
       fill: '#462D6E',
       fontFamily: '"Inter", system-ui, sans-serif',
-      fontSize: 30,
+      fontSize: 44,
       fontWeight: '500',
       id: 'cta-handle',
       left: 350,
@@ -733,14 +846,14 @@ async function initSlideFromData(args: {
     const footer = new Textbox('Ingeniería de Claridad', {
       fill: '#4E576A',
       fontFamily: '"Inter", system-ui, sans-serif',
-      fontSize: 24,
+      fontSize: 30,
       id: 'cta-footer',
       left: 250,
       textAlign: 'center',
       top: 1026,
       width: 580,
     })
-    const logo = await createLogoObject(getLogoVariantForBackground(background))
+    const logo = await createLogoObject()
 
     ;[star, message, divider, handle, footer, logo].forEach((object) => {
       applyDefaultObjectControls(object)
@@ -765,6 +878,7 @@ function SortableSlideThumb({
   totalSlides: number
 }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: slide.id })
+  const previewDataUrl = slide.previewDataURL
 
   return (
     <div
@@ -774,6 +888,7 @@ function SortableSlideThumb({
     >
       <button
         type="button"
+        data-drag-handle
         className="mt-2 text-[#4E576A] opacity-0 transition-opacity group-hover:opacity-100"
         {...attributes}
         {...listeners}
@@ -781,18 +896,40 @@ function SortableSlideThumb({
         <GripVertical className="h-4 w-4" />
       </button>
 
-      <button type="button" onClick={onSelect} className="w-[148px] text-left">
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={(e) => {
+          if ((e.target as HTMLElement).closest('[data-drag-handle]')) return
+          onSelect()
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onSelect()
+          }
+        }}
+        className="w-[148px] cursor-pointer text-left"
+      >
         <div
           className={cn(
             "relative aspect-square w-full overflow-hidden rounded-xl bg-[#0A0C0F] transition-all group",
             isSelected ? "ring-2 ring-[#462D6E] ring-offset-2 ring-offset-[#10151A]" : "hover:ring-1 hover:ring-white/20"
           )}
         >
-          {slide.previewDataURL ? (
-            <img src={slide.previewDataURL} alt={`Slide ${slide.originalData.slide_number}`} className="h-full w-full object-cover" />
+          {previewDataUrl ? (
+            <Image
+              src={previewDataUrl}
+              alt={`Slide ${slide.originalData.slide_number}`}
+              fill
+              unoptimized
+              className="object-cover"
+            />
           ) : (
-            <div className="flex h-full items-center justify-center text-[10px] text-[#4E576A]">
-              Sin vista previa
+            <div className="flex h-full w-full items-center justify-center bg-[#0F1317]">
+              <span className="text-2xl font-bold text-white/10">
+                {slide.originalData.slide_number}
+              </span>
             </div>
           )}
 
@@ -812,12 +949,11 @@ function SortableSlideThumb({
           </div>
 
           {/* Hover Action */}
-          <div 
+          <div
             className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 transition-opacity group-hover:opacity-100 cursor-pointer"
             onClick={(e) => {
-              e.stopPropagation();
-              onSelect();
-              onSetTab?.('imagen');
+              e.stopPropagation()
+              onSetTab?.('imagen')
             }}
           >
             <span className="text-[10px] font-bold text-white bg-[#462D6E] px-2 py-1 rounded-lg">
@@ -829,7 +965,7 @@ function SortableSlideThumb({
           <span>{SLIDE_TYPE_LABELS[slide.type]}</span>
           <span>{slide.originalData.slide_number} / {totalSlides}</span>
         </div>
-      </button>
+      </div>
     </div>
   )
 }
@@ -879,6 +1015,7 @@ export function FabricEditor({
   const canvasElementRef = useRef<HTMLCanvasElement | null>(null)
   const canvasRef = useRef<FabricCanvasRef>(null)
   const [leftTab, setLeftTab] = useState<LeftTab>('slides')
+  const [rightTab, setRightTab] = useState<RightTab>('properties')
   const [currentThemeId, setCurrentThemeId] = useState<string>('nocturno')
   const [customThemes, setCustomThemes] = useState<CarouselTheme[]>([])
   const [showThemeConfirm, setShowThemeConfirm] = useState(false)
@@ -886,8 +1023,8 @@ export function FabricEditor({
   const [activeRightPanel, setActiveRightPanel] = useState<'properties' | 'feed' | 'critique'>('properties')
   const [isUpdatingFeed, setIsUpdatingFeed] = useState(false)
   const [isAnalyzingDesign, setIsAnalyzingDesign] = useState(false)
-  const [critiqueResults, setCritiqueResults] = useState<any | null>(null)
-  const [critiqueHistory, setCritiqueHistory] = useState<any[]>([])
+  const [critiqueResults, setCritiqueResults] = useState<CritiqueResult | null>(null)
+  const [critiqueHistory, setCritiqueHistory] = useState<CritiqueResult[]>([])
   const [critiqueCooldown, setCritiqueCooldown] = useState(0)
   const [editingCustomTheme, setEditingCustomTheme] = useState<CarouselTheme>(
     PRESET_THEMES.find((t) => t.id === 'custom')!
@@ -910,6 +1047,7 @@ export function FabricEditor({
   }))
   const [activeTool, setActiveTool] = useState<EditorTool>('select')
   const [selectedObject, setSelectedObject] = useState<FabricObject | null>(null)
+  const [textToolbarPos, setTextToolbarPos] = useState({ x: 0, y: 0 })
   const [viewportWidth, setViewportWidth] = useState(
     typeof window === 'undefined' ? 1440 : window.innerWidth
   )
@@ -927,7 +1065,7 @@ export function FabricEditor({
   const [previewDataURL, setPreviewDataURL] = useState<string>('')
   const [isPreviewExporting, setIsPreviewExporting] = useState(false)
   const [isDialogExporting, setIsDialogExporting] = useState(false)
-  const [exportStats, setExportStats] = useState<{ count: number; lastExport: string | null }>({ count: 0, lastExport: null })
+  const [, setExportStats] = useState<{ count: number; lastExport: string | null }>({ count: 0, lastExport: null })
   const [activeFilterId, setActiveFilterId] = useState(initialActiveFilterId)
   const [activeFilterCSS, setActiveFilterCSS] = useState(initialActiveFilterCSS)
   const [canvasPreviewDataURL, setCanvasPreviewDataURL] = useState<string | null>(null)
@@ -940,6 +1078,10 @@ export function FabricEditor({
   const workAreaRef = useRef<HTMLDivElement>(null)
   const [spaceHeld, setSpaceHeld] = useState(false)
   const [canvasScale, setCanvasScale] = useState(getScaleForCanvas(viewportWidth, viewportHeight))
+  const [workAreaSize, setWorkAreaSize] = useState({ width: 0, height: 0 })
+  const canvasOffsetRef = useRef(canvasOffset)
+  const isPanningRef = useRef(isPanning)
+  const handleAddTextRef = useRef<((options?: Partial<ConstructorParameters<typeof Textbox>[1]>) => void) | null>(null)
 
   const handleExportSuccess = useCallback(async (pId: string, platform: string, format: string) => {
     try {
@@ -966,14 +1108,27 @@ export function FabricEditor({
   }, [postId])
   const [savedGradients, setSavedGradients] = useState<CarouselGradientConfig[]>([])
   const [recentFontIds, setRecentFontIds] = useState<string[]>([])
+  const [layerVersion, setLayerVersion] = useState(0)
   const [gradientDraft, setGradientDraft] = useState<CarouselGradientConfig>(
     normalizeGradientConfig(BRAND_GRADIENT_SUGGESTIONS[0]?.config)
   )
   const [gridEnabled, setGridEnabled] = useState(false)
-  const [gridSize, setGridSize] = useState(16)
+  const [gridSize] = useState(16)
   const [rulerEnabled, setRulerEnabled] = useState(false)
-  const [smartGuidesEnabled, setSmartGuidesEnabled] = useState(true)
+  const [smartGuidesEnabled] = useState(true)
   const [isVersionPanelOpen, setIsVersionPanelOpen] = useState(false)
+  const penPointsRef = useRef<PenPoint[]>([])
+  const penPreviewRef = useRef<Path | null>(null)
+  const [penColor, setPenColor] = useState('#E0E5EB')
+  const [penWidth, setPenWidth] = useState(2)
+  const activeToolRef = useRef(activeTool)
+  const gridEnabledRef = useRef(gridEnabled)
+  const gridSizeRef = useRef(gridSize)
+  const smartGuidesEnabledRef = useRef(smartGuidesEnabled)
+  const spaceHeldRef = useRef(spaceHeld)
+  const penColorRef = useRef(penColor)
+  const penWidthRef = useRef(penWidth)
+  const penColorInputRef = useRef<HTMLInputElement | null>(null)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
   const activeSlide = editorState.slides[editorState.activeSlideIndex]
   const activeBackground = activeSlide?.background
@@ -987,8 +1142,20 @@ export function FabricEditor({
   const previewCaption = [caption, hashtags?.map((tag) => (tag.startsWith('#') ? tag : `#${tag}`)).join(' ')]
     .filter((value): value is string => Boolean(value && value.trim().length > 0))
     .join('\n\n')
+  const canvasDisplaySize = CANVAS_SIZE * canvasScale
+  const mainWidth = workAreaSize.width || viewportWidth
+  const mainHeight = workAreaSize.height || viewportHeight
+  const canvasLeft = (mainWidth - canvasDisplaySize) / 2 + canvasOffset.x
+  const canvasTop = (mainHeight - canvasDisplaySize) / 2 + canvasOffset.y
 
   editorStateRef.current = editorState
+  activeToolRef.current = activeTool
+  gridEnabledRef.current = gridEnabled
+  gridSizeRef.current = gridSize
+  smartGuidesEnabledRef.current = smartGuidesEnabled
+  spaceHeldRef.current = spaceHeld
+  penColorRef.current = penColor
+  penWidthRef.current = penWidth
 
   useEffect(() => {
     setSavedGradients(getSavedGradients())
@@ -1003,6 +1170,14 @@ export function FabricEditor({
 
     setGradientDraft(normalizeGradientConfig(BRAND_GRADIENT_SUGGESTIONS[0]?.config))
   }, [activeBackground?.gradientConfig, activeBackground?.type, activeSlide?.id])
+
+  useEffect(() => {
+    canvasOffsetRef.current = canvasOffset
+  }, [canvasOffset])
+
+  useEffect(() => {
+    isPanningRef.current = isPanning
+  }, [isPanning])
 
   const setDirty = useCallback((value: boolean) => {
     setEditorState((current) => ({ ...current, isDirty: value }))
@@ -1100,8 +1275,47 @@ export function FabricEditor({
     setSelectedObject(nextSelected)
   }, [])
 
+  const updateTextToolbarPosition = useCallback((obj: FabricObject | null) => {
+    if (!(obj instanceof Textbox)) {
+      return
+    }
+
+    const canvas = canvasRef.current
+    const canvasEl = canvasElementRef.current
+
+    if (!canvas || !canvasEl) {
+      return
+    }
+
+    obj.setCoords()
+    const bound = obj.getBoundingRect()
+    const rect = canvasEl.getBoundingClientRect()
+    const scaleRatio = rect.width / CANVAS_SIZE
+
+    setTextToolbarPos({
+      x: rect.left + bound.left * scaleRatio,
+      y: rect.top + bound.top * scaleRatio,
+    })
+  }, [])
+
+  const clearPenDrawing = useCallback(() => {
+    const canvas = canvasRef.current
+
+    if (canvas && penPreviewRef.current) {
+      canvas.remove(penPreviewRef.current)
+    }
+
+    penPreviewRef.current = null
+    penPointsRef.current = []
+  }, [])
+
   const setCanvasToolMode = useCallback((tool: EditorTool) => {
     const canvas = canvasRef.current
+
+    if (activeToolRef.current === 'pen' && tool !== 'pen') {
+      clearPenDrawing()
+    }
+
     setActiveTool(tool)
 
     if (!canvas) {
@@ -1109,7 +1323,7 @@ export function FabricEditor({
     }
 
     canvas.selection = tool === 'select'
-    canvas.defaultCursor = tool === 'select' ? 'default' : 'crosshair'
+    canvas.defaultCursor = tool === 'select' ? (spaceHeldRef.current ? 'grab' : 'default') : 'crosshair'
     canvas.hoverCursor = tool === 'select' ? 'move' : 'crosshair'
     canvas.getObjects().forEach((object) => {
       if (object.get('isLocked')) {
@@ -1122,7 +1336,42 @@ export function FabricEditor({
       })
     })
     canvas.requestRenderAll()
-  }, [])
+  }, [clearPenDrawing])
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+
+    if (!canvas) {
+      return
+    }
+
+    if (spaceHeld) {
+      canvas.selection = false
+      canvas.forEachObject((object) => {
+        object.set({
+          evented: false,
+          selectable: false,
+        })
+      })
+      canvas.defaultCursor = 'grab'
+      canvas.hoverCursor = 'grab'
+    } else {
+      const isSelectMode = activeToolRef.current === 'select'
+      canvas.selection = isSelectMode
+      canvas.forEachObject((object) => {
+        const isLocked = Boolean(getEditorData(object)?.isLocked || object.get('isLocked'))
+
+        object.set({
+          evented: isSelectMode && !isLocked,
+          selectable: isSelectMode && !isLocked,
+        })
+      })
+      canvas.defaultCursor = isSelectMode ? 'default' : 'crosshair'
+      canvas.hoverCursor = isSelectMode ? 'move' : 'crosshair'
+    }
+
+    canvas.renderAll()
+  }, [spaceHeld])
 
   const updateSlideAtIndex = useCallback((index: number, updater: (slide: CarouselEditorSlide) => CarouselEditorSlide) => {
     setEditorState((current) => ({
@@ -1197,6 +1446,7 @@ export function FabricEditor({
     }
 
     pushHistoryState(savedSlide.id, savedSlide.fabricJSON ?? '')
+    setLayerVersion((version) => version + 1)
   }, [persistCurrentCanvas, pushHistoryState])
 
   const handleDeleteSelection = useCallback(() => {
@@ -1403,14 +1653,15 @@ export function FabricEditor({
 
   const syncLinkedBackground = useCallback((textObj: Textbox) => {
     const canvas = canvasRef.current
-    if (!canvas || !(textObj as any).data?.backgroundHighlight?.enabled) return
+    const backgroundHighlight = getEditorData(textObj)?.backgroundHighlight
+    if (!canvas || !backgroundHighlight?.enabled) return
 
-    const rectId = (textObj as any).data.backgroundHighlight.rectId
-    const bgRect = canvas.getObjects().find(o => (o as any).id === rectId) as Rect
+    const rectId = backgroundHighlight.rectId
+    const bgRect = canvas.getObjects().find((object): object is Rect => isRect(object) && getFabricObjectId(object) === rectId)
 
     if (!bgRect) return
 
-    const padding = (textObj as any).data.backgroundHighlight.padding || 0
+    const padding = backgroundHighlight.padding || 0
     const bounds = textObj.getBoundingRect()
     
     bgRect.set({
@@ -1426,17 +1677,6 @@ export function FabricEditor({
     // Position correctly if text is rotated
     canvas.requestRenderAll()
   }, [])
-
-  const handleApplyLetterColor = useCallback((color: string) => {
-    const canvas = canvasRef.current
-    const active = canvas?.getActiveObject() as Textbox
-    if (!active || !active.isEditing) return
-
-    // Apply color to current selection
-    active.setSelectionStyles({ fill: color })
-    canvas?.requestRenderAll()
-    commitCanvasMutation()
-  }, [commitCanvasMutation])
 
   useEffect(() => {
     if (critiqueCooldown <= 0) return
@@ -1505,21 +1745,27 @@ export function FabricEditor({
 
     if (!target) {
       if (normalizedElement.includes('headline') || normalizedElement.includes('título')) {
-        target = objects.find(o => (o as any).fontSize > 40 || (o as any).text?.length < 50)
+        target = objects.find((object) => {
+          const candidate = object as FabricObjectWithData
+          return (candidate.fontSize ?? 0) > 40 || (candidate.text?.length ?? 0) < 50
+        })
       } else if (normalizedElement.includes('body') || normalizedElement.includes('cuerpo')) {
-        target = objects.find(o => (o as any).fontSize < 40 && (o as any).text?.length > 10)
+        target = objects.find((object) => {
+          const candidate = object as FabricObjectWithData
+          return (candidate.fontSize ?? 0) < 40 && (candidate.text?.length ?? 0) > 10
+        })
       }
     }
 
     if (!target) return
 
-    try {
-      if (normalizedFix.includes('aumenta') || normalizedFix.includes('más grande')) {
-        const current = (target as any).fontSize || 40
-        target.set('fontSize', current + 15)
-      } else if (normalizedFix.includes('reduce') || normalizedFix.includes('más pequeño')) {
-        const current = (target as any).fontSize || 40
-        target.set('fontSize', Math.max(12, current - 8))
+      try {
+        if (normalizedFix.includes('aumenta') || normalizedFix.includes('más grande')) {
+          const current = (target as FabricObjectWithData).fontSize || 40
+          target.set('fontSize', current + 15)
+        } else if (normalizedFix.includes('reduce') || normalizedFix.includes('más pequeño')) {
+          const current = (target as FabricObjectWithData).fontSize || 40
+          target.set('fontSize', Math.max(12, current - 8))
       } else if (normalizedFix.includes('contraste') || normalizedFix.includes('color')) {
         target.set('fill', '#E0E5EB')
       } else if (normalizedFix.includes('centra') || normalizedFix.includes('alineación')) {
@@ -1546,21 +1792,32 @@ export function FabricEditor({
       setSelectedObject(null)
 
       const parsed = parseCanvasState(slide.fabricJSON)
+      const parsedObjects = Array.isArray(parsed?.canvas?.objects) ? parsed.canvas.objects : []
+      const hasObjects = parsedObjects.length > 0
 
-      if (parsed) {
+      if (parsed && hasObjects) {
         await canvas.loadFromJSON(parsed.canvas)
-        await syncCanvasLogos(canvas, slide.background)
-        canvas.renderAll()
+        await syncCanvasLogos(canvas)
       } else {
-        await initSlideFromData({
-          angle,
-          background: slide.background,
-          canvas,
-          slide: slide.originalData,
-          totalSlides,
-        })
+        const availableTemplates = Object.values(templates)
+        const defaultTemplate =
+          availableTemplates.find((template) => template.id === 'editorial') ?? availableTemplates[0]
+
+        if (defaultTemplate) {
+          ensureCanvasHasDesignSize(canvas)
+          initSlideFromTemplate(canvas, defaultTemplate, slide.originalData, slide.originalData.slide_number)
+        } else {
+          await initSlideFromData({
+            angle,
+            background: slide.background,
+            canvas,
+            slide: slide.originalData,
+            totalSlides,
+          })
+        }
       }
 
+      canvas.renderAll()
       canvas.getObjects().forEach((object) => {
         applyDefaultObjectControls(object)
       })
@@ -1629,6 +1886,7 @@ export function FabricEditor({
 
       // Apply initial template if provided
       if (initialTemplate && (i === initialActiveSlideIndex || initialTemplateApplyToAll)) {
+        ensureCanvasHasDesignSize(canvas)
         initSlideFromTemplate(canvas, initialTemplate, slide.originalData, i + 1)
         const serialized = serializeCanvasState(canvas, slide.background)
         const previewDataURL = canvas.toDataURL({ format: 'png', multiplier: 1 })
@@ -1712,12 +1970,52 @@ export function FabricEditor({
   }, [])
 
   useEffect(() => {
+    const workArea = workAreaRef.current
+
+    if (!workArea) {
+      return
+    }
+
+    const updateWorkAreaSize = () => {
+      setWorkAreaSize({
+        width: workArea.clientWidth,
+        height: workArea.clientHeight,
+      })
+    }
+
+    updateWorkAreaSize()
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      const entry = entries[0]
+
+      if (!entry) {
+        return
+      }
+
+      setWorkAreaSize({
+        width: entry.contentRect.width,
+        height: entry.contentRect.height,
+      })
+    })
+
+    resizeObserver.observe(workArea)
+
+    return () => resizeObserver.disconnect()
+  }, [])
+
+  useEffect(() => {
     let mounted = true
-    const handleCanvasMutation = () => {
+    const handleCanvasMutation = (event?: { target?: FabricObject | null }) => {
       if (loadingRef.current) {
         return
       }
 
+      const target = event?.target
+      if (target === penPreviewRef.current || target?.get('id') === PEN_PREVIEW_ID) {
+        return
+      }
+
+      canvasRef.current?.requestRenderAll()
       commitCanvasMutation()
       schedulePreviewRefresh()
     }
@@ -1731,14 +2029,35 @@ export function FabricEditor({
 
       const canvas = new Canvas(canvasElementRef.current, {
         height: CANVAS_SIZE,
+        controlsAboveOverlay: true,
+        fireRightClick: true,
+        perPixelTargetFind: false,
         preserveObjectStacking: true,
+        renderOnAddRemove: false,
         selection: true,
+        selectionBorderColor: '#462D6E',
+        selectionColor: 'rgba(70, 45, 110, 0.15)',
+        selectionDashArray: [4, 4],
+        selectionLineWidth: 1,
+        skipTargetFind: false,
+        stopContextMenu: true,
+        targetFindTolerance: 8,
         width: CANVAS_SIZE,
       })
       canvasRef.current = canvas
 
-      canvas.on('selection:created', updateSelectedObject)
-      canvas.on('selection:updated', updateSelectedObject)
+      canvas.on('selection:created', (e) => {
+        if (e.selected?.[0]) {
+          updateTextToolbarPosition(e.selected[0])
+        }
+        updateSelectedObject()
+      })
+      canvas.on('selection:updated', (e) => {
+        if (e.selected?.[0]) {
+          updateTextToolbarPosition(e.selected[0])
+        }
+        updateSelectedObject()
+      })
       canvas.on('selection:cleared', updateSelectedObject)
       canvas.on('object:added', handleCanvasMutation)
       canvas.on('object:removed', handleCanvasMutation)
@@ -1746,46 +2065,127 @@ export function FabricEditor({
       canvas.on('text:changed', handleCanvasMutation)
 
       // Handle editing for curved text
-      canvas.on('text:edit-curved' as any, (e: any) => {
-        const group = e.target as Group;
-        if (!group || (group as any).data?.type !== 'arc-text') return;
-
-        const data = (group as any).data;
-        const originalData = data.originalTextbox;
-        if (!originalData) return;
+      canvas.on('text:edit-curved' as never, (event: { target?: FabricObject }) => {
+        const group = event.target instanceof Group ? (event.target as Group & FabricObjectWithData) : null
+        const originalData = group ? getEditorData(group)?.originalTextbox : null
+        if (!group || getEditorData(group)?.type !== 'arc-text' || !originalData) return
 
         // Restore textbox
-        const textbox = new Textbox(originalData.text, {
-          ...originalData,
+        const originalTextbox = originalData as unknown as Partial<ConstructorParameters<typeof Textbox>[1]> & {
+          text?: string
+        }
+        const textbox = new Textbox(originalTextbox.text ?? '', {
+          ...originalTextbox,
           left: group.left,
           top: group.top,
           angle: group.angle,
           scaleX: group.scaleX,
           scaleY: group.scaleY,
-        });
+        })
 
-        canvas.remove(group);
-        canvas.add(textbox);
-        canvas.setActiveObject(textbox);
-        textbox.enterEditing();
-        canvas.requestRenderAll();
-      });
+        canvas.remove(group)
+        canvas.add(textbox)
+        canvas.setActiveObject(textbox)
+        textbox.enterEditing()
+        canvas.requestRenderAll()
+      })
+
+      const updatePenPreview = (currentPoint?: PenPoint) => {
+        const preview = penPreviewRef.current
+        const d = buildPenPath(penPointsRef.current, currentPoint)
+
+        if (!preview || !d) {
+          return
+        }
+
+        const previewWithInternals = preview as PathWithInternals
+
+        if (typeof previewWithInternals._setPath === 'function') {
+          previewWithInternals._setPath(d, true)
+        } else {
+          preview.set({ path: d as unknown as Path['path'] })
+          previewWithInternals.setDimensions?.()
+        }
+
+        preview.setCoords()
+      }
+
+      canvas.on('mouse:dblclick', (event) => {
+        if (activeToolRef.current === 'pen') {
+          if (penPointsRef.current.length < 2) {
+            clearPenDrawing()
+            canvas.requestRenderAll()
+            return
+          }
+
+          if (penPreviewRef.current) {
+            canvas.remove(penPreviewRef.current)
+          }
+
+          const finalPath = new Path(buildPenPath(penPointsRef.current), {
+            evented: true,
+            fill: 'transparent',
+            id: `path-${createSlideId()}`,
+            selectable: true,
+            stroke: penColorRef.current,
+            strokeLineCap: 'round',
+            strokeLineJoin: 'round',
+            strokeWidth: penWidthRef.current,
+          })
+          applyDefaultObjectControls(finalPath)
+          canvas.add(finalPath)
+          canvas.setActiveObject(finalPath)
+
+          penPreviewRef.current = null
+          penPointsRef.current = []
+          setCanvasToolMode('select')
+          commitCanvasMutation()
+          canvas.renderAll()
+          return
+        }
+
+        const target = event.target
+
+        if (!(target instanceof Textbox)) {
+          return
+        }
+
+        canvas.setActiveObject(target)
+        target.enterEditing()
+        target.selectAll()
+        canvas.renderAll()
+      })
+
+      canvas.on('mouse:over', (event) => {
+        if (event.target) {
+          canvas.defaultCursor = event.target instanceof Textbox ? 'text' : 'move'
+          return
+        }
+
+        canvas.defaultCursor = spaceHeldRef.current ? 'grab' : 'default'
+      })
+
+      canvas.on('mouse:out', () => {
+        canvas.defaultCursor = spaceHeldRef.current ? 'grab' : 'default'
+      })
 
       canvas.on('object:moving', (e) => {
         const obj = e.target
         if (!obj) return
 
+        updateTextToolbarPosition(obj)
+
         let snappedX = obj.left
         let snappedY = obj.top
 
         // Grid Snap
-        if (gridEnabled) {
-          snappedX = Math.round(obj.left / gridSize) * gridSize
-          snappedY = Math.round(obj.top / gridSize) * gridSize
+        if (gridEnabledRef.current) {
+          snappedX = Math.round(obj.left / gridSizeRef.current) * gridSizeRef.current
+          snappedY = Math.round(obj.top / gridSizeRef.current) * gridSizeRef.current
         }
 
         // Smart Guides & Center Snap
-        if (smartGuidesEnabled) {
+        if (smartGuidesEnabledRef.current) {
           clearSmartGuides(canvas)
           const objRect = obj.getBoundingRect()
           const canvasCenter = CANVAS_SIZE / 2
@@ -1830,11 +2230,15 @@ export function FabricEditor({
         }
 
         obj.set({ left: snappedX, top: snappedY })
+        canvas.requestRenderAll()
       })
 
-      canvas.on('object:modified', () => clearSmartGuides(canvas))
+      canvas.on('object:modified', () => {
+        clearSmartGuides(canvas)
+        canvas.renderAll()
+      })
       canvas.on('object:scaling', () => {
-        if (smartGuidesEnabled) {
+        if (smartGuidesEnabledRef.current) {
           // Drawing guides simplified for scaling to avoid jitter
           const obj = canvas.getActiveObject()
           if (obj) {
@@ -1850,7 +2254,21 @@ export function FabricEditor({
           return
         }
 
-        if (activeTool === 'text') {
+        if (spaceHeldRef.current) {
+          const pointerEvent = event.e as MouseEvent
+          canvas.selection = false
+          isPanningRef.current = true
+          panStartRef.current = {
+            x: pointerEvent.clientX,
+            y: pointerEvent.clientY,
+            ox: canvasOffsetRef.current.x,
+            oy: canvasOffsetRef.current.y,
+          }
+          setIsPanning(true)
+          return
+        }
+
+        if (activeToolRef.current === 'text') {
           const point = getScenePoint(event.e)
           const textbox = createTextbox({
             id: `text-${createSlideId()}`,
@@ -1862,10 +2280,37 @@ export function FabricEditor({
           textbox.enterEditing()
           setCanvasToolMode('select')
           updateSelectedObject()
+          canvas.requestRenderAll()
           return
         }
 
-        if (activeTool === 'rect') {
+        if (activeToolRef.current === 'pen') {
+          const point = getScenePoint(event.e)
+          penPointsRef.current.push(point)
+
+          if (penPointsRef.current.length === 1) {
+            const preview = new Path(`M ${point.x} ${point.y}`, {
+              evented: false,
+              excludeFromExport: true,
+              fill: 'transparent',
+              id: PEN_PREVIEW_ID,
+              selectable: false,
+              stroke: penColorRef.current,
+              strokeLineCap: 'round',
+              strokeLineJoin: 'round',
+              strokeWidth: penWidthRef.current,
+            })
+            penPreviewRef.current = preview
+            canvas.add(preview)
+          } else {
+            updatePenPreview(point)
+          }
+
+          canvas.requestRenderAll()
+          return
+        }
+
+        if (activeToolRef.current === 'rect') {
           const point = getScenePoint(event.e)
           const rect = new Rect({
             fill: '#212631',
@@ -1882,10 +2327,11 @@ export function FabricEditor({
           applyDefaultObjectControls(rect)
           dragStateRef.current = { originX: point.x, originY: point.y, shape: rect }
           canvas.add(rect)
+          canvas.requestRenderAll()
           return
         }
 
-        if (activeTool === 'circle') {
+        if (activeToolRef.current === 'circle') {
           const point = getScenePoint(event.e)
           const ellipse = new Ellipse({
             fill: 'transparent',
@@ -1902,10 +2348,11 @@ export function FabricEditor({
           applyDefaultObjectControls(ellipse)
           dragStateRef.current = { originX: point.x, originY: point.y, shape: ellipse }
           canvas.add(ellipse)
+          canvas.requestRenderAll()
           return
         }
 
-        if (activeTool === 'line') {
+        if (activeToolRef.current === 'line') {
           const point = getScenePoint(event.e)
           const line = new Line([point.x, point.y, point.x + 1, point.y + 1], {
             id: `line-${createSlideId()}`,
@@ -1915,10 +2362,29 @@ export function FabricEditor({
           applyDefaultObjectControls(line)
           dragStateRef.current = { originX: point.x, originY: point.y, shape: line }
           canvas.add(line)
+          canvas.requestRenderAll()
         }
       })
 
       canvas.on('mouse:move', (event) => {
+        if (spaceHeldRef.current && isPanningRef.current && panStartRef.current) {
+          const pointerEvent = event.e as MouseEvent
+          const dx = pointerEvent.clientX - panStartRef.current.x
+          const dy = pointerEvent.clientY - panStartRef.current.y
+          setCanvasOffset({
+            x: panStartRef.current.ox + dx,
+            y: panStartRef.current.oy + dy,
+          })
+          return
+        }
+
+        if (activeToolRef.current === 'pen' && penPointsRef.current.length > 0) {
+          const point = getScenePoint(event.e)
+          updatePenPreview(point)
+          canvas.requestRenderAll()
+          return
+        }
+
         const dragState = dragStateRef.current
 
         if (!dragState?.shape) {
@@ -1958,12 +2424,28 @@ export function FabricEditor({
       })
 
       canvas.on('mouse:up', () => {
+        if (isPanningRef.current) {
+          isPanningRef.current = false
+          setIsPanning(false)
+          panStartRef.current = null
+          return
+        }
+
         dragStateRef.current = null
 
-        if (activeTool !== 'select') {
+        if (activeToolRef.current !== 'select' && activeToolRef.current !== 'pen') {
           setCanvasToolMode('select')
         }
+
+        canvas.renderAll()
       })
+
+      const initialState = editorStateRef.current
+      const initialSlide = initialState?.slides[initialState.activeSlideIndex]
+
+      if (initialSlide) {
+        await loadSlideToCanvas(initialSlide, initialState.slides.length)
+      }
 
       await bootstrapSlides()
       generatePreview()
@@ -1976,14 +2458,24 @@ export function FabricEditor({
       canvasRef.current?.dispose()
       canvasRef.current = null
     }
-  }, [activeTool, bootstrapSlides, commitCanvasMutation, generatePreview, schedulePreviewRefresh, setCanvasToolMode, updateSelectedObject])
+  }, [
+    bootstrapSlides,
+    clearPenDrawing,
+    commitCanvasMutation,
+    generatePreview,
+    loadSlideToCanvas,
+    schedulePreviewRefresh,
+    setCanvasToolMode,
+    updateSelectedObject,
+    updateTextToolbarPosition,
+  ])
 
   // Synchronize Icons with Theme Accent
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const icons = canvas.getObjects().filter(obj => (obj as any).data?.role === 'icon');
+    const icons = canvas.getObjects().filter((object) => getEditorData(object)?.role === 'icon')
     let hasChanged = false;
 
     icons.forEach(icon => {
@@ -2038,7 +2530,7 @@ export function FabricEditor({
       }))
 
       await applySlideBackground(canvas, nextBackground)
-      await syncCanvasLogos(canvas, nextBackground)
+      await syncCanvasLogos(canvas)
       canvas.requestRenderAll()
       commitCanvasMutation()
     },
@@ -2073,36 +2565,6 @@ export function FabricEditor({
     await loadSlideToCanvas({ ...currentSlide, fabricJSON: serialized }, current.slides.length)
     setDirty(true)
   }, [loadSlideToCanvas, setDirty, updateSlideAtIndex])
-
-  const handleApplyTemplate = useCallback(
-    async (template: SlideTemplate | null) => {
-      const canvas = canvasRef.current
-      const current = editorStateRef.current
-      if (!canvas || !current || !template) {
-        return
-      }
-
-      const slide = current.slides[current.activeSlideIndex]
-      initSlideFromTemplate(canvas, template, slide.originalData, current.activeSlideIndex + 1)
-      
-      if (template.canvasBackground.type === 'solid') {
-        const nextBackground: CarouselEditorBackground = {
-          ...slide.background,
-          solidColor: template.canvasBackground.default,
-          type: 'solid',
-        }
-        
-        updateSlideAtIndex(current.activeSlideIndex, (s) => ({
-          ...s,
-          background: nextBackground,
-        }))
-      }
-
-      commitCanvasMutation()
-      canvas.requestRenderAll()
-    },
-    [commitCanvasMutation, updateSlideAtIndex]
-  )
 
   const handleRedo = useCallback(async () => {
     const current = editorStateRef.current
@@ -2180,7 +2642,7 @@ export function FabricEditor({
 
       if (key === 't') {
         event.preventDefault()
-        handleAddText()
+        handleAddTextRef.current?.()
       }
 
       if (key === 'i') {
@@ -2190,11 +2652,17 @@ export function FabricEditor({
 
       if (key === 's') {
         event.preventDefault()
-        setLeftTab('assets')
+        setActiveRightPanel('properties')
+        setRightTab('assets')
       }
 
       if (key === 'r') {
         setCanvasToolMode('rect')
+      }
+
+      if (key === 'p') {
+        event.preventDefault()
+        setCanvasToolMode('pen')
       }
 
       const canvas = canvasRef.current;
@@ -2257,7 +2725,7 @@ export function FabricEditor({
         event.preventDefault();
         const active = canvas.getActiveObject();
         if (active instanceof ActiveSelection) {
-          (active as any).toGroup();
+          (active as GroupableActiveSelection).toGroup()
           canvas.requestRenderAll();
           commitCanvasMutation();
         }
@@ -2268,8 +2736,8 @@ export function FabricEditor({
       if ((event.metaKey || event.ctrlKey) && event.shiftKey && key === 'g') {
         event.preventDefault();
         const active = canvas.getActiveObject();
-        if (active && (active as any).type === 'group') {
-          (active as any).toActiveSelection();
+        if (active && (active as UngroupableFabricObject).type === 'group') {
+          ;(active as UngroupableFabricObject).toActiveSelection?.()
           canvas.requestRenderAll();
           commitCanvasMutation();
         }
@@ -2298,6 +2766,13 @@ export function FabricEditor({
 
       // Discard (Esc)
       if (key === 'escape') {
+        if (activeToolRef.current === 'pen') {
+          clearPenDrawing()
+          setCanvasToolMode('select')
+          canvas.requestRenderAll()
+          return
+        }
+
         canvas.discardActiveObject();
         canvas.requestRenderAll();
         return;
@@ -2334,7 +2809,7 @@ export function FabricEditor({
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
     }
-  }, [handleRedo, handleUndo, setCanvasToolMode, updateSelectedObject])
+  }, [clearPenDrawing, commitCanvasMutation, handleRedo, handleUndo, setCanvasToolMode, updateSelectedObject])
 
   const updateSelectedObjectProperty = useCallback(
     (properties: Partial<FabricObject>) => {
@@ -2354,20 +2829,26 @@ export function FabricEditor({
   )
 
   const updateTextboxProperty = useCallback(
-    (props: any) => {
+    (props: TextboxPropertyUpdate) => {
       const canvas = canvasRef.current
       const active = selectedObjectRef.current
       if (!active) return
 
       // Handle Background Highlight Toggle
       if (props.backgroundHighlight && isTextbox(active)) {
-        const data = (active as any).data || {}
-        const current = data.backgroundHighlight || { enabled: false, padding: 10, color: 'rgba(70, 45, 110, 0.2)', radius: 8 }
+        const data = getEditorData(active) || {}
+        const current: BackgroundHighlightData = data.backgroundHighlight || {
+          enabled: false,
+          padding: 10,
+          color: 'rgba(70, 45, 110, 0.2)',
+          radius: 8,
+        }
         const next = { ...current, ...props.backgroundHighlight }
         
         active.set('data', { ...data, backgroundHighlight: next })
 
         if (next.enabled && !next.rectId) {
+          const highlightRectId = `bg-${String(active.get('id') ?? createSlideId())}`
           const rect = new Rect({
             fill: next.color,
             rx: next.radius,
@@ -2376,22 +2857,22 @@ export function FabricEditor({
             evented: false,
             data: { role: 'text-highlight' },
           })
-          ;(rect as any).id = `bg-${active.get('id')}`
-          active.set('data', { ...active.get('data'), backgroundHighlight: { ...next, rectId: (rect as any).id } })
+          rect.set('id', highlightRectId)
+          active.set('data', { ...data, backgroundHighlight: { ...next, rectId: highlightRectId } })
           canvas?.add(rect)
           canvas?.sendObjectToBack(rect)
         } else if (!next.enabled && next.rectId) {
-          const rect = canvas?.getObjects().find(o => (o as any).id === next.rectId)
+          const rect = canvas?.getObjects().find((object) => getFabricObjectId(object) === next.rectId)
           if (rect) canvas?.remove(rect)
-          active.set('data', { ...active.get('data'), backgroundHighlight: { ...next, rectId: null } })
+          active.set('data', { ...data, backgroundHighlight: { ...next, rectId: null } })
         }
         
-        syncLinkedBackground(active as Textbox)
+        syncLinkedBackground(active)
       }
 
       // Handle Gradient Stroke
       if (props.gradientStroke && isTextbox(active)) {
-        const data = (active as any).data || {}
+        const data = getEditorData(active) || {}
         active.set('data', { ...data, gradientStroke: { ...data.gradientStroke, ...props.gradientStroke } })
         if (props.gradientStroke.enabled) {
           active.set('stroke', 'transparent') // Force custom render
@@ -2402,35 +2883,38 @@ export function FabricEditor({
       if (props.pathText && isTextbox(active) && canvas) {
         const { type, enabled, radius, startAngle, endAngle } = props.pathText
         if (enabled && (active.type === 'textbox' || active.type === 'itext')) {
-          const textbox = active as Textbox
           const arcOptions = {
             radius: radius || 300,
             startAngle: startAngle || -90,
             endAngle: endAngle || 90,
-            fontSize: textbox.fontSize || 40,
-            fontFamily: textbox.fontFamily || 'Inter',
-            fill: textbox.fill as any,
-            fontWeight: textbox.fontWeight,
-            fontStyle: textbox.fontStyle,
+            fontSize: active.fontSize || 40,
+            fontFamily: active.fontFamily || 'Inter',
+            fill:
+              typeof active.fill === 'string' || active.fill instanceof Gradient
+                ? active.fill
+                : '#E0E5EB',
+            fontWeight: active.fontWeight,
+            fontStyle: active.fontStyle,
           }
 
           const curvedGroup = type === 'circle' 
-            ? makeTextOnCircle(textbox.text || '', arcOptions)
-            : makeTextOnArc(textbox.text || '', arcOptions)
+            ? makeTextOnCircle(active.text || '', arcOptions)
+            : makeTextOnArc(active.text || '', arcOptions)
 
           curvedGroup.set({
-            left: textbox.left,
-            top: textbox.top,
-            angle: textbox.angle,
+            left: active.left,
+            top: active.top,
+            angle: active.angle,
           })
 
           // Store reference to restore
-          ;(curvedGroup as any).data = {
-            ...(curvedGroup as any).data,
-            originalTextbox: textbox.toObject(),
+          const curvedGroupWithData = curvedGroup as Group & FabricObjectWithData
+          curvedGroupWithData.data = {
+            ...(curvedGroupWithData.data ?? {}),
+            originalTextbox: active.toObject(),
           }
 
-          canvas.remove(textbox)
+          canvas.remove(active)
           canvas.add(curvedGroup)
           canvas.setActiveObject(curvedGroup)
         }
@@ -2563,9 +3047,9 @@ export function FabricEditor({
     const fontsHeading = new Set(slideStates.map(s => {
       try {
         if (!s.fabricJSON) return null
-        const json = JSON.parse(s.fabricJSON) as any
-        const objects = (json.objects || json.canvas?.objects || []) as any[]
-        const headline = objects.find((o: any) => o.data?.role === 'headline')
+        const json = JSON.parse(s.fabricJSON) as ParsedFabricJson
+        const objects = getParsedFabricObjects(json)
+        const headline = objects.find((object) => object.data?.role === 'headline')
         return headline?.fontFamily
       } catch { return null }
     }).filter(Boolean))
@@ -2576,9 +3060,9 @@ export function FabricEditor({
     const fontsBody = new Set(slideStates.map(s => {
       try {
         if (!s.fabricJSON) return null
-        const json = JSON.parse(s.fabricJSON) as any
-        const objects = (json.objects || json.canvas?.objects || []) as any[]
-        const body = objects.find((o: any) => o.data?.role === 'body')
+        const json = JSON.parse(s.fabricJSON) as ParsedFabricJson
+        const objects = getParsedFabricObjects(json)
+        const body = objects.find((object) => object.data?.role === 'body')
         return body?.fontFamily
       } catch { return null }
     }).filter(Boolean))
@@ -2589,9 +3073,9 @@ export function FabricEditor({
     const accents = new Set(slideStates.map(s => {
       try {
         if (!s.fabricJSON) return null
-        const json = JSON.parse(s.fabricJSON) as any
-        const objects = (json.objects || json.canvas?.objects || []) as any[]
-        const decorator = objects.find((o: any) => o.data?.role === 'decorator')
+        const json = JSON.parse(s.fabricJSON) as ParsedFabricJson
+        const objects = getParsedFabricObjects(json)
+        const decorator = objects.find((object) => object.data?.role === 'decorator')
         return decorator?.fill || decorator?.stroke
       } catch { return null }
     }).filter(Boolean))
@@ -2649,7 +3133,7 @@ export function FabricEditor({
         const offCanvas = new StaticCanvas(undefined, { width: 1080, height: 1080 })
         await offCanvas.loadFromJSON(slide.fabricJSON)
         offCanvas.getObjects().forEach(obj => {
-          if ((obj as any).data?.role === 'headline' || (obj as any).data?.role === 'stat' || (obj as any).data?.role === 'counter') {
+          if (['headline', 'stat', 'counter'].includes(getEditorData(obj)?.role ?? '')) {
             obj.set('fontFamily', font)
           }
         })
@@ -2672,10 +3156,11 @@ export function FabricEditor({
         const offCanvas = new StaticCanvas(undefined, { width: 1080, height: 1080 })
         await offCanvas.loadFromJSON(slide.fabricJSON)
         offCanvas.getObjects().forEach(obj => {
-          const role = (obj as any).data?.role
+          const role = getEditorData(obj)?.role
           if (role === 'decorator' || role === 'counter' || role === 'eyebrow' || role === 'icon') {
             obj.set('fill', color)
-            if ((obj as any).stroke && (obj as any).strokeWidth > 0) obj.set('stroke', color)
+            const objectWithData = obj as FabricObjectWithData
+            if (objectWithData.stroke && (objectWithData.strokeWidth ?? 0) > 0) obj.set('stroke', color)
           }
         })
         const res = { ...slide, fabricJSON: JSON.stringify(offCanvas.toJSON()) }
@@ -2688,19 +3173,6 @@ export function FabricEditor({
     }
   }, [editorState])
 
-  const handleAutoScale = useCallback(async (ratioOverride?: TypeScaleRatioKey) => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-
-    const slide = editorState.slides[editorState.activeSlideIndex]
-    if (!slide) return
-
-    const ratio = ratioOverride || getRecommendedRatio(slide.type)
-    applyTypeScaleToCanvas(canvas, ratio, 40)
-    
-    commitCanvasMutation()
-  }, [editorState.slides, editorState.activeSlideIndex, commitCanvasMutation])
-
   const handleGlobalScaleChange = useCallback(async (isIncrease: boolean) => {
     if (!editorState) return
     const factor = isIncrease ? 1.1 : 0.9
@@ -2711,8 +3183,8 @@ export function FabricEditor({
         const offCanvas = new StaticCanvas(undefined, { width: 1080, height: 1080 })
         await offCanvas.loadFromJSON(slide.fabricJSON)
         offCanvas.getObjects().forEach(obj => {
-          if ((obj as any).type === 'textbox') {
-            const currentSize = (obj as any).fontSize || 48
+          if (isTextbox(obj)) {
+            const currentSize = obj.fontSize || 48
             obj.set('fontSize', Math.round(currentSize * factor))
           }
         })
@@ -2897,6 +3369,8 @@ export function FabricEditor({
     commitCanvasMutation()
   }, [commitCanvasMutation])
 
+  handleAddTextRef.current = handleAddText
+
   const handleCanvasDrop = useCallback(
     async (event: ReactDragEvent<HTMLElement>) => {
       event.preventDefault()
@@ -2911,21 +3385,20 @@ export function FabricEditor({
       const target = canvas.findTarget(event.nativeEvent)
       
       if (noctraData) {
-        const data = JSON.parse(noctraData)
+        const data = JSON.parse(noctraData) as NoctraEditorDropData
         
         // Replacement: Drop on existing object
         if (target && !isMultiple) {
-          if (data.type === 'image' && target.type === 'image') {
-            const imgTarget = target as any
-            await imgTarget.setSrc(data.url)
+          if (data.type === 'image' && isImage(target)) {
+            await target.setSrc(data.url)
             canvas.renderAll()
             commitCanvasMutation()
             return
           }
-          if (data.type === 'icon' && (target as any).data?.role === 'icon') {
-            const iconTarget = target as any
+          if (data.type === 'icon' && isImage(target) && getEditorData(target)?.role === 'icon') {
+            const iconTarget = target as FabricImage & FabricObjectWithData
             await iconTarget.setSrc(data.url)
-            iconTarget.set('data', { ...iconTarget.data, name: data.name })
+            iconTarget.set('data', { ...(iconTarget.data ?? {}), name: data.name })
             canvas.renderAll()
             commitCanvasMutation()
             return
@@ -2955,7 +3428,7 @@ export function FabricEditor({
           applyDefaultObjectControls(icon)
           canvas.add(icon)
           canvas.setActiveObject(icon)
-        } else if (data.type === 'shape') {
+        } else if (data.type === 'shape' && data.category && data.shapeType) {
           addShapeToCanvas(canvas, data.category, data.shapeType, { 
             left: pointer.x, 
             top: pointer.y 
@@ -3076,6 +3549,7 @@ export function FabricEditor({
             setSavedGradients={setSavedGradients}
             commitCanvasMutation={commitCanvasMutation}
             canvas={canvasRef.current}
+            layerVersion={layerVersion}
           />
         )
     }
@@ -3121,6 +3595,7 @@ export function FabricEditor({
               { icon: RectangleHorizontal, key: 'rect', label: 'R' },
               { icon: CircleIcon, key: 'circle', label: 'C' },
               { icon: Minus, key: 'line', label: 'L' },
+              { icon: PenLine, key: 'pen', label: 'P' },
             ].map((tool) => (
               <button
                 key={tool.key}
@@ -3138,6 +3613,40 @@ export function FabricEditor({
 
           {/* ZONA 2 — Acciones contextuales y tipografía (centro izquierda) */}
           <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+            {activeTool === 'pen' && (
+              <div className="ml-2 flex items-center gap-2 rounded-xl border border-white/8 bg-[#14171C] px-3 py-1.5">
+                <span className="text-[10px] uppercase text-[#4E576A]">Grosor</span>
+                <input
+                  type="range"
+                  min={1}
+                  max={20}
+                  value={penWidth}
+                  onChange={(event) => setPenWidth(Number(event.target.value))}
+                  className="w-16 accent-[#462D6E]"
+                />
+                <span className="text-[10px] font-mono text-[#E0E5EB]">{penWidth}px</span>
+                <button
+                  type="button"
+                  className="h-5 w-5 cursor-pointer rounded-full border border-white/20"
+                  style={{ backgroundColor: penColor }}
+                  onClick={() => {
+                    penColorInputRef.current?.click()
+                    document.dispatchEvent(new CustomEvent('noctra:pen-color'))
+                  }}
+                  aria-label="Cambiar color del pen"
+                />
+                <input
+                  ref={penColorInputRef}
+                  type="color"
+                  value={penColor}
+                  onChange={(event) => setPenColor(event.target.value.toUpperCase())}
+                  className="sr-only"
+                  tabIndex={-1}
+                  aria-hidden="true"
+                />
+              </div>
+            )}
+
             {isTextbox(activeObject) && (
               <div className="flex items-center gap-1 rounded-xl border border-white/8 bg-[#14171C] px-2 py-1 flex-shrink-0">
                 <button
@@ -3182,7 +3691,7 @@ export function FabricEditor({
                 <button
                   type="button"
                   onClick={() => {
-                    const data = (activeObject as any).data || {}
+                    const data = getEditorData(activeObject) || {}
                     if (!data.originalText) data.originalText = activeObject.text
                     const isUpper = data.textTransform === 'upper'
                     const nextText = isUpper ? data.originalText : data.originalText.toUpperCase()
@@ -3192,7 +3701,7 @@ export function FabricEditor({
                   }}
                   className={cn(
                     "flex h-7 w-7 items-center justify-center rounded-lg transition-colors",
-                    (activeObject as any).data?.textTransform === 'upper' ? "bg-[#E0E5EB] text-[#101417]" : "text-[#4E576A] hover:bg-white/5 hover:text-[#8D95A6]"
+                    getEditorData(activeObject)?.textTransform === 'upper' ? "bg-[#E0E5EB] text-[#101417]" : "text-[#4E576A] hover:bg-white/5 hover:text-[#8D95A6]"
                   )}
                   title="Mayúsculas"
                 >
@@ -3260,7 +3769,7 @@ export function FabricEditor({
               onClick={async () => {
                 const canvas = canvasRef.current
                 if (!canvas) return
-                const logo = await createLogoObject(getLogoVariantForBackground(activeBackground ?? { type: 'solid', solidColor: '#101417' }))
+                const logo = await createLogoObject()
                 canvas.add(logo)
                 canvas.setActiveObject(logo)
                 canvas.requestRenderAll()
@@ -3403,26 +3912,49 @@ export function FabricEditor({
         <div className="grid min-h-0 flex-1 gap-3 p-3" style={{ gridTemplateColumns: '220px minmax(0,1fr) 260px' }}>
           
           {/* SIDEBAR IZQUIERDO */}
-          <aside className={`${PANEL_CLASS} flex min-h-0 flex-col overflow-hidden`} style={{ maxHeight: 'calc(100vh - 64px)' }}>
-            <div className="flex-shrink-0 px-4 pt-4">
-              <div className="flex items-center gap-3 border-b border-white/8 pb-3 overflow-x-auto no-scrollbar">
-                {(['slides', 'tema', 'imagen', 'assets', 'filtros'] as LeftTab[]).map(tab => (
+          <aside
+            className={`${PANEL_CLASS} flex flex-col overflow-hidden`}
+            style={{ height: 'calc(100vh - 64px - 24px)' }}
+          >
+            <div className="flex-shrink-0 px-4 py-3">
+              <div className="flex items-center justify-between gap-2 border-b border-white/8 pb-3 flex-shrink-0">
+                {[
+                  { key: 'slides', label: 'Slides', shortLabel: 'SL' },
+                  { key: 'tema', label: 'Tema', shortLabel: 'TM' },
+                  { key: 'imagen', label: 'Imagen', shortLabel: 'IMG' },
+                  { key: 'filtros', label: 'Filtros', shortLabel: 'FX' },
+                ].map((tab) => (
                   <button
-                    key={tab}
-                    onClick={() => setLeftTab(tab)}
+                    key={tab.key}
+                    onClick={() => setLeftTab(tab.key as LeftTab)}
+                    title={tab.label}
                     className={cn(
-                      "text-[10px] font-bold uppercase tracking-[0.15em] transition-colors whitespace-nowrap",
-                      leftTab === tab ? "text-[#E0E5EB]" : "text-[#4E576A] hover:text-[#8D95A6]"
-                    )}>
-                    {tab}
+                      "flex-1 rounded-lg py-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors",
+                      leftTab === tab.key
+                        ? "bg-white/10 text-[#E0E5EB]"
+                        : "text-[#4E576A] hover:text-[#8D95A6]"
+                    )}
+                  >
+                    {tab.shortLabel}
                   </button>
                 ))}
+                <button
+                  type="button"
+                  onClick={() => setIsVersionPanelOpen(true)}
+                  title="Historial de versiones"
+                  className={cn(
+                    "flex h-7 w-7 items-center justify-center rounded-lg transition-colors",
+                    isVersionPanelOpen ? "bg-white/10 text-[#E0E5EB]" : "text-[#4E576A] hover:text-[#8D95A6]"
+                  )}
+                >
+                  <HistoryIcon className="h-3.5 w-3.5" />
+                </button>
               </div>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-2 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/10">
+            <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/10">
               {leftTab === 'slides' ? (
-                <div className="space-y-4 py-2">
+                <div className="space-y-4">
                   <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(event) => void handleDragEnd(event)}>
                     <SortableContext items={editorState.slides.map((slide) => slide.id)} strategy={verticalListSortingStrategy}>
                       <div className="space-y-4">
@@ -3469,18 +4001,12 @@ export function FabricEditor({
                   onFilterChange={handleFilterChange}
                   canvasPreviewDataURL={canvasPreviewDataURL}
                 />
-              ) : (
-                <AssetPanel
-                  canvas={canvasRef.current}
-                  activeTheme={activeTheme}
-                  onCommit={commitCanvasMutation}
-                />
-              )}
+              ) : null}
             </div>
 
             {leftTab === 'slides' && (
-              <div className="flex-shrink-0 border-t border-white/8 px-4 pb-4 pt-3 bg-[#10151A]/50 backdrop-blur-sm">
-                <div className="mb-3">
+              <div className="flex-shrink-0 space-y-3 border-t border-white/8 px-3 py-3">
+                <div>
                   <div className="mb-1.5 flex items-center justify-between text-[9px] uppercase font-bold tracking-wider text-[#4E576A]">
                     <span>Coherencia</span>
                     <span className={coherenceScore >= 80 ? "text-green-500" : "text-yellow-500"}>{coherenceScore}%</span>
@@ -3504,13 +4030,34 @@ export function FabricEditor({
           {/* MAIN WORKSPACE — ILLUSTRATOR STYLE */}
           <main
             ref={workAreaRef}
-            className={`${PANEL_CLASS} relative min-h-0 overflow-hidden cursor-default select-none ${spaceHeld ? 'cursor-grab' : ''} ${isPanning ? '!cursor-grabbing' : ''}`}
+            className={`${PANEL_CLASS} relative min-h-0 overflow-hidden select-none bg-[#060809] cursor-default ${spaceHeld ? 'cursor-grab' : ''} ${isPanning ? '!cursor-grabbing' : ''}`}
             style={{ touchAction: 'none' }}
             onPointerDown={(e) => {
-              const isSpacePan = spaceHeld && e.button === 0
+              const fabricEl = canvasElementRef.current
+              if (
+                fabricEl &&
+                e.target instanceof Node &&
+                (e.target === fabricEl || fabricEl.contains(e.target))
+              ) {
+                if (spaceHeld && e.button === 0) {
+                  e.preventDefault()
+                  isPanningRef.current = true
+                  setIsPanning(true)
+                  panStartRef.current = {
+                    x: e.clientX,
+                    y: e.clientY,
+                    ox: canvasOffset.x,
+                    oy: canvasOffset.y,
+                  }
+                }
+                return
+              }
+
               const isMiddlePan = e.button === 1
-              if (!isSpacePan && !isMiddlePan) return
+              if (!isMiddlePan) return
+
               e.preventDefault()
+              isPanningRef.current = true
               setIsPanning(true)
               panStartRef.current = { x: e.clientX, y: e.clientY, ox: canvasOffset.x, oy: canvasOffset.y }
               if (workAreaRef.current) workAreaRef.current.setPointerCapture(e.pointerId)
@@ -3522,9 +4069,24 @@ export function FabricEditor({
               setCanvasOffset({ x: panStartRef.current.ox + dx, y: panStartRef.current.oy + dy })
             }}
             onPointerUp={(e) => {
-              setIsPanning(false)
-              panStartRef.current = null
-              if (workAreaRef.current) workAreaRef.current.releasePointerCapture(e.pointerId)
+              if (isPanning) {
+                isPanningRef.current = false
+                setIsPanning(false)
+                panStartRef.current = null
+
+                try {
+                  workAreaRef.current?.releasePointerCapture(e.pointerId)
+                } catch {
+                  // Ignore when pointer capture was never set on the work area.
+                }
+              }
+            }}
+            onPointerLeave={() => {
+              if (isPanning) {
+                isPanningRef.current = false
+                setIsPanning(false)
+                panStartRef.current = null
+              }
             }}
             onWheel={(e) => {
               if (!e.ctrlKey && !e.metaKey) return
@@ -3550,6 +4112,15 @@ export function FabricEditor({
               canRedo={canRedo}
             />
 
+            {selectedObject instanceof Textbox && (
+              <TextToolbar
+                canvas={canvasRef.current}
+                object={selectedObject as Textbox}
+                onCommit={commitCanvasMutation}
+                position={textToolbarPos}
+              />
+            )}
+
             {/* Contextual Bar (Floating when active) */}
             {selectedObject && (
               <div className="absolute top-8 left-1/2 z-50 -translate-x-1/2">
@@ -3569,20 +4140,49 @@ export function FabricEditor({
 
             {/* Background Texture */}
             <div
-              className="absolute inset-0 opacity-[0.03]"
+              className="absolute inset-0 opacity-[0.06]"
               style={{
-                backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.75) 1px, transparent 1px)',
+                backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.9) 1px, transparent 1px)',
                 backgroundSize: '24px 24px',
               }}
             />
+
+            {rulerEnabled && (
+              <div className="pointer-events-none absolute inset-0 z-30">
+                <div
+                  className="pointer-events-none absolute border-r border-b border-white/8 bg-[#0D1014]"
+                  style={{
+                    left: canvasLeft - 20,
+                    top: canvasTop - 20,
+                    width: 20,
+                    height: 20,
+                    zIndex: 31,
+                  }}
+                />
+                <CanvasRuler
+                  canvasSize={CANVAS_SIZE}
+                  orientation="horizontal"
+                  scale={canvasScale}
+                  canvasLeft={canvasLeft}
+                  canvasTop={canvasTop}
+                />
+                <CanvasRuler
+                  canvasSize={CANVAS_SIZE}
+                  orientation="vertical"
+                  scale={canvasScale}
+                  canvasLeft={canvasLeft}
+                  canvasTop={canvasTop}
+                />
+              </div>
+            )}
 
             {/* THE CANVAS CONTAINER */}
             <div
               className="absolute rounded-[2px] bg-[#101417]"
               style={{
-                boxShadow: '0 0 0 1px rgba(255,255,255,0.06), 0 8px 40px rgba(0,0,0,0.6)',
-                height: CANVAS_SIZE * canvasScale,
-                width: CANVAS_SIZE * canvasScale,
+                boxShadow: '0 0 0 1px rgba(255,255,255,0.12), 0 20px 60px rgba(0,0,0,0.8), 0 0 0 4px rgba(0,0,0,0.4)',
+                height: canvasDisplaySize,
+                width: canvasDisplaySize,
                 left: '50%',
                 top: '50%',
                 transform: `translate(calc(-50% + ${canvasOffset.x}px), calc(-50% + ${canvasOffset.y}px))`,
@@ -3592,8 +4192,17 @@ export function FabricEditor({
               }}
             >
               {/* ISOLATION WRAPPER: React manages this DIV, Fabric manages its contents */}
-              <div key="canvas-isolation-wrapper" className="absolute inset-0 z-10">
-                <canvas ref={canvasElementRef} style={{ width: CANVAS_SIZE * canvasScale, height: CANVAS_SIZE * canvasScale }} />
+              <div
+                key="canvas-isolation-wrapper"
+                className="absolute left-0 top-0 z-10"
+                style={{
+                  height: CANVAS_SIZE,
+                  transform: `scale(${canvasScale})`,
+                  transformOrigin: 'top left',
+                  width: CANVAS_SIZE,
+                }}
+              >
+                <canvas ref={canvasElementRef} style={{ height: CANVAS_SIZE, width: CANVAS_SIZE }} />
               </div>
               
               {gridEnabled && (
@@ -3604,12 +4213,6 @@ export function FabricEditor({
                     backgroundSize: `${gridSize * canvasScale}px ${gridSize * canvasScale}px`,
                   }}
                 />
-              )}
-              {rulerEnabled && (
-                <div className="absolute inset-0 pointer-events-none z-30">
-                  <CanvasRuler scale={canvasScale} canvasSize={CANVAS_SIZE} orientation="horizontal" />
-                  <CanvasRuler scale={canvasScale} canvasSize={CANVAS_SIZE} orientation="vertical" />
-                </div>
               )}
             </div>
 
@@ -3629,10 +4232,49 @@ export function FabricEditor({
           </main>
 
           {/* SIDEBAR DERECHO (PROPERTIES) */}
-          <aside className={`${PANEL_CLASS} min-h-0 flex flex-col overflow-hidden`} style={{ maxHeight: 'calc(100vh - 64px)' }}>
-            <div className="min-h-0 flex-1 overflow-y-auto p-4 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/10">
-              {propertiesPanel}
-            </div>
+          <aside
+            className={`${PANEL_CLASS} flex flex-col overflow-hidden`}
+            style={{ height: 'calc(100vh - 64px - 24px)' }}
+          >
+            {activeRightPanel === 'properties' ? (
+              <>
+                <div className="flex flex-shrink-0 items-center gap-1 border-b border-white/8 px-3 pt-3 pb-0">
+                  {([
+                    { key: 'properties', label: 'Propiedades' },
+                    { key: 'assets', label: 'Assets' },
+                  ] as const).map((tab) => (
+                    <button
+                      key={tab.key}
+                      onClick={() => setRightTab(tab.key)}
+                      className={cn(
+                        "flex-1 border-b-2 pb-2.5 text-[11px] font-medium uppercase tracking-wider transition-colors",
+                        rightTab === tab.key
+                          ? "border-[#E0E5EB] text-[#E0E5EB]"
+                          : "border-transparent text-[#4E576A] hover:text-[#8D95A6]"
+                      )}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto overflow-x-visible px-3 py-3 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/10">
+                  {rightTab === 'properties' ? (
+                    propertiesPanel
+                  ) : (
+                    <AssetPanel
+                      canvas={canvasRef.current}
+                      activeTheme={activeTheme}
+                      onCommit={commitCanvasMutation}
+                    />
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="min-h-0 flex-1 overflow-y-auto overflow-x-visible px-3 py-3 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/10">
+                {propertiesPanel}
+              </div>
+            )}
           </aside>
         </div>
       </div>

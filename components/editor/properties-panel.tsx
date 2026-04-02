@@ -38,10 +38,14 @@ import {
 import { ColorPicker } from "@/components/editor/color-picker";
 import {
   ensureEditorFontLoaded,
+  ensureGoogleFontLoaded,
+  fetchGoogleFonts,
   findEditorFontByFamily,
   findEditorFontById,
+  googleFontToEditorOption,
   EDITOR_FONT_OPTIONS,
   type EditorFontOption,
+  type GoogleFontEntry,
 } from "@/lib/editor-fonts";
 import {
   saveGradient,
@@ -184,6 +188,87 @@ function PropertyButton({
   );
 }
 
+function parseRgbaColor(value: string | undefined) {
+  if (!value?.trim().startsWith("rgba")) {
+    return null;
+  }
+
+  const match = value.match(
+    /rgba\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*((?:0|1)(?:\.\d+)?)\s*\)/i
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  const [, r, g, b, a] = match;
+  const toHex = (channel: string) =>
+    Math.max(0, Math.min(255, Number(channel)))
+      .toString(16)
+      .padStart(2, "0")
+      .toUpperCase();
+
+  return {
+    alpha: Math.round(Math.max(0, Math.min(1, Number(a))) * 100),
+    hex: `#${toHex(r)}${toHex(g)}${toHex(b)}`,
+  };
+}
+
+function ColorPickerWithAlpha({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+}) {
+  const parsedRgba = useMemo(() => parseRgbaColor(value), [value]);
+  const hexOnly = parsedRgba?.hex ?? value?.slice(0, 7) ?? "#101417";
+  const alpha = parsedRgba?.alpha ?? 100;
+
+  const emitColor = useCallback(
+    (hex: string, nextAlpha: number) => {
+      if (nextAlpha >= 100) {
+        onChange(hex);
+        return;
+      }
+
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      onChange(`rgba(${r},${g},${b},${nextAlpha / 100})`);
+    },
+    [onChange]
+  );
+
+  return (
+    <div className="space-y-2">
+      <ColorPicker
+        label=""
+        showLabel={false}
+        value={hexOnly}
+        onChange={(hex) => emitColor(hex, alpha)}
+      />
+      <div className="space-y-1">
+        <div className="flex justify-between text-[10px] text-[#4E576A]">
+          <span>Opacidad</span>
+          <span className="font-mono">{alpha}%</span>
+        </div>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          value={alpha}
+          onChange={(e) => {
+            const nextAlpha = Number(e.target.value);
+            emitColor(hexOnly, nextAlpha);
+          }}
+          className="w-full accent-[#462D6E]"
+        />
+      </div>
+    </div>
+  );
+}
+
 function AngleWheel({
   onChange,
   value,
@@ -246,35 +331,159 @@ function FontFamilyPicker({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [googleFonts, setGoogleFonts] = useState<GoogleFontEntry[]>([]);
+  const [loadingGoogleFonts, setLoadingGoogleFonts] = useState(false);
+  const [loadingFontFamily, setLoadingFontFamily] = useState<string | null>(null);
   const activeOption = findEditorFontByFamily(value);
 
   useEffect(() => {
+    if (!isOpen || googleFonts.length > 0) return;
+
+    let cancelled = false;
+
+    setLoadingGoogleFonts(true);
+    fetchGoogleFonts({ limit: 200 })
+      .then((fonts) => {
+        if (cancelled) return;
+        setGoogleFonts(fonts);
+      })
+      .catch((error) => {
+        console.error(error);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingGoogleFonts(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [googleFonts.length, isOpen]);
+
+  useEffect(() => {
+    if (query.length < 2) return;
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setLoadingGoogleFonts(true);
+      fetchGoogleFonts({ query, limit: 50 })
+        .then((fonts) => {
+          if (cancelled) return;
+          setGoogleFonts((prev) => [
+            ...prev.filter((font) => !fonts.find((newFont) => newFont.family === font.family)),
+            ...fonts,
+          ]);
+        })
+        .catch((error) => {
+          console.error(error);
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setLoadingGoogleFonts(false);
+          }
+        });
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [query]);
+
+  useEffect(() => {
     if (!isOpen) return;
-    const handlePointerDown = (event: PointerEvent) => {
+
+    const handler = (event: PointerEvent) => {
       if (containerRef.current?.contains(event.target as Node)) return;
       setIsOpen(false);
     };
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
+
+    document.addEventListener("pointerdown", handler);
+    return () => document.removeEventListener("pointerdown", handler);
   }, [isOpen]);
 
-  const visibleOptions = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-    return EDITOR_FONT_OPTIONS.filter((option) =>
-      normalizedQuery ? option.label.toLowerCase().includes(normalizedQuery) : true
+  const allGoogleOptions = useMemo(() => {
+    return googleFonts
+      .filter((googleFont) => !EDITOR_FONT_OPTIONS.find((font) => font.label === googleFont.family))
+      .map(googleFontToEditorOption);
+  }, [googleFonts]);
+
+  const filterFn = useCallback(
+    (option: EditorFontOption) => {
+      const matchesQuery = !query || option.label.toLowerCase().includes(query.toLowerCase());
+      const matchesCategory =
+        selectedCategory === "all" ||
+        (selectedCategory === "sans-serif" &&
+          (option.category === "Display / Headings" || option.category === "Body / Supporting")) ||
+        (selectedCategory === "serif" && option.category === "Accent / Editorial") ||
+        (selectedCategory === "mono" && option.category === "Monospace");
+
+      return matchesQuery && matchesCategory;
+    },
+    [query, selectedCategory]
+  );
+
+  const filteredLocal = useMemo(() => EDITOR_FONT_OPTIONS.filter(filterFn), [filterFn]);
+  const filteredGoogle = useMemo(() => allGoogleOptions.filter(filterFn), [allGoogleOptions, filterFn]);
+
+  const recentOptions = useMemo(
+    () =>
+      recentFontIds
+        .map((id) => findEditorFontById(id) ?? allGoogleOptions.find((option) => option.id === id) ?? null)
+        .filter((option): option is EditorFontOption => option !== null),
+    [allGoogleOptions, recentFontIds]
+  );
+
+  const handleSelectFont = useCallback(
+    async (option: EditorFontOption) => {
+      setLoadingFontFamily(option.family);
+
+      try {
+        if (option.loader === "google") {
+          const cleanFamily = option.family.replace(/"/g, "").split(",")[0].trim();
+          const googleFont = googleFonts.find((font) => font.family === option.label);
+
+          if (googleFont) {
+            await ensureGoogleFontLoaded(cleanFamily, googleFont.variants);
+          } else {
+            await ensureEditorFontLoaded(option);
+          }
+        } else {
+          await ensureEditorFontLoaded(option);
+        }
+
+        onChange(option.family, option.id);
+        setIsOpen(false);
+        setQuery("");
+      } catch (error) {
+        console.error("Failed to load font:", error);
+        onChange(option.family, option.id);
+        setIsOpen(false);
+      } finally {
+        setLoadingFontFamily(null);
+      }
+    },
+    [googleFonts, onChange]
+  );
+
+  const FontItem = ({ option }: { option: EditorFontOption }) => {
+    const isLoading = loadingFontFamily === option.family;
+
+    return (
+      <button
+        type="button"
+        onClick={() => void handleSelectFont(option)}
+        disabled={!!loadingFontFamily}
+        className="flex w-full items-center justify-between rounded-xl border border-white/6 px-3 py-2 text-left text-sm text-[#E0E5EB] transition-colors hover:border-[#4E576A] hover:bg-white/[0.03] disabled:opacity-60"
+        style={{ fontFamily: option.previewFamily }}
+      >
+        <span>{option.label}</span>
+        {isLoading && <Loader2 className="h-3 w-3 animate-spin text-[#4E576A]" />}
+      </button>
     );
-  }, [query]);
-
-  const recentOptions = recentFontIds
-    .map((fontId) => findEditorFontById(fontId))
-    .filter((option): option is EditorFontOption => option !== null)
-    .filter((option) => visibleOptions.some((visible) => visible.id === option.id));
-
-  const groupedOptions = visibleOptions.reduce<Record<string, EditorFontOption[]>>((result, option) => {
-    const existing = result[option.category] ?? [];
-    result[option.category] = [...existing, option];
-    return result;
-  }, {});
+  };
 
   return (
     <div ref={containerRef} className="relative space-y-1 text-xs text-[#8D95A6]">
@@ -284,64 +493,92 @@ function FontFamilyPicker({
         onClick={() => setIsOpen((current) => !current)}
         className="flex w-full items-center justify-between rounded-xl border border-white/8 bg-[#14171C] px-3 py-2 text-sm text-[#E0E5EB]"
       >
-        <span style={{ fontFamily: activeOption?.previewFamily ?? value }}>{activeOption?.label ?? value}</span>
+        <span style={{ fontFamily: activeOption?.previewFamily ?? value }}>
+          {activeOption?.label ?? value.split(",")[0].replace(/"/g, "").trim()}
+        </span>
         <ChevronDown className={cn("h-4 w-4 transition-transform", isOpen && "rotate-180")} />
       </button>
 
       {isOpen && (
-        <div className="absolute left-0 top-[calc(100%+8px)] z-30 w-full rounded-2xl border border-white/10 bg-[#0F1317] p-3 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
-          <div className="flex items-center gap-2 rounded-xl border border-white/8 bg-[#14171C] px-3 py-2">
-            <Search className="h-4 w-4 text-[#4E576A]" />
+        <div className="absolute left-0 top-[calc(100%+8px)] z-[200] w-full rounded-2xl border border-white/10 bg-[#0F1317] p-3 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
+          <div className="mb-3 flex items-center gap-2 rounded-xl border border-white/8 bg-[#14171C] px-3 py-2">
+            <Search className="h-4 w-4 flex-shrink-0 text-[#4E576A]" />
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Buscar tipografía..."
+              placeholder="Buscar fuentes..."
               className="w-full bg-transparent text-sm text-[#E0E5EB] placeholder:text-[#4E576A] focus:outline-none"
+              autoFocus
             />
+            {loadingGoogleFonts && <Loader2 className="h-3 w-3 animate-spin flex-shrink-0 text-[#4E576A]" />}
           </div>
-          <div className="mt-3 max-h-72 space-y-3 overflow-y-auto pr-1">
-            {recentOptions.length > 0 && (
+
+          <div className="mb-3 flex gap-1 overflow-x-auto pb-1 scrollbar-none">
+            {[
+              { key: "all", label: "Todas" },
+              { key: "sans-serif", label: "Sans" },
+              { key: "serif", label: "Serif" },
+              { key: "mono", label: "Mono" },
+            ].map((category) => (
+              <button
+                key={category.key}
+                type="button"
+                onClick={() => setSelectedCategory(category.key)}
+                className={cn(
+                  "flex-shrink-0 rounded-lg px-2.5 py-1 text-[10px] font-medium transition-all",
+                  selectedCategory === category.key
+                    ? "bg-white/10 text-[#E0E5EB]"
+                    : "text-[#4E576A] hover:text-[#8D95A6]"
+                )}
+              >
+                {category.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
+            {recentOptions.length > 0 && !query && (
               <div className="space-y-1">
                 <p className="text-[11px] uppercase tracking-[0.18em] text-[#4E576A]">Recientes</p>
-                <div className="space-y-1">
-                  {recentOptions.map((option) => (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => {
-                        void ensureEditorFontLoaded(option).then(() => onChange(option.family, option.id));
-                        setIsOpen(false);
-                      }}
-                      className="w-full rounded-xl border border-white/6 px-3 py-2 text-left text-sm text-[#E0E5EB] transition-colors hover:border-[#4E576A] hover:bg-white/[0.03]"
-                      style={{ fontFamily: option.previewFamily }}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
+                {recentOptions.slice(0, 5).map((option) => (
+                  <FontItem key={option.id} option={option} />
+                ))}
               </div>
             )}
-            {Object.entries(groupedOptions).map(([category, options]) => (
-              <div key={category} className="space-y-1">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-[#4E576A]">{category}</p>
-                <div className="space-y-1">
-                  {options.map((option) => (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => {
-                        void ensureEditorFontLoaded(option).then(() => onChange(option.family, option.id));
-                        setIsOpen(false);
-                      }}
-                      className="w-full rounded-xl border border-white/6 px-3 py-2 text-left text-sm text-[#E0E5EB] transition-colors hover:border-[#4E576A] hover:bg-white/[0.03]"
-                      style={{ fontFamily: option.previewFamily }}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
+
+            {filteredLocal.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-[#4E576A]">Noctra Curadas</p>
+                {filteredLocal.map((option) => (
+                  <FontItem key={option.id} option={option} />
+                ))}
               </div>
-            ))}
+            )}
+
+            {filteredGoogle.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-[#4E576A]">
+                  Google Fonts
+                  <span className="ml-1 text-[#2A3040]">({filteredGoogle.length})</span>
+                </p>
+                {filteredGoogle.map((option) => (
+                  <FontItem key={option.id} option={option} />
+                ))}
+              </div>
+            )}
+
+            {filteredLocal.length === 0 && filteredGoogle.length === 0 && !loadingGoogleFonts && query.length > 0 && (
+              <p className="py-4 text-center text-[11px] text-[#4E576A]">
+                Sin resultados para &quot;{query}&quot;
+              </p>
+            )}
+
+            {loadingGoogleFonts && googleFonts.length === 0 && (
+              <div className="flex items-center justify-center gap-2 py-4">
+                <Loader2 className="h-4 w-4 animate-spin text-[#4E576A]" />
+                <span className="text-[11px] text-[#4E576A]">Cargando fuentes...</span>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -402,6 +639,7 @@ interface PropertiesPanelProps {
   setSavedGradients: (gradients: CarouselGradientConfig[]) => void;
   commitCanvasMutation: () => void;
   canvas?: Canvas | null;
+  layerVersion: number;
 }
 
 export function PropertiesPanel({
@@ -422,7 +660,8 @@ export function PropertiesPanel({
   savedGradients,
   setSavedGradients,
   commitCanvasMutation,
-  canvas
+  canvas,
+  layerVersion,
 }: PropertiesPanelProps) {
   
   const isTextbox = (obj: any): obj is Textbox => obj instanceof Textbox || obj?.type === 'textbox' || obj?.type === 'itext';
@@ -613,14 +852,16 @@ export function PropertiesPanel({
 
   const layerItems = useMemo(() => {
     if (!canvas) return [];
-    // Get objects, filter out backgrounds, and reverse for top-to-bottom UI
+
     return canvas.getObjects()
       .filter(obj => {
-        const id = obj.get('id');
-        return id && typeof id === 'string' && !id.startsWith('background-');
+        const data = (obj as any).data || {};
+        return data.role !== 'bg-dimming' && data.role !== 'background';
       })
-      .map(obj => {
-        const id = obj.get('id') as string;
+      .map((obj, index) => {
+        const rawId = obj.get('id');
+        const id =
+          typeof rawId === 'string' && rawId.length > 0 ? rawId : `layer-${index}-${obj.type ?? 'object'}`;
         let label = "Elemento";
         let Icon = Square;
 
@@ -638,7 +879,7 @@ export function PropertiesPanel({
         return { id, label, icon: Icon, object: obj };
       })
       .reverse(); 
-  }, [canvas, activeObject]);
+  }, [canvas, activeObject, layerVersion]);
 
   const handleLayerDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -860,9 +1101,75 @@ export function PropertiesPanel({
             {activeBackground?.type === "solid" && <ColorPicker label="Color sólido" value={activeBackground.solidColor ?? "#101417"} onChange={(hex) => applyBackgroundUpdate(bg => ({ ...bg, solidColor: hex }))} />}
             {activeBackground?.type === "gradient" && (
               <div className="space-y-3">
-                <div className="flex gap-2">{(["linear", "radial"] as const).map(t => (<PropertyButton key={t} active={gradientDraft.type === t} onClick={() => setGradientDraft(c => normalizeGradientConfig({ ...c, type: t }))} className="flex-1">{t}</PropertyButton>))}</div>
-                <div className="grid grid-cols-2 gap-2"><ColorPicker label="C1" value={gradientDraft.stops[0]} onChange={(h) => setGradientDraft(c => ({ ...c, stops: [h, c.stops[1]] }))} /><ColorPicker label="C2" value={gradientDraft.stops[1]} onChange={(h) => setGradientDraft(c => ({ ...c, stops: [c.stops[0], h] }))} /></div>
-                <div className="flex gap-2"><PropertyButton onClick={() => setSavedGradients(saveGradient(gradientDraft))} className="w-9"><Bookmark size={14} /></PropertyButton><button onClick={() => applyBackgroundUpdate(bg => ({ ...bg, gradientConfig: gradientDraft, type: 'gradient' }))} className="flex-1 rounded-xl bg-[#E0E5EB] py-2 text-sm font-medium text-[#101417]">Aplicar</button></div>
+                <div className="flex gap-2">
+                  {(["linear", "radial"] as const).map((t) => (
+                    <PropertyButton
+                      key={t}
+                      active={gradientDraft.type === t}
+                      onClick={() => setGradientDraft((c) => normalizeGradientConfig({ ...c, type: t }))}
+                      className="flex-1"
+                    >
+                      {t === "linear" ? "Lineal" : "Radial"}
+                    </PropertyButton>
+                  ))}
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-[10px] text-[#4E576A] uppercase tracking-wider">Color 1</span>
+                  <ColorPickerWithAlpha
+                    value={gradientDraft.stops[0]}
+                    onChange={(hex) => setGradientDraft((c) => ({ ...c, stops: [hex, c.stops[1]] }))}
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-[10px] text-[#4E576A] uppercase tracking-wider">Color 2</span>
+                  <ColorPickerWithAlpha
+                    value={gradientDraft.stops[1]}
+                    onChange={(hex) => setGradientDraft((c) => ({ ...c, stops: [c.stops[0], hex] }))}
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[10px] text-[#4E576A]">
+                    <span className="uppercase tracking-wider">Ángulo</span>
+                    <span className="font-mono">{gradientDraft.angle}°</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={360}
+                    step={5}
+                    value={gradientDraft.angle}
+                    onChange={(e) =>
+                      setGradientDraft((c) =>
+                        normalizeGradientConfig({ ...c, angle: Number(e.target.value) })
+                      )
+                    }
+                    className="w-full accent-[#462D6E]"
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  <PropertyButton
+                    onClick={() => setSavedGradients(saveGradient(gradientDraft))}
+                    className="w-9 px-0 flex items-center justify-center"
+                  >
+                    <Bookmark size={14} />
+                  </PropertyButton>
+                  <button
+                    onClick={() =>
+                      applyBackgroundUpdate((bg) => ({
+                        ...bg,
+                        gradientConfig: gradientDraft,
+                        type: "gradient",
+                      }))
+                    }
+                    className="flex-1 rounded-xl bg-[#E0E5EB] py-2 text-sm font-medium text-[#101417]"
+                  >
+                    Aplicar
+                  </button>
+                </div>
               </div>
             )}
             {activeBackground?.type === "image" && (
@@ -962,7 +1269,7 @@ export function PropertiesPanel({
                     id={item.id}
                     label={item.label}
                     icon={item.icon}
-                    isSelected={activeObject?.get('id') === item.id}
+                    isSelected={activeObject === item.object || activeObject?.get('id') === item.id}
                     onClick={() => {
                         canvas?.setActiveObject(item.object);
                         canvas?.renderAll();
