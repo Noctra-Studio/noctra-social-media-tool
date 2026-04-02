@@ -3538,12 +3538,18 @@ export function FabricEditor({
                 top: '50%',
                 transform: `translate(calc(-50% + ${canvasOffset.x}px), calc(-50% + ${canvasOffset.y}px))`,
                 transition: isPanning ? 'none' : 'transform 0.1s ease-out',
-                position: 'absolute'
+                position: 'absolute',
+                overflow: 'hidden'
               }}
             >
+              {/* ISOLATION WRAPPER: React manages this DIV, Fabric manages its contents */}
+              <div key="canvas-isolation-wrapper" className="absolute inset-0 z-10">
+                <canvas ref={canvasElementRef} style={{ width: CANVAS_SIZE * canvasScale, height: CANVAS_SIZE * canvasScale }} />
+              </div>
+              
               {gridEnabled && (
                 <div 
-                  className="absolute inset-0 pointer-events-none z-0"
+                  className="absolute inset-0 pointer-events-none z-20"
                   style={{
                     backgroundImage: `radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px)`,
                     backgroundSize: `${gridSize * canvasScale}px ${gridSize * canvasScale}px`,
@@ -3551,12 +3557,11 @@ export function FabricEditor({
                 />
               )}
               {rulerEnabled && (
-                <>
+                <div className="absolute inset-0 pointer-events-none z-30">
                   <CanvasRuler scale={canvasScale} canvasSize={CANVAS_SIZE} orientation="horizontal" />
                   <CanvasRuler scale={canvasScale} canvasSize={CANVAS_SIZE} orientation="vertical" />
-                </>
+                </div>
               )}
-              <canvas ref={canvasElementRef} style={{ width: CANVAS_SIZE * canvasScale, height: CANVAS_SIZE * canvasScale }} />
             </div>
 
             {/* WORKSPACE CONTROLS */}
