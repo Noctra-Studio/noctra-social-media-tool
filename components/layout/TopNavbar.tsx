@@ -94,7 +94,7 @@ export function TopNavbar({ userAvatarUrl, userEmail, userName }: TopNavbarProps
             className="group flex min-w-0 items-center gap-3 md:w-[220px]"
           >
             <Image
-              src="/favicon-light.svg"
+              src="/brand/favicon-light.svg"
               alt="Noctra"
               width={32}
               height={32}

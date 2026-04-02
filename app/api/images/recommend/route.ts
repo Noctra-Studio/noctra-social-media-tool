@@ -125,17 +125,24 @@ export async function POST(req: Request) {
               const responseText = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim()
               const parsed = JSON.parse(responseText)
 
+              // Normalize score (some models return 0-10 despite prompt)
+              const normalize = (val: any) => {
+                const n = parseFloat(val);
+                if (n > 1) return n / 10;
+                return n;
+              };
+
               const scored: ScoredImage = {
                 unsplashId: p.id,
                 url: p.urls.regular,
                 thumbUrl: p.urls.small,
                 photographer: p.user.name,
                 scores: {
-                  total: parsed.score,
-                  mood: parsed.mood_match,
-                  composition: parsed.composition_match,
-                  color: parsed.color_match,
-                  subject: parsed.subject_match
+                  total: normalize(parsed.score),
+                  mood: normalize(parsed.mood_match),
+                  composition: normalize(parsed.composition_match),
+                  color: normalize(parsed.color_match),
+                  subject: normalize(parsed.subject_match)
                 },
                 verdict: parsed.verdict,
                 best_for: parsed.best_for,

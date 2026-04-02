@@ -1,34 +1,30 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  X, 
-  Download, 
-  FileJson, 
-  ImageIcon, 
-  Layers, 
-  Maximize2, 
-  Check, 
-  Loader2, 
+import {
+  X,
+  Download,
+  ImageIcon,
+  Check,
+  Loader2,
   AlertTriangle,
   Monitor,
-  Share2,
   Camera,
   Briefcase,
-  Zap
+  Zap,
+  ChevronDown,
+  Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { 
-  type ExportFormat, 
-  type ExportResolution, 
-  exportSlides 
+import {
+  type ExportFormat,
+  type ExportResolution,
+  exportSlides,
+  exportSlideWithOG,
 } from '@/lib/editor/export';
-import { 
-  PLATFORM_PRESETS, 
-  type PlatformPreset, 
-  type PlatformDimensions 
-} from '@/lib/editor/resize-canvas';
+import { resizeCanvasForPlatform, PLATFORM_PRESETS, type PlatformPreset } from '@/lib/editor/resize-canvas';
+import { extractSlideData, canUseOGRender } from '@/lib/editor/extract-slide-data';
 import { CarouselEditorSlide } from '@/lib/instagram-carousel-editor';
 import Image from 'next/image';
 
@@ -37,6 +33,7 @@ interface ExportModalProps {
   onClose: () => void;
   slides: CarouselEditorSlide[];
   postId?: string;
+  activeFilterCSS?: string;
   onExportSuccess?: (postId: string, platform: string, format: string) => void;
 }
 
@@ -46,7 +43,7 @@ const RESOLUTIONS: { label: string; value: ExportResolution; sub: string }[] = [
   { label: '3x', value: 3, sub: '3240px (Máxima)' },
 ];
 
-export function ExportModal({ isOpen, onClose, slides, postId, onExportSuccess }: ExportModalProps) {
+export function ExportModal({ isOpen, onClose, slides, postId, activeFilterCSS = '', onExportSuccess }: ExportModalProps) {
   const [activeFormat, setActiveFormat] = useState<ExportFormat>('png');
   const [activeResolution, setActiveResolution] = useState<ExportResolution>(2);
   const [activePlatform, setActivePlatform] = useState<PlatformPreset>('instagram_post');
@@ -59,7 +56,52 @@ export function ExportModal({ isOpen, onClose, slides, postId, onExportSuccess }
   const [exportProgress, setExportProgress] = useState(0);
   const [exportStatus, setExportStatus] = useState('');
 
+  // Quality comparison state
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [ogPreviewUrl, setOgPreviewUrl] = useState<string | null>(null);
+  const [ogPreviewLoading, setOgPreviewLoading] = useState(false);
+  const ogAbortRef = useRef<AbortController | null>(null);
+
   const currentPlatform = PLATFORM_PRESETS[activePlatform];
+
+  // Load OG preview whenever the comparison panel opens or the active slide changes
+  useEffect(() => {
+    if (!compareOpen || activeFormat !== 'png') return
+    const slide = slides[selectedSlides[0] ?? 0]
+    if (!slide?.fabricJSON) return
+
+    // Cancel any in-flight preview request
+    ogAbortRef.current?.abort()
+    const controller = new AbortController()
+    ogAbortRef.current = controller
+
+    setOgPreviewLoading(true)
+    setOgPreviewUrl(null)
+
+    ;(async () => {
+      try {
+        const canvas = await resizeCanvasForPlatform(slide.fabricJSON!, currentPlatform.width, currentPlatform.height)
+        if (controller.signal.aborted) { canvas.dispose(); return }
+        const slideData = extractSlideData(canvas)
+        canvas.dispose()
+        if (!canUseOGRender(slideData)) { setOgPreviewLoading(false); return }
+        const blob = await exportSlideWithOG(slideData, 1)
+        if (controller.signal.aborted) return
+        const url = URL.createObjectURL(blob)
+        setOgPreviewUrl(url)
+      } catch {
+        // silently ignore — OG preview is optional
+      } finally {
+        if (!controller.signal.aborted) setOgPreviewLoading(false)
+      }
+    })()
+
+    return () => {
+      controller.abort()
+      if (ogPreviewUrl) URL.revokeObjectURL(ogPreviewUrl)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [compareOpen, activeFormat, selectedSlides[0], slides])
 
   const handleToggleSlide = (index: number) => {
     setSelectedSlides(prev => 
@@ -93,6 +135,7 @@ export function ExportModal({ isOpen, onClose, slides, postId, onExportSuccess }
         quality,
         platform: currentPlatform,
         filename,
+        activeFilterCSS,
         onProgress: (current, total, message) => {
           setExportProgress((current / total) * 100);
           setExportStatus(message);
@@ -257,7 +300,7 @@ export function ExportModal({ isOpen, onClose, slides, postId, onExportSuccess }
                           )}
                         >
                           {slide.previewDataURL ? (
-                            <Image src={slide.previewDataURL} alt="" fill className="object-cover" />
+                            <Image src={slide.previewDataURL} alt="" fill className="object-cover" style={{ filter: activeFilterCSS || 'none' }} />
                           ) : (
                             <div className="h-full w-full bg-white/5" />
                           )}
@@ -346,6 +389,7 @@ export function ExportModal({ isOpen, onClose, slides, postId, onExportSuccess }
                           "shadow-xl",
                           currentPlatform.width > currentPlatform.height ? "h-4/5 w-auto" : "w-4/5 h-auto"
                         )}
+                        style={{ filter: activeFilterCSS || 'none' }}
                       />
                     </div>
                   ) : (
@@ -374,6 +418,79 @@ export function ExportModal({ isOpen, onClose, slides, postId, onExportSuccess }
                   <p className="text-[10px] leading-relaxed text-amber-200/60">
                     <span className="font-bold text-amber-500">Nota SVG:</span> Los efectos de sombra y filtros complejos pueden no renderizarse exactamente igual que en PNG.
                   </p>
+                </div>
+              )}
+
+              {/* Quality Comparison — PNG only */}
+              {activeFormat === 'png' && (
+                <div className="absolute bottom-8 left-8 right-8">
+                  {activeResolution === 3 && (
+                    <div className="mb-3 flex items-start gap-2 rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2">
+                      <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" />
+                      <p className="text-[9px] leading-relaxed text-amber-200/60">
+                        <span className="font-bold text-amber-500">3x:</span> El render en servidor puede expirar en el plan gratuito de Vercel.
+                      </p>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => setCompareOpen(o => !o)}
+                    className="flex w-full items-center justify-between rounded-2xl border border-white/5 bg-white/5 px-4 py-3 text-left transition-colors hover:bg-white/8"
+                  >
+                    <span className="flex items-center gap-2 text-[11px] font-bold text-[#8D95A6]">
+                      <Sparkles className="h-3 w-3 text-[#6E46BD]" />
+                      Comparar calidad
+                    </span>
+                    <ChevronDown className={cn("h-3 w-3 text-[#4E576A] transition-transform", compareOpen && "rotate-180")} />
+                  </button>
+
+                  {compareOpen && (
+                    <div className="mt-2 rounded-2xl border border-white/5 bg-[#090C10] p-4">
+                      <div className="grid grid-cols-2 gap-3">
+                        {/* Canvas preview */}
+                        <div className="space-y-1.5">
+                          <p className="text-[9px] font-bold uppercase tracking-widest text-[#4E576A]">Canvas (actual)</p>
+                          <div className="aspect-square overflow-hidden rounded-xl border border-white/5 bg-black">
+                            {slides[selectedSlides[0] ?? 0]?.previewDataURL ? (
+                              <img src={slides[selectedSlides[0] ?? 0].previewDataURL!} alt="Canvas preview" className="h-full w-full object-cover" style={{ filter: activeFilterCSS || 'none' }} />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center">
+                                <Loader2 className="h-4 w-4 animate-spin text-white/20" />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* OG preview */}
+                        <div className="space-y-1.5">
+                          <p className="text-[9px] font-bold uppercase tracking-widest text-[#6E46BD]">Satori OG (exportación)</p>
+                          <div className="aspect-square overflow-hidden rounded-xl border border-[#462D6E]/30 bg-black">
+                            {ogPreviewLoading ? (
+                              <div className="flex h-full w-full items-center justify-center">
+                                <Loader2 className="h-4 w-4 animate-spin text-[#6E46BD]/60" />
+                              </div>
+                            ) : ogPreviewUrl ? (
+                              <img src={ogPreviewUrl} alt="OG preview" className="h-full w-full object-cover" style={{ filter: activeFilterCSS || 'none' }} />
+                            ) : (
+                              <div className="flex h-full w-full flex-col items-center justify-center gap-1 p-3 text-center">
+                                <AlertTriangle className="h-4 w-4 text-amber-500/40" />
+                                <p className="text-[9px] font-medium text-[#4E576A]">
+                                  Alta calidad no disponible
+                                </p>
+                                <p className="text-[8px] text-[#4E576A]/60">
+                                  Este slide usa funciones no soportadas por Satori (ej: degradados en texto)
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <p className="mt-3 text-center text-[9px] text-[#4E576A]">
+                        La exportación final siempre usa la versión de alta calidad
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

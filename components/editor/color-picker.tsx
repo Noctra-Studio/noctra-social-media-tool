@@ -5,11 +5,13 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { BRAND_COLOR_SWATCHES, isValidHexColor, normalizeHexColor } from '@/lib/carousel-backgrounds'
 import { getRecentColors, saveRecentColor } from '@/lib/editor-preferences'
+import { cn } from '@/lib/utils'
 
 type ColorPickerProps = {
   label?: string
   onChange: (hex: string) => void
   value: string
+  showLabel?: boolean
 }
 
 function useClickOutside(
@@ -37,7 +39,7 @@ function useClickOutside(
   }, [enabled, onOutsideClick, refs])
 }
 
-export function ColorPicker({ label, onChange, value }: ColorPickerProps) {
+export function ColorPicker({ label, onChange, value, showLabel = true }: ColorPickerProps) {
   const buttonRef = useRef<HTMLButtonElement | null>(null)
   const popoverRef = useRef<HTMLDivElement | null>(null)
   const normalizedValue = useMemo(() => normalizeHexColor(value), [value])
@@ -96,24 +98,30 @@ export function ColorPicker({ label, onChange, value }: ColorPickerProps) {
   }
 
   return (
-    <div className="space-y-2">
-      {label ? <span className="text-xs text-[#8D95A6]">{label}</span> : null}
+    <div className={cn("space-y-2", !showLabel && "space-y-0")}>
+      {showLabel && label ? <span className="text-xs text-[#8D95A6]">{label}</span> : null}
 
       <div className="relative">
         <button
           ref={buttonRef}
           type="button"
           onClick={toggleOpen}
-          className="flex w-full items-center justify-between rounded-2xl border border-white/8 bg-[#14171C] px-3 py-2 text-left text-sm text-[#E0E5EB]"
+          className={cn(
+            "flex w-full items-center justify-between rounded-xl border border-white/8 bg-[#14171C] px-3 py-2 text-left text-sm text-[#E0E5EB]",
+            !showLabel && "w-10 h-10 p-0 justify-center rounded-full"
+          )}
         >
           <span className="flex items-center gap-3">
             <span
-              className="block h-10 w-10 rounded-xl border border-white/10"
+              className={cn(
+                "block h-10 w-10 rounded-xl border border-white/10",
+                !showLabel && "h-8 w-8 rounded-full border-0"
+              )}
               style={{ backgroundColor: normalizedValue }}
             />
-            <span className="font-mono text-sm uppercase tracking-[0.08em]">{normalizedValue}</span>
+            {showLabel && <span className="font-mono text-sm uppercase tracking-[0.08em]">{normalizedValue}</span>}
           </span>
-          <ChevronDown className={`h-4 w-4 text-[#8D95A6] transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+          {showLabel && <ChevronDown className={`h-4 w-4 text-[#8D95A6] transition-transform ${isOpen ? 'rotate-180' : ''}`} />}
         </button>
 
         {isOpen ? (

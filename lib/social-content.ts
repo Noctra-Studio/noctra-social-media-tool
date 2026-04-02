@@ -26,6 +26,7 @@ export type InstagramCarouselSlide = {
   unsplash_query: string | null
   gradient_style: 'brand_dark' | 'brand_navy' | 'brand_subtle' | null
   suggested_template: string | null
+  text_order?: 'headline-first' | 'body-first'
 }
 
 export type XThreadTweet = {
@@ -56,6 +57,13 @@ export type SlideBackgroundSelection = {
   photographer?: string
   gradient_style?: string
   solid_color?: string
+  filters?: {
+    brightness?: number
+    contrast?: number
+    saturate?: number
+    sepia?: number
+    grayscale?: number
+  }
 }
 
 export type ExportMetadata = {

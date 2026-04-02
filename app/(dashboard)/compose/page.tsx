@@ -5,31 +5,57 @@ import { AnimatePresence, motion } from "framer-motion";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { LinkedInPostPreview } from '@/components/linkedin/linkedin-preview'
+import { XPostPreview } from '@/components/x/x-preview'
+import { InstagramPostPreview } from '@/components/instagram/instagram-post-preview'
+
 import {
+  ArrowLeft,
   ArrowRight,
   Briefcase,
   Calendar,
   CalendarDays,
   Check,
+  ChevronLeft,
   ChevronRight,
+  Clock,
+  Compass,
   Copy,
   Download,
   ExternalLink,
+  History,
   Image as ImageIcon,
   Layers3,
+  Layout,
   Lightbulb,
   Loader2,
+  Lock,
+  Maximize2,
   MessageCircle,
+  MessageSquare,
+  MoreHorizontal,
   MoveRight,
   PenSquare,
+  Play,
+  Plus,
   RefreshCcw,
   RefreshCw,
   Save,
+  Search,
+  Settings,
   Sparkles,
+  Target,
   TrendingUp,
+  Trash2,
+  Upload,
+  User,
+  Users,
+  Video,
+  Wand2,
   X,
   type LucideIcon,
-} from "lucide-react";
+} from 'lucide-react'
+
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -45,6 +71,8 @@ import {
   LinkedInPdfGenerator,
   type LinkedInPdfGeneratorHandle,
 } from "@/components/linkedin/pdf-generator";
+import { TagsEditor } from "@/components/compose/tags-editor";
+import { ExportRenderer, type ExportRendererHandle } from "@/components/instagram/export-renderer";
 import { PostFeedback } from "@/components/post-feedback";
 import { AIButton, type AIButtonState } from "@/components/ui/AIButton";
 import { PlatformBadge } from "@/components/ui/PlatformBadge";
@@ -74,18 +102,25 @@ import {
   joinHashtags,
   platformFormatOptions,
   readInstagramSlides,
+  readOptionalString,
   readLinkedInSlides,
   readString,
   readStringArray,
   readXThreadTweets,
   toVisualSearchHref,
+  type InstagramCarouselSlide,
+  type SlideBackgroundSelection,
   type XThreadTweet,
   type LinkedInCarouselSlide,
   type PostFormat,
-  type SlideBackgroundSelection,
   type SocialFormatOption,
   type XHookStrength,
+  type VisualBrief,
+  type ExportMetadata,
 } from "@/lib/social-content";
+
+import { parseMarkdownContent } from "@/lib/importers/markdown";
+
 import {
   type CarouselEditorSavePayload,
   type CarouselEditorSlide,
@@ -117,7 +152,8 @@ import { TemplateSelector } from "@/components/editor/template-selector";
 import { SlideTemplate } from "@/lib/editor/templates";
 import { ImageDrawer, type SelectedImage, type OverlayConfig } from "@/components/compose/image-drawer";
 import { ImageTipsCard } from "@/components/compose/image-tips-card";
-import type { VisualBrief } from "@/lib/social-content";
+
+
 
 const modeCards: Array<{
   description: string;
@@ -338,13 +374,39 @@ const ideaPlaceholders = [
   "Ej: 'Quiero convertir un insight de una reunion con clientes en un post util, no en una opinion vaga...'",
 ];
 
+const IDEA_LOADING_PHASES = [
+  "Inicializando",
+  "Analizando tu marca",
+  "Identificando oportunidad",
+  "Generando ideas",
+  "Finalizando detalles",
+];
+
+const ANGLE_LOADING_PHASES = [
+  "Inicializando",
+  "Analizando contexto",
+  "Identificando ángulos",
+  "Propuesta lista",
+];
+
+const GENERATION_LOADING_PHASES = [
+  "Inicializando",
+  "Identificando oportunidad",
+  "Generando contenido",
+  "Finalizando detalles",
+  "Propuesta lista",
+];
+
 export default function ComposePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const modeParam = searchParams.get("mode");
+  const ideaId = searchParams.get("idea");
+  const draftIdea = searchParams.get("draftIdea");
+  const platformParam = searchParams.get("platform");
   const supabase = useMemo(() => createClient(), []);
   const ideaTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const outputSectionRef = useRef<HTMLElement | null>(null);
-  const linkedInPdfRef = useRef<LinkedInPdfGeneratorHandle | null>(null);
   const [mode, setMode] = useState<ComposeMode | null>(null);
   const [activePlatform, setActivePlatform] = useState<Platform>("instagram");
   const [selectedFormats, setSelectedFormats] = useState<
@@ -434,6 +496,7 @@ export default function ComposePage() {
   const [selectedRepurposePostId, setSelectedRepurposePostId] = useState<
     string | null
   >(null);
+  const [generationHistory, setGenerationHistory] = useState<string[]>([]);
   const [viralPlatform, setViralPlatform] = useState<Platform>("linkedin");
   const [caseStudyClient, setCaseStudyClient] = useState("");
   const [caseStudyService, setCaseStudyService] = useState("");
@@ -469,6 +532,10 @@ export default function ComposePage() {
   // AI visual brief
   const [visualBrief, setVisualBrief] = useState<VisualBrief | null>(null);
   const [briefLoading, setBriefLoading] = useState(false);
+  const [isSuggestingTags, setIsSuggestingTags] = useState(false);
+
+  const instagramExportRef = useRef<ExportRendererHandle>(null);
+  const linkedInPdfRef = useRef<LinkedInPdfGeneratorHandle>(null);
 
   const assistanceVisible =
     assistanceLevel !== "expert" &&
@@ -508,6 +575,14 @@ export default function ComposePage() {
       : null;
 
     return {
+      activeFilterCSS:
+        typeof metadata?.active_filter_css === "string"
+          ? metadata.active_filter_css
+          : "",
+      activeFilterId:
+        typeof metadata?.active_filter_id === "string"
+          ? metadata.active_filter_id
+          : "none",
       editedSlides: Array.isArray(metadata?.edited_carousel_slides)
         ? (metadata.edited_carousel_slides as CarouselEditorSlide[])
         : [],
@@ -517,7 +592,30 @@ export default function ComposePage() {
     };
   };
 
-  const getInstagramCarouselEditorPayload = () => {
+  const createInstagramSingleSlide = (
+    content: Record<string, unknown>,
+  ): InstagramCarouselSlide => ({
+    body: readString(content.body || content.caption),
+    color_suggestion: readOptionalString(content.color_suggestion),
+    design_note: readString(content.design_note),
+    headline: readString(content.headline),
+    slide_number: 1,
+    type: "content",
+    visual_direction: readString(content.visual_direction),
+    stat_or_example: readOptionalString(content.stat_or_example),
+    bg_type:
+      (readString(content.bg_type) as InstagramCarouselSlide["bg_type"]) ||
+      "solid",
+    bg_reasoning: readString(content.bg_reasoning),
+    unsplash_query: readOptionalString(content.unsplash_query),
+    gradient_style:
+      (readOptionalString(
+        content.gradient_style,
+      ) as InstagramCarouselSlide["gradient_style"]) ?? null,
+    suggested_template: readOptionalString(content.suggested_template),
+  });
+
+  const getInstagramEditorPayload = () => {
     const instagramResult = generatedResults.instagram;
 
     if (!instagramResult) {
@@ -530,18 +628,25 @@ export default function ComposePage() {
       instagramResult.format,
     );
 
-    if (format !== "carousel") {
+    if (format !== "carousel" && format !== "single") {
       return null;
     }
 
-    const slides = readInstagramSlides(instagramResult.content.slides);
+    const slides =
+      format === "carousel"
+        ? readInstagramSlides(instagramResult.content.slides)
+        : [createInstagramSingleSlide(instagramResult.content)];
     const metadata = getCarouselEditorMeta(instagramResult);
 
     return {
+      activeFilterCSS: metadata.activeFilterCSS,
+      activeFilterId: metadata.activeFilterId,
       angle: readString(instagramResult.angle),
       editedSlides: metadata.editedSlides,
       slideBackgrounds: metadata.slideBackgrounds,
       slides,
+      caption: readString(instagramResult.content.caption),
+      hashtags: readStringArray(instagramResult.content.hashtags),
     };
   };
 
@@ -714,11 +819,6 @@ export default function ComposePage() {
   }, [brandPillars, idea, pillarSelectionMode]);
 
   useEffect(() => {
-    const modeParam = searchParams.get("mode");
-    const ideaId = searchParams.get("idea");
-    const draftIdea = searchParams.get("draftIdea");
-    const platformParam = searchParams.get("platform");
-
     if (isPlatform(platformParam)) {
       setActivePlatform(platformParam);
     }
@@ -791,7 +891,7 @@ export default function ComposePage() {
     return () => {
       cancelled = true;
     };
-  }, [searchParams, supabase]);
+  }, [draftIdea, ideaId, modeParam, platformParam, supabase]);
 
   useEffect(() => {
     if (mode !== "idea" && mode !== "direct") {
@@ -942,12 +1042,36 @@ export default function ComposePage() {
   const handleCarouselEditorSave = (payload: CarouselEditorSavePayload) => {
     updateGeneratedResult("instagram", (current) => ({
       ...current,
-      content: {
-        ...current.content,
-        slides: payload.slides,
-      },
+      content:
+        inferPostFormat("instagram", current.content, current.format) ===
+        "single"
+          ? (() => {
+              const slide =
+                payload.slides[0] ?? createInstagramSingleSlide(current.content);
+
+              return {
+                ...current.content,
+                body: slide.body,
+                headline: slide.headline,
+                visual_direction: slide.visual_direction,
+                stat_or_example: slide.stat_or_example,
+                bg_type: slide.bg_type,
+                bg_reasoning: slide.bg_reasoning,
+                color_suggestion: slide.color_suggestion,
+                design_note: slide.design_note,
+                unsplash_query: slide.unsplash_query,
+                gradient_style: slide.gradient_style,
+                suggested_template: slide.suggested_template,
+              };
+            })()
+          : {
+              ...current.content,
+              slides: payload.slides,
+            },
       export_metadata: {
         ...(isRecord(current.export_metadata) ? current.export_metadata : {}),
+        active_filter_css: payload.activeFilterCSS ?? "",
+        active_filter_id: payload.activeFilterId ?? "none",
         edited_carousel_slides: payload.editorSlides,
         slide_backgrounds: payload.slideBackgrounds,
       },
@@ -1608,6 +1732,7 @@ export default function ComposePage() {
           days: planDays,
           platforms: planPlatforms,
           user_id: userId,
+          history: generationHistory,
         }),
       });
       const data = (await response.json()) as {
@@ -1618,6 +1743,9 @@ export default function ComposePage() {
       if (!response.ok || !data.plan) {
         throw new Error(data.error || "No fue posible generar el plan");
       }
+
+      const newHistory = data.plan.map(item => `${item.platform}: ${item.hook}`);
+      setGenerationHistory(prev => [...prev, ...newHistory].slice(-20));
 
       setQuickActionOutput({
         kind: "plan",
@@ -1630,6 +1758,49 @@ export default function ComposePage() {
       handleQuickActionError();
     } finally {
       setRunningQuickAction(null);
+    }
+  };
+
+  const handleImportMarkdown = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const importedPosts = parseMarkdownContent(text);
+      
+      if (importedPosts.length === 0) {
+        setErrorMessage("No se encontraron publicaciones en el archivo MD.");
+        return;
+      }
+
+      const results: Record<Platform, GeneratedContent> = {} as any;
+      const order: Platform[] = [];
+
+      importedPosts.forEach((post: any) => {
+        const platform = post.platform as Platform;
+        results[platform] = {
+          angle: post.angle,
+          content: {
+            headline: post.headline,
+            body: post.body,
+            caption: post.caption,
+            post_caption: post.caption,
+          },
+          platform: platform,
+          raw: `${post.headline}\n\n${post.body}`,
+        };
+        if (!order.includes(platform)) order.push(platform);
+      });
+
+      // Apply to first available days or just populate results
+      setGeneratedResults(results);
+      if (order.length > 0) setActivePlatform(order[0]);
+      setToastMessage(`Se importaron ${importedPosts.length} publicaciones.`);
+      scrollToOutput();
+
+    } catch (error) {
+      setErrorMessage("Error al procesar el archivo Markdown.");
     }
   };
 
@@ -2154,12 +2325,18 @@ export default function ComposePage() {
       }
 
       if (platform === "instagram") {
+        let blobs: Blob[] | null = null;
+        if (format === "carousel") {
+          blobs = await instagramExportRef.current?.renderAll() || null;
+        }
+
         await exportInstagramPackage({
           content: result.content,
           exportMetadata: isRecord(result.export_metadata)
             ? result.export_metadata
             : null,
           format,
+          blobs,
           imageMetadata: selectedImage ? {
             url: selectedImage.url,
             photographer: selectedImage.photographer,
@@ -2258,6 +2435,143 @@ export default function ComposePage() {
         },
       };
     });
+  };
+
+  const handleCaptionEdit = (value: string) => {
+    updateGeneratedResult(activePlatform, (result) => ({
+      ...result,
+      content: {
+        ...result.content,
+        caption: value,
+        post_caption: value,
+      },
+    }));
+  };
+
+  const handleTagsChange = (platform: Platform, tags: string[]) => {
+    updateGeneratedResult(platform, (result) => ({
+      ...result,
+      content: {
+        ...result.content,
+        hashtags: tags,
+        tags: tags,
+      },
+    }));
+  };
+
+  const handleSuggestTags = async (platform: Platform) => {
+    const result = generatedResults[platform];
+    if (!result || isSuggestingTags) return;
+
+    setIsSuggestingTags(true);
+    try {
+      const response = await fetch("/api/social/suggest-tags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          platform,
+          content: result.content,
+          angle: result.angle,
+        }),
+      });
+
+      if (!response.ok) throw new Error("Fallo al sugerir hashtags");
+
+      const data = await response.json();
+      if (data.hashtags) {
+        handleTagsChange(platform, data.hashtags);
+      }
+    } catch (error) {
+      console.error("Error suggesting tags:", error);
+    } finally {
+      setIsSuggestingTags(false);
+    }
+  };
+
+  const handleUnifyStyle = () => {
+    const result = generatedResults["instagram"];
+    if (!result) return;
+
+    const slides = readInstagramSlides(result.content.slides);
+    if (slides.length === 0) return;
+
+    const firstSlide = slides[0];
+    const firstBgRaw = (result.export_metadata as ExportMetadata)?.slide_backgrounds?.find(
+      (b: SlideBackgroundSelection) => b.slide_number === firstSlide.slide_number,
+    );
+
+
+    const nextSlides = slides.map((slide, index) => {
+      if (index === 0) return slide;
+      return {
+        ...slide,
+        bg_type: firstSlide.bg_type,
+        gradient_style: firstSlide.gradient_style,
+        unsplash_query: firstSlide.unsplash_query,
+        suggested_template: firstSlide.suggested_template,
+      };
+    });
+
+    const nextBackgrounds = (
+      (result.export_metadata as ExportMetadata)?.slide_backgrounds || []
+    ).map((bg: SlideBackgroundSelection) => {
+      if (bg.slide_number === firstSlide.slide_number || !firstBgRaw) return bg;
+
+      return {
+        ...bg,
+        bg_type: firstBgRaw.bg_type,
+        gradient_config: firstBgRaw.gradient_config,
+        gradient_style: firstBgRaw.gradient_style,
+        image_url: firstBgRaw.image_url,
+        photographer: firstBgRaw.photographer,
+        solid_color: firstBgRaw.solid_color,
+      };
+    });
+
+    updateGeneratedResult("instagram", (current) => ({
+      ...current,
+      content: { ...current.content, slides: nextSlides },
+      export_metadata: {
+        ...(isRecord(current.export_metadata) ? current.export_metadata : {}),
+        slide_backgrounds: nextBackgrounds,
+      },
+    }));
+
+    setToastMessage("Estilo unificado en todas las slides.");
+  };
+
+  const handleMagicLayout = () => {
+    const result = generatedResults["instagram"];
+    if (!result) return;
+
+    const slides = readInstagramSlides(result.content.slides);
+    const availableTemplates = [
+      "editorial",
+      "bold-statement",
+      "split",
+      "list",
+      "stat-hero",
+      "minimal-quote",
+    ];
+
+    const nextSlides = slides.map((slide) => {
+      const filtered = availableTemplates.filter((tId) => {
+        if (slide.type === "cover")
+          return ["editorial", "bold-statement", "split", "stat-hero", "minimal-quote"].includes(tId);
+        if (slide.type === "cta")
+          return ["bold-statement", "minimal-quote", "split"].includes(tId);
+        return ["editorial", "split", "list", "stat-hero", "minimal-quote"].includes(tId);
+      });
+      const randomTemplate = filtered[Math.floor(Math.random() * filtered.length)];
+      return { ...slide, suggested_template: randomTemplate };
+    });
+
+    updateGeneratedResult("instagram", (current) => ({
+      ...current,
+      content: { ...current.content, slides: nextSlides },
+    }));
+
+    setToastMessage("Diseño transformado mágicamente.");
   };
 
   const handleRegenerateHook = async () => {
@@ -2458,6 +2772,20 @@ export default function ComposePage() {
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
+              onClick={handleMagicLayout}
+              className="inline-flex items-center gap-2 rounded-full border border-[#462D6E]/30 bg-[#462D6E]/5 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:bg-[#462D6E]/15">
+              <Sparkles className="h-4 w-4 text-[#462D6E]" />
+              Cambio mágico
+            </button>
+            <button
+              type="button"
+              onClick={handleUnifyStyle}
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5">
+              <Layout className="h-4 w-4" />
+              Unificar estilo
+            </button>
+            <button
+              type="button"
               onClick={() => void handleExport(platform)}
               disabled={isExporting}
               className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-60">
@@ -2478,11 +2806,27 @@ export default function ComposePage() {
             <span className="inline-flex items-center rounded-full border border-white/10 px-3 py-2 text-xs text-[#8D95A6]">
               {getFormatLabel(platform, format)}
             </span>
+            <button
+              type="button"
+              onClick={() => document.getElementById('md-import-input')?.click()}
+              className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white transition-colors hover:bg-white/10"
+            >
+              <Plus className="h-4 w-4" />
+              Importar MD
+              <input
+                id="md-import-input"
+                type="file"
+                accept=".md"
+                className="hidden"
+                onChange={handleImportMarkdown}
+              />
+            </button>
           </div>
         </div>
       </div>
     );
   };
+
 
   const renderPostContentBody = (
     platform: Platform,
@@ -2498,206 +2842,263 @@ export default function ComposePage() {
 
       return (
         <div className="space-y-5">
-          <InstagramCarouselPreview
-            angle={readString(result.angle)}
-            editedSlides={editedSlides}
-            initialBackgrounds={slideBackgrounds}
-            slides={slides}
-            onOpenDetailEditor={(activeIndex) =>
-              openCarouselEditor(activeIndex)
-            }
-            onBackgroundChange={(backgrounds) => {
-              setGeneratedResults((prev) => {
-                const r = prev[platform];
-                if (!r) return prev;
-                return {
-                  ...prev,
-                  [platform]: {
-                    ...r,
-                    export_metadata: {
-                      ...r.export_metadata,
-                      edited_carousel_slides: [],
-                      slide_backgrounds: backgrounds,
+            <InstagramCarouselPreview
+              angle={readString(result.angle)}
+              editedSlides={editedSlides}
+              initialBackgrounds={slideBackgrounds}
+              slides={slides}
+              onOpenDetailEditor={(activeIndex) =>
+                openCarouselEditor(activeIndex)
+              }
+              onUpdateSlide={(slideNumber, updates) => {
+                setGeneratedResults((prev) => {
+                  const r = prev[platform];
+                  if (!r) return prev;
+                  const currentSlides = (r.content as any).slides || [];
+                  const updatedSlides = currentSlides.map((s: any) => 
+                    s.slide_number === slideNumber ? { ...s, ...updates } : s
+                  );
+                  return {
+                    ...prev,
+                    [platform]: {
+                      ...r,
+                      content: {
+                        ...r.content,
+                        slides: updatedSlides,
+                      }
+                    }
+                  };
+                });
+              }}
+              onBackgroundChange={(backgrounds) => {
+                setGeneratedResults((prev) => {
+                  const r = prev[platform];
+                  if (!r) return prev;
+                  return {
+                    ...prev,
+                    [platform]: {
+                      ...r,
+                      export_metadata: {
+                        ...r.export_metadata,
+                        edited_carousel_slides: [],
+                        slide_backgrounds: backgrounds,
+                      },
                     },
-                  },
-                };
-              });
-            }}
-          />
-          <div className="rounded-[24px] border border-white/10 bg-[#101417] p-4 text-sm leading-7 text-[#E0E5EB]">
-            <p className="whitespace-pre-wrap">{readString(content.caption)}</p>
-            {hashtags.length > 0 ? (
-              <p className="mt-4 text-[#8D95A6]">{joinHashtags(hashtags)}</p>
-            ) : null}
-          </div>
-        </div>
-      );
-    }
-
-    if (platform === "instagram") {
-      return (
-        <div className="space-y-5">
-          {selectedImage ? (
-            <div className="relative aspect-square w-full overflow-hidden rounded-[24px] border border-white/10 bg-[#101417]">
-              <img src={selectedImage.url} alt="" className="h-full w-full object-cover" />
-              {overlayConfig?.dimming && (
-                <div className="absolute inset-0 bg-black" style={{ opacity: overlayConfig.dimming }} />
-              )}
-              {overlayConfig?.text && (
-                <div className={cn(
-                  "absolute inset-0 flex p-6",
-                  overlayConfig.placement === 'top' ? "items-start" : 
-                  overlayConfig.placement === 'center' ? "items-center" : "items-end"
-                )}>
-                  <p className={cn(
-                    "w-full text-center font-bold tracking-tight",
-                    overlayConfig.textSize === 'S' ? "text-xl" :
-                    overlayConfig.textSize === 'M' ? "text-2xl" :
-                    overlayConfig.textSize === 'L' ? "text-3xl" : "text-4xl"
-                  )} style={{ color: overlayConfig.textColor }}>
-                    {overlayConfig.text}
-                  </p>
-                </div>
-              )}
-              <button 
-                onClick={removeImage}
-                className="absolute right-4 top-4 rounded-full bg-black/40 p-2 text-white/80 backdrop-blur-md hover:bg-black/60 hover:text-white"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          ) : null}
-          <div className="rounded-[24px] border border-white/10 bg-[#101417] p-4 text-sm leading-7 text-[#E0E5EB]">
-            <p className="whitespace-pre-wrap">{readString(content.caption)}</p>
-            {hashtags.length > 0 ? (
-              <p className="mt-4 text-[#8D95A6]">{joinHashtags(hashtags)}</p>
-            ) : null}
-          </div>
-          
-          {/* AI Tips Card */}
-          {!selectedImage && (
-            <ImageTipsCard 
-              brief={visualBrief} 
-              loading={briefLoading} 
-              onClick={() => setIsImageDrawerOpen(true)}
+                  };
+                });
+              }}
             />
-          )}
-
-          {!selectedImage ? (
-            <button
-              type="button"
-              onClick={() => openVisualSearch(readString(content.visual_direction) || readString(content.caption))}
-              className="flex w-full items-center justify-center gap-2 rounded-[24px] border border-dashed border-white/10 py-8 text-sm text-[#8D95A6] transition-colors hover:border-white/20 hover:bg-white/5"
-            >
-              <ImageIcon className="h-5 w-5" />
-              <span>Agregar imagen de Unsplash</span>
-            </button>
-          ) : (
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => setIsImageDrawerOpen(true)}
-                className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-white/10 py-3 text-xs font-bold text-[#E0E5EB] hover:bg-white/5"
-              >
-                Cambiar imagen
-              </button>
-              <button
-                type="button"
-                onClick={removeImage}
-                className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-white/10 py-3 text-xs font-bold text-red-500/80 hover:bg-red-500/5"
-              >
-                Quitar imagen
-              </button>
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    if (platform === "x" && format === "tweet") {
-      const tweet = readString(content.tweet);
-      const charCount = tweet.length;
-
-      return (
-        <div className="space-y-4">
-          <div className="rounded-[24px] border border-white/10 bg-[#101417] p-4">
-            <textarea
-              value={tweet}
-              onChange={(event) => handleSingleTweetEdit(event.target.value)}
-              className="min-h-[160px] w-full resize-none bg-transparent text-sm leading-7 text-[#E0E5EB] focus:outline-none"
-            />
-            <div className="mt-3 flex justify-end">
-              <span
-                className="text-xs font-medium"
-                style={{ color: getXTweetColor(charCount) }}>
-                {charCount} / 270
-              </span>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (platform === "x" && format === "thread") {
-      const tweets = readXThreadTweets(content.tweets ?? content.thread);
-      const hookStrength = (readString(content.hook_strength) ||
-        readString(
-          isRecord(result.export_metadata)
-            ? result.export_metadata?.hook_strength
-            : undefined,
-        )) as XHookStrength;
-      const hookNote = readString(content.hook_note);
-
-      return (
-        <div className="space-y-4">
-          {(hookStrength === "medium" || hookStrength === "weak") && (
-            <div className="rounded-[24px] border border-[#78350F] bg-[#78350F]/10 p-4">
-              <p className="text-sm text-[#FCD34D]">
-                El hook podria ser mas fuerte. {hookNote}
-              </p>
-              <button
-                type="button"
-                onClick={() => void handleRegenerateHook()}
-                disabled={regeneratingHook}
-                className="mt-3 inline-flex items-center gap-2 rounded-full border border-[#FCD34D]/30 px-4 py-2 text-sm text-[#FCD34D] disabled:opacity-60">
-                {regeneratingHook ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCcw className="h-4 w-4" />
-                )}
-                Regenerar solo el hook
-              </button>
-            </div>
-          )}
-
-          <div className="space-y-3">
-            {tweets.map((tweet: XThreadTweet) => (
-              <div
-                key={`thread-${tweet.number}`}
-                className="rounded-2xl border border-white/8 bg-[#101417] p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs uppercase tracking-[0.2em] text-[#4E576A]">
-                    Tweet {tweet.number}
-                  </p>
-                  <span
-                    className="text-xs"
-                    style={{ color: getXTweetColor(tweet.content.length) }}>
-                    {tweet.content.length} / 270
-                  </span>
-                </div>
-                <textarea
-                  value={tweet.content}
-                  onChange={(event) =>
-                    handleThreadTweetEdit(tweet.number, event.target.value)
-                  }
-                  className="mt-3 min-h-[110px] w-full resize-none bg-transparent text-sm leading-7 text-[#E0E5EB] focus:outline-none"
+            <div className="rounded-[24px] border border-white/10 bg-[#101417] p-4 text-sm leading-7 text-[#E0E5EB]">
+              <p className="whitespace-pre-wrap">{readString(content.caption)}</p>
+              
+              <div className="mt-6 pt-6 border-t border-white/5">
+                <TagsEditor 
+                  tags={hashtags} 
+                  onChange={(tags) => handleTagsChange(platform, tags)}
+                  onSuggest={() => handleSuggestTags(platform)}
+                  isSuggesting={isSuggestingTags}
                 />
               </div>
-            ))}
+            </div>
           </div>
-        </div>
-      );
-    }
+        );
+      }
+
+      if (platform === "instagram") {
+        const slide = createInstagramSingleSlide(content);
+
+        const backgrounds = (result.export_metadata as any)?.slide_backgrounds || [];
+        const background = backgrounds.find((b: any) => b.slide_number === 1) || {
+          slide_number: 1,
+          bg_type: slide.bg_type,
+          solid_color: slide.color_suggestion || '#101417',
+        };
+
+        const onUpdateSlide = (updates: Partial<InstagramCarouselSlide>) => {
+          setGeneratedResults((prev) => {
+            const r = prev[platform];
+            if (!r) return prev;
+            return {
+              ...prev,
+              [platform]: {
+                ...r,
+                content: {
+                  ...r.content,
+                  ...updates,
+                }
+              }
+            };
+          });
+        };
+
+        return (
+          <div className="space-y-6">
+            <InstagramPostPreview
+              slide={slide}
+              background={background as any}
+              onUpdateSlide={onUpdateSlide}
+              onBackgroundChange={(newBg) => {
+                setGeneratedResults((prev) => {
+                  const r = prev[platform];
+                  if (!r) return prev;
+                  const currentBackgrounds = (r.export_metadata as any)?.slide_backgrounds || [];
+                  const otherBackgrounds = currentBackgrounds.filter((b: any) => b.slide_number !== 1);
+                  return {
+                    ...prev,
+                    [platform]: {
+                      ...r,
+                      export_metadata: {
+                        ...r.export_metadata,
+                        slide_backgrounds: [newBg, ...otherBackgrounds],
+                      },
+                    },
+                  };
+                });
+              }}
+              onOpenDetailEditor={() => {
+                // For single post, we might want to open the same editor but only one slide
+                openCarouselEditor(0);
+              }}
+            />
+            <div className="rounded-[24px] border border-white/10 bg-[#101417] p-5 space-y-6">
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-[#4E576A]">Titular Social</p>
+                  <textarea
+                    value={readString(content.headline)}
+                    onChange={(e) => onUpdateSlide?.({ headline: e.target.value })}
+                    placeholder="Escribe un titular llamativo..."
+                    className="w-full resize-none bg-transparent text-sm font-bold leading-relaxed text-[#E0E5EB] focus:outline-none min-h-[40px]"
+                  />
+                </div>
+                <div className="h-px bg-white/5" />
+                <div className="space-y-1.5">
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-[#4E576A]">Cuerpo del Post</p>
+                  <textarea
+                    value={readString(content.body || content.caption)}
+                    onChange={(e) => onUpdateSlide?.({ body: e.target.value })}
+                    placeholder="Escribe el contenido principal..."
+                    className="w-full resize-none bg-transparent text-sm leading-relaxed text-[#E0E5EB] focus:outline-none min-h-[80px]"
+                  />
+                </div>
+                <div className="h-px bg-white/5" />
+              <div className="space-y-1.5">
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-[#4E576A]">Caption (Pie de foto)</p>
+                  <textarea
+                    value={readString(content.caption)}
+                    onChange={(e) => handleCaptionEdit(e.target.value)}
+                    placeholder="Escribe el caption final..."
+                    className="w-full resize-none bg-transparent text-sm leading-relaxed text-zinc-400 focus:outline-none min-h-[60px]"
+                  />
+                </div>
+
+                <div className="mt-4 pt-4 border-t border-white/5">
+                  <TagsEditor 
+                    tags={hashtags} 
+                    onChange={(tags) => handleTagsChange(platform, tags)}
+                    onSuggest={() => handleSuggestTags(platform)}
+                    isSuggesting={isSuggestingTags}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      if (platform === "x" && format === "tweet") {
+        const tweet = readString(content.tweet) || readString(content.caption);
+        const charCount = tweet.length;
+
+        return (
+          <div className="space-y-4">
+            <XPostPreview content={tweet} />
+            <div className="rounded-[24px] border border-white/10 bg-[#101417] p-4">
+              <p className="text-xs uppercase tracking-[0.24em] text-[#4E576A] mb-3">Editar texto</p>
+              <textarea
+                value={tweet}
+                onChange={(event) => handleSingleTweetEdit(event.target.value)}
+                className="min-h-[120px] w-full resize-none bg-transparent text-sm leading-7 text-[#E0E5EB] focus:outline-none"
+              />
+              <div className="mt-3 flex justify-end">
+                <span
+                  className="text-xs font-medium"
+                  style={{ color: getXTweetColor(charCount) }}>
+                  {charCount} / 270
+                </span>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      if (platform === "x" && format === "thread") {
+        const tweets = readXThreadTweets(content.tweets ?? content.thread);
+        const hookStrength = (readString(content.hook_strength) ||
+          readString(
+            isRecord(result.export_metadata)
+              ? result.export_metadata?.hook_strength
+              : undefined,
+          )) as XHookStrength;
+        const hookNote = readString(content.hook_note);
+
+        return (
+          <div className="space-y-4">
+            {(hookStrength === "medium" || hookStrength === "weak") && (
+              <div className="rounded-[24px] border border-[#78350F] bg-[#78350F]/10 p-4">
+                <p className="text-sm text-[#FCD34D]">
+                  El hook podria ser mas fuerte. {hookNote}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void handleRegenerateHook()}
+                  disabled={regeneratingHook}
+                  className="mt-3 inline-flex items-center gap-2 rounded-full border border-[#FCD34D]/30 px-4 py-2 text-sm text-[#FCD34D] disabled:opacity-60">
+                  {regeneratingHook ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCcw className="h-4 w-4" />
+                  )}
+                  Regenerar solo el hook
+                </button>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              {tweets.map((tweet: XThreadTweet, idx: number) => (
+                <div key={`thread-group-${tweet.number}`} className="space-y-3">
+                  <XPostPreview 
+                    content={tweet.content} 
+                    isThread={true} 
+                    threadIndex={idx + 1} 
+                    totalInThread={tweets.length} 
+                  />
+                  <div className="rounded-2xl border border-white/8 bg-[#101417] p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-xs uppercase tracking-[0.2em] text-[#4E576A]">
+                        Editar Tweet {tweet.number}
+                      </p>
+                      <span
+                        className="text-xs"
+                        style={{ color: getXTweetColor(tweet.content.length) }}>
+                        {tweet.content.length} / 270
+                      </span>
+                    </div>
+                    <textarea
+                      value={tweet.content}
+                      onChange={(event) =>
+                        handleThreadTweetEdit(tweet.number, event.target.value)
+                      }
+                      className="mt-3 min-h-[90px] w-full resize-none bg-transparent text-sm leading-7 text-[#E0E5EB] focus:outline-none"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      }
+
 
     if (platform === "x" && format === "article") {
       return (
@@ -2787,16 +3188,33 @@ export default function ComposePage() {
             ))}
           </div>
           <div className="rounded-[24px] border border-white/10 bg-[#101417] p-4">
-            <p className="text-xs uppercase tracking-[0.24em] text-[#4E576A]">
+            <p className="text-xs uppercase tracking-[0.24em] text-[#4E576A] mb-4">
               Caption del post
             </p>
             <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-[#E0E5EB]">
               {readString(content.post_caption)}
             </p>
-            {hashtags.length > 0 ? (
-              <p className="mt-4 text-[#8D95A6]">{joinHashtags(hashtags)}</p>
-            ) : null}
+            
+            <div className="mt-6 pt-6 border-t border-white/5">
+              <TagsEditor 
+                tags={hashtags} 
+                onChange={(tags) => handleTagsChange(platform, tags)}
+                onSuggest={() => handleSuggestTags(platform)}
+                isSuggesting={isSuggestingTags}
+              />
+            </div>
           </div>
+          
+          <div className="hidden pointer-events-none opacity-0">
+            {generatedResults.instagram?.content && (
+              <ExportRenderer 
+                ref={instagramExportRef}
+                slides={readInstagramSlides(generatedResults.instagram.content.slides)}
+                backgrounds={getCarouselEditorMeta(generatedResults.instagram).slideBackgrounds as any}
+              />
+            )}
+          </div>
+          
           <LinkedInPdfGenerator
             ref={linkedInPdfRef}
             slides={slides as LinkedInCarouselSlide[]}
@@ -2833,17 +3251,25 @@ export default function ComposePage() {
           ) : null}
         </div>
 
-        <div className="rounded-[24px] border border-white/10 bg-[#101417] p-4 text-sm leading-7 text-[#E0E5EB]">
-          {platform === "linkedin" && showLinkedInPreview ? (
-            <div className="rounded-[24px] border border-white/10 bg-[#212631] p-5">
-              <p className="whitespace-pre-wrap">{caption}</p>
-            </div>
-          ) : (
-            <p className="whitespace-pre-wrap">{caption}</p>
+        <div className="space-y-5">
+          {platform === "linkedin" && (
+            <LinkedInPostPreview 
+              content={caption} 
+              hashtags={hashtags} 
+              image={selectedImage?.url}
+              format={format === 'image' ? 'image' : (format === 'document' || format === 'carousel' ? 'document' : 'text')}
+              slides={readLinkedInSlides(generatedResults["linkedin"]?.content.slides)}
+            />
           )}
-          {hashtags.length > 0 ? (
-            <p className="mt-4 text-[#8D95A6]">{joinHashtags(hashtags)}</p>
-          ) : null}
+
+          <div className="rounded-[24px] border border-white/10 bg-[#101417] p-4">
+            <p className="text-xs uppercase tracking-[0.24em] text-[#4E576A] mb-3">Editar texto</p>
+            <textarea
+              value={caption}
+              onChange={(event) => handleCaptionEdit(event.target.value)}
+              className="min-h-[160px] w-full resize-none bg-transparent text-sm leading-7 text-[#E0E5EB] focus:outline-none"
+            />
+          </div>
         </div>
 
         {showImageShortcut && (
@@ -3046,8 +3472,16 @@ export default function ComposePage() {
     Object.values(generatedResults).some((value) => Boolean(value));
 
   return (
-    <div className="animate-in fade-in slide-in-from-bottom-4 space-y-6 pb-8 duration-300">
-      <section className="rounded-[32px] border border-white/10 bg-[#212631]/40 p-6 sm:p-7">
+    <div className={cn(
+      "animate-in fade-in slide-in-from-bottom-4 duration-300 pb-8",
+      hasOutputPanel ? "grid gap-8 lg:grid-cols-[1fr_440px] xl:grid-cols-[1fr_540px] items-start" : "space-y-6"
+    )}>
+      <div className={cn(
+        "space-y-8 transition-all duration-500",
+        hasOutputPanel && "lg:sticky lg:top-24 z-20"
+      )}>
+        <section className="rounded-[32px] border border-white/10 bg-[#212631]/40 p-6 sm:p-7">
+
         <div className="space-y-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div className="space-y-2">
@@ -3744,6 +4178,7 @@ export default function ComposePage() {
                     </p>
                     <div className="flex flex-wrap gap-3">
                       <AIButton
+                        key={`ideas-${ideasButtonState}`}
                         onClick={() => void requestSuggestedIdeas()}
                         state={ideasButtonState}
                         disabled={suggestingIdeas}
@@ -3752,13 +4187,7 @@ export default function ComposePage() {
                             ? "Sugerir otras 3"
                             : "Sugerir 3 ideas"
                         }
-                        loadingPhases={[
-                          "Inicializando",
-                          "Analizando tu marca",
-                          "Identificando oportunidad",
-                          "Generando ideas",
-                          "Finalizando detalles",
-                        ]}
+                        loadingPhases={IDEA_LOADING_PHASES}
                         successLabel="Ideas listas"
                         errorLabel="Reintentar ideas"
                         icon={Sparkles}
@@ -3892,33 +4321,24 @@ export default function ComposePage() {
                         {renderPillarSelector()}
                         <div className="flex flex-wrap gap-3">
                           <AIButton
+                            key={`angles-${anglesButtonState}`}
                             onClick={() => void requestAngles()}
                             disabled={!idea.trim() || loadingAngles}
                             state={anglesButtonState}
                             idleLabel="Sugerir ángulos"
-                            loadingPhases={[
-                              "Inicializando",
-                              "Analizando contexto",
-                              "Identificando ángulos",
-                              "Propuesta lista",
-                            ]}
+                            loadingPhases={ANGLE_LOADING_PHASES}
                             successLabel="Ángulos listos"
                             errorLabel="Reintentar ángulos"
                             icon={Lightbulb}
                             variant="secondary"
                           />
                           <AIButton
+                            key={`generate-idea-${generateButtonState}`}
                             onClick={() => void generateContent()}
                             disabled={!canGenerate}
                             state={generateButtonState}
                             idleLabel={generationActionLabel}
-                            loadingPhases={[
-                              "Inicializando",
-                              "Identificando oportunidad",
-                              "Generando contenido",
-                              "Finalizando detalles",
-                              "Propuesta lista",
-                            ]}
+                            loadingPhases={GENERATION_LOADING_PHASES}
                             successLabel="Contenido listo"
                             errorLabel="Reintentar generación"
                             icon={Sparkles}
@@ -4010,17 +4430,12 @@ export default function ComposePage() {
                               : undefined
                           }>
                           <AIButton
+                            key={`generate-direct-${generateButtonState}`}
                             onClick={() => void generateContent()}
                             disabled={!canGenerate}
                             state={generateButtonState}
                             idleLabel={generationActionLabel}
-                            loadingPhases={[
-                              "Inicializando",
-                              "Identificando oportunidad",
-                              "Generando contenido",
-                              "Finalizando detalles",
-                              "Propuesta lista",
-                            ]}
+                            loadingPhases={GENERATION_LOADING_PHASES}
                             successLabel="Contenido listo"
                             errorLabel="Reintentar generación"
                             icon={Sparkles}
@@ -4046,6 +4461,7 @@ export default function ComposePage() {
           </motion.div>
         )}
       </AnimatePresence>
+      </div>
 
       {hasOutputPanel && (
         <section ref={outputSectionRef} className="space-y-4">
@@ -4262,43 +4678,53 @@ export default function ComposePage() {
       )}
 
       <AnimatePresence>
-        {isTemplateModalOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-6"
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-[32px] border border-white/10 bg-[#0A0D0F] p-8 shadow-2xl"
-            >
-              <TemplateSelector
-                slideData={readInstagramSlides(generatedResults.instagram?.content.slides || [])[carouselEditorActiveIndex]}
-                currentSlideIndex={carouselEditorActiveIndex}
-                suggestedTemplateId={readInstagramSlides(generatedResults.instagram?.content.slides || [])[carouselEditorActiveIndex]?.suggested_template}
-                onSelect={(template, applyToAll) => {
-                  setPreSelectedTemplate(template);
-                  setApplyTemplateToAll(applyToAll || false);
-                  setIsTemplateModalOpen(false);
-                  setIsCarouselEditorOpen(true);
-                }}
-                onKeepCurrent={() => {
-                  setPreSelectedTemplate(null);
-                  setIsTemplateModalOpen(false);
-                  setIsCarouselEditorOpen(true);
-                }}
-              />
-            </motion.div>
-          </motion.div>
-        )}
+        {isTemplateModalOpen &&
+          (() => {
+            const editorPayload = getInstagramEditorPayload();
+            const activeSlide = editorPayload?.slides[carouselEditorActiveIndex];
+
+            if (!activeSlide) {
+              return null;
+            }
+
+            return (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-6"
+              >
+                <motion.div
+                  initial={{ scale: 0.95, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.95, opacity: 0 }}
+                  className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-[32px] border border-white/10 bg-[#0A0D0F] p-8 shadow-2xl"
+                >
+                  <TemplateSelector
+                    slideData={activeSlide}
+                    currentSlideIndex={carouselEditorActiveIndex}
+                    suggestedTemplateId={activeSlide.suggested_template}
+                    onSelect={(template, applyToAll) => {
+                      setPreSelectedTemplate(template);
+                      setApplyTemplateToAll(applyToAll || false);
+                      setIsTemplateModalOpen(false);
+                      setIsCarouselEditorOpen(true);
+                    }}
+                    onKeepCurrent={() => {
+                      setPreSelectedTemplate(null);
+                      setIsTemplateModalOpen(false);
+                      setIsCarouselEditorOpen(true);
+                    }}
+                  />
+                </motion.div>
+              </motion.div>
+            );
+          })()}
       </AnimatePresence>
 
       {isCarouselEditorOpen &&
         (() => {
-          const editorPayload = getInstagramCarouselEditorPayload();
+          const editorPayload = getInstagramEditorPayload();
 
           if (!editorPayload) {
             return null;
@@ -4320,6 +4746,12 @@ export default function ComposePage() {
               onSave={handleCarouselEditorSave}
               slides={editorPayload.slides}
               postId={generatedResults.instagram?.post_id ?? undefined}
+              userId={userId || ''}
+              platform="instagram"
+              caption={editorPayload.caption}
+              hashtags={editorPayload.hashtags}
+              initialActiveFilterId={editorPayload.activeFilterId}
+              initialActiveFilterCSS={editorPayload.activeFilterCSS}
             />
           );
         })()}

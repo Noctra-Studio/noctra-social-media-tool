@@ -28,6 +28,7 @@ export async function POST(req: Request) {
       days?: unknown;
       platforms?: unknown;
       user_id?: unknown;
+      history?: string[];
     };
 
     const days = typeof body.days === 'number' ? Math.trunc(body.days) : Number(body.days);
@@ -39,6 +40,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid quick action payload' }, { status: 400 });
     }
 
+    const history = Array.isArray(body.history) ? body.history : [];
+    const historyContext = history.length > 0 
+      ? `\n\nThe following ideas have already been suggested in this session: \n- ${history.join('\n- ')}\n\nDO NOT repeat these topics, hooks, or angles. Explore DIFFERENT creative directions.`
+      : '';
+
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 2200,
@@ -46,7 +52,7 @@ export async function POST(req: Request) {
 Brand voice:
 ${formatBrandVoice(brandVoice)}
 
-Generate a ${days}-day content plan for: ${requestedPlatforms.join(', ')}.
+Generate a ${days}-day content plan for: ${requestedPlatforms.join(', ')}.${historyContext}
 
 Rules:
 - Distribute content types evenly: opinion, tutorial, story, data

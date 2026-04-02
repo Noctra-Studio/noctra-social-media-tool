@@ -11,13 +11,21 @@ CREATE TABLE IF NOT EXISTS image_briefs (
 
 ALTER TABLE image_briefs ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "image_briefs: select own"
-  ON image_briefs FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "image_briefs: insert own"
-  ON image_briefs FOR INSERT WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "image_briefs: update own"
-  ON image_briefs FOR UPDATE
-  USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+DO $$ BEGIN
+  CREATE POLICY "image_briefs: select own"
+    ON image_briefs FOR SELECT USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "image_briefs: insert own"
+    ON image_briefs FOR INSERT WITH CHECK (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "image_briefs: update own"
+    ON image_briefs FOR UPDATE
+    USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- table: token_ledger
 CREATE TABLE IF NOT EXISTS token_ledger (
@@ -31,12 +39,17 @@ CREATE TABLE IF NOT EXISTS token_ledger (
 
 ALTER TABLE token_ledger ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "token_ledger: select own"
-  ON token_ledger FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "token_ledger: insert system"
-  ON token_ledger FOR INSERT WITH CHECK (auth.uid() = user_id);
+DO $$ BEGIN
+  CREATE POLICY "token_ledger: select own"
+    ON token_ledger FOR SELECT USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "token_ledger: insert system"
+    ON token_ledger FOR INSERT WITH CHECK (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Indexing for performance
-CREATE INDEX idx_image_briefs_post_id ON image_briefs(post_id);
-CREATE INDEX idx_token_ledger_user_id ON token_ledger(user_id);
-CREATE INDEX idx_token_ledger_created_at ON token_ledger(created_at);
+CREATE INDEX IF NOT EXISTS idx_image_briefs_post_id ON image_briefs(post_id);
+CREATE INDEX IF NOT EXISTS idx_token_ledger_user_id ON token_ledger(user_id);
+CREATE INDEX IF NOT EXISTS idx_token_ledger_created_at ON token_ledger(created_at);

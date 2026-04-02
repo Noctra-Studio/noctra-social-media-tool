@@ -39,6 +39,8 @@ export type SlideEditorState = {
 }
 
 export type CarouselEditorSavePayload = {
+  activeFilterCSS?: string
+  activeFilterId?: string
   editorSlides: CarouselEditorSlide[]
   slideBackgrounds: SlideBackgroundSelection[]
   slides: InstagramCarouselSlide[]

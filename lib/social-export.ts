@@ -40,6 +40,7 @@ export async function exportInstagramPackage(args: {
     photographer: string
     overlay: any
   } | null
+  blobs?: Blob[] | null
 }) {
   const { content, exportMetadata, format } = args
   const zip = new JSZip()
@@ -83,7 +84,7 @@ export async function exportInstagramPackage(args: {
       throw new Error('No fue posible preparar los slides del ZIP')
     }
 
-    slides.forEach((slide) => {
+    slides.forEach((slide, i) => {
       const indexLabel = String(slide.slide_number).padStart(2, '0')
       const bgSelections = exportMetadata?.slide_backgrounds as SlideBackgroundSelection[] | undefined
       const editedSlides = exportMetadata?.edited_carousel_slides as CarouselEditorSlide[] | undefined
@@ -138,9 +139,15 @@ export async function exportInstagramPackage(args: {
 
       sections.push(`LOGO: Agrega ${logoAsset} en esquina inferior derecha, 24px, opacidad 75%`)
 
-      if (editedSlide?.previewDataURL) {
+      const blob = args.blobs?.[i]
+      if (blob) {
+        slidesFolder.file(`slide-${indexLabel}-${slide.type}.png`, blob)
+        sections.push(
+          'NOTA: Imagen generada en UHD del Mirror UI.',
+          'USA_DIRECTAMENTE: Usa este archivo para publicar.'
+        )
+      } else if (editedSlide?.previewDataURL) {
         const pngBase64 = editedSlide.previewDataURL.split(',')[1]
-
         if (pngBase64) {
           slidesFolder.file(`slide-${indexLabel}-${slide.type}.png`, pngBase64, { base64: true })
           sections.push(
@@ -155,6 +162,7 @@ export async function exportInstagramPackage(args: {
         sections.join('\n')
       )
     })
+
 
     root.file(
       'guia-rapida.txt',

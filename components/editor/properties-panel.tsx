@@ -7,6 +7,7 @@ import {
   Textbox,
   Shadow,
   Gradient,
+  Canvas,
   type GradientOptions,
 } from "fabric";
 import {
@@ -20,7 +21,20 @@ import {
   AlignLeft,
   AlignCenter,
   AlignRight,
+  Baseline,
+  Palette,
+  RefreshCw,
+  Loader2,
+  Minimize2,
+  Maximize2
 } from "lucide-react";
+import { 
+  TYPE_SCALE_RATIOS, 
+  generateTypeScale, 
+  applyTypeScaleToCanvas, 
+  type TypeScale, 
+  type TypeScaleRatioKey 
+} from "@/lib/typography/type-scale";
 import { ColorPicker } from "@/components/editor/color-picker";
 import {
   ensureEditorFontLoaded,
@@ -301,7 +315,7 @@ function applyGradientToText(
       { offset: 0, color: color1 },
       { offset: 1, color: color2 },
     ],
-  } as any);
+  });
 
   obj.set("fill", gradient);
   (obj as any).set("data", {
@@ -326,11 +340,12 @@ interface PropertiesPanelProps {
   handleDuplicateSlide: () => void;
   handleDeleteSlide: () => void;
   recentFontIds: string[];
-  openUnsplashModal: (mode: any) => void;
+  onOpenImages: () => void;
   handleBackgroundFile: (event: React.ChangeEvent<HTMLInputElement>) => Promise<void>;
   savedGradients: CarouselGradientConfig[];
   setSavedGradients: (gradients: CarouselGradientConfig[]) => void;
   commitCanvasMutation: () => void;
+  canvas?: Canvas | null;
 }
 
 export function PropertiesPanel({
@@ -346,14 +361,16 @@ export function PropertiesPanel({
   handleDuplicateSlide,
   handleDeleteSlide,
   recentFontIds,
-  openUnsplashModal,
+  onOpenImages,
   handleBackgroundFile,
   savedGradients,
   setSavedGradients,
   commitCanvasMutation,
+  canvas
 }: PropertiesPanelProps) {
   
-  const isTextbox = (obj: any): obj is Textbox => obj instanceof Textbox;
+  const isTextbox = (obj: any): obj is Textbox => obj instanceof Textbox || obj?.type === 'textbox' || obj?.type === 'itext';
+  const isIcon = (obj: any) => obj?.data?.role === 'icon';
 
   const [savedStyles, setSavedStyles] = useState<TextStyle[]>([]);
   const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
@@ -391,12 +408,29 @@ export function PropertiesPanel({
       enabled: false,
       color: "#462D6E",
       width: 2,
+      type: 'solid' as 'solid' | 'gradient',
+      gradient: {
+        enabled: false,
+        color1: '#E0E5EB',
+        color2: '#462D6E',
+        angle: 45
+      }
     },
     gradient: {
       enabled: false,
       color1: "#E0E5EB",
       color2: "#462D6E",
       angle: 45,
+    },
+    shape: {
+      type: 'rect' as 'rect' | 'arc' | 'circle',
+      arc: { radius: 300, startAngle: -90, endAngle: 90 }
+    },
+    background: {
+      enabled: false,
+      color: 'rgba(70, 45, 110, 0.2)',
+      padding: 10,
+      radius: 8
     }
   });
 
@@ -416,33 +450,72 @@ export function PropertiesPanel({
           offsetY: shadow?.offsetY || 4,
         },
         stroke: {
-          enabled: !!activeObject.stroke && activeObject.stroke !== 'transparent',
+          enabled: (!!activeObject.stroke && activeObject.stroke !== 'transparent') || !!data.gradientStroke?.enabled,
           color: (activeObject.stroke as string) || "#462D6E",
           width: activeObject.strokeWidth || 2,
+          type: data.gradientStroke?.enabled ? 'gradient' : 'solid',
+          gradient: data.gradientStroke || { enabled: false, color1: '#E0E5EB', color2: '#462D6E', angle: 45 }
         },
         gradient: {
           enabled: activeObject.fill instanceof Gradient || !!data.gradientFill,
           color1: data.gradientFill?.color1 || "#E0E5EB",
           color2: data.gradientFill?.color2 || "#462D6E",
           angle: data.gradientFill?.angle || 45,
-        }
+        },
+        shape: {
+          type: data.type === 'arc-text' ? (data.arcOptions?.type || 'arc') : 'rect',
+          arc: data.arcOptions || { radius: 300, startAngle: -90, endAngle: 90 }
+        },
+        background: data.backgroundHighlight || { enabled: false, color: 'rgba(70, 45, 110, 0.2)', padding: 10, radius: 8 }
       }));
     }
   }, [activeObject]);
+ 
+  // Typographic Scale State
+  const canvasData = (canvas as any)?.data || {};
+  const currentScale = canvasData.typeScale as TypeScale | undefined;
+  const autoScale = canvasData.autoTypeScale ?? true;
+
+  const handleScaleChange = (ratioKey: TypeScaleRatioKey) => {
+    if (!canvas) return;
+    const base = currentScale?.base || 36;
+    const nextScale = generateTypeScale(base, ratioKey);
+    
+    // Update canvas data
+    (canvas as any).data = { ...canvasData, typeScale: nextScale };
+    
+    // Apply to objects
+    applyTypeScaleToCanvas(canvas, ratioKey, base);
+    commitCanvasMutation();
+  };
+
+  const toggleAutoScale = () => {
+    if (!canvas) return;
+    (canvas as any).data = { ...canvasData, autoTypeScale: !autoScale };
+    commitCanvasMutation();
+  };
+
+  const updateIconSize = (size: number) => {
+    if (!activeObject) return;
+    const currentWidth = activeObject.width || 1;
+    const currentHeight = activeObject.height || 1;
+    const scale = size / Math.max(currentWidth, currentHeight);
+    
+    activeObject.set({
+      scaleX: scale,
+      scaleY: scale
+    });
+    
+    activeObject.canvas?.renderAll();
+    commitCanvasMutation();
+  };
 
   const handleShadowChange = (updates: Partial<typeof effectsState.shadow>) => {
     if (!activeObject || !isTextbox(activeObject)) return;
-    
     const next = { ...effectsState.shadow, ...updates };
     setEffectsState(s => ({ ...s, shadow: next }));
-
     if (next.enabled) {
-      activeObject.set("shadow", new Shadow({
-        color: next.color,
-        blur: next.blur,
-        offsetX: next.offsetX,
-        offsetY: next.offsetY,
-      }));
+      activeObject.set("shadow", new Shadow({ color: next.color, blur: next.blur, offsetX: next.offsetX, offsetY: next.offsetY }));
     } else {
       activeObject.set("shadow", null);
     }
@@ -450,39 +523,14 @@ export function PropertiesPanel({
     commitCanvasMutation();
   };
 
-  const handleStrokeChange = (updates: Partial<typeof effectsState.stroke>) => {
-    if (!activeObject || !isTextbox(activeObject)) return;
-    
-    const next = { ...effectsState.stroke, ...updates };
-    setEffectsState(s => ({ ...s, stroke: next }));
-
-    if (next.enabled) {
-      activeObject.set({
-        stroke: next.color,
-        strokeWidth: next.width,
-      });
-    } else {
-      activeObject.set({
-        stroke: "transparent",
-        strokeWidth: 0,
-      });
-    }
-    activeObject.canvas?.renderAll();
-    commitCanvasMutation();
-  };
-
   const handleGradientChange = (updates: Partial<typeof effectsState.gradient>) => {
     if (!activeObject || !isTextbox(activeObject)) return;
-    
     const next = { ...effectsState.gradient, ...updates };
     setEffectsState(s => ({ ...s, gradient: next }));
-
     if (next.enabled) {
-      applyGradientToText(activeObject, next.color1, next.color2, next.angle);
+      applyGradientToText(activeObject as Textbox, next.color1, next.color2, next.angle);
     } else {
-      // Revert to solid color if we have a record of it, or default
-      const defaultColor = "#E0E5EB"; 
-      activeObject.set("fill", defaultColor);
+      activeObject.set("fill", "#E0E5EB");
       (activeObject as any).set("data", { ...(activeObject as any).data, gradientFill: null });
     }
     activeObject.canvas?.renderAll();
@@ -491,664 +539,308 @@ export function PropertiesPanel({
 
   const handleTextTransform = (mode: 'original' | 'upper' | 'lower' | 'cap') => {
     if (!activeObject || !isTextbox(activeObject)) return;
-    
-    // Store original if not already stored
     const data = (activeObject as any).data || {};
-    if (!data.originalText) {
-      data.originalText = activeObject.text;
-    }
-    
+    if (!data.originalText) data.originalText = (activeObject as Textbox).text;
     let nextText = data.originalText;
     if (mode === 'upper') nextText = nextText.toUpperCase();
     if (mode === 'lower') nextText = nextText.toLowerCase();
     if (mode === 'cap') nextText = nextText.replace(/\b\w/g, (c: string) => c.toUpperCase());
-    
-    activeObject.set({
-      text: nextText,
-      data: { ...data, textTransform: mode } as any
-    });
+    activeObject.set({ text: nextText, data: { ...data, textTransform: mode } } as any);
     activeObject.canvas?.renderAll();
     commitCanvasMutation();
   };
 
-  const getCharSpacingLabel = (val: number) => {
-    if (val === 0) return "Normal";
-    return val > 0 ? `+${val}` : `${val}`;
-  };
+  const getCharSpacingLabel = (val: number) => val === 0 ? "Normal" : val > 0 ? `+${val}` : `${val}`;
 
   return (
     <div className="flex flex-col gap-4">
       {activeObject && isTextbox(activeObject) ? (
-        <PropertySection title="Texto" id="text">
-          {/* Saved Styles Row */}
-          <div className="space-y-2">
+        <div className="space-y-4">
+          <div className="space-y-2 p-3 rounded-2xl border border-white/6 bg-[#0F1317]">
             <span className="text-[10px] font-bold uppercase tracking-widest text-[#4E576A]">Estilos guardados</span>
-            <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none no-scrollbar" style={{ scrollbarWidth: 'none' }}>
+            <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none no-scrollbar">
               {allStyles.map((style) => (
                 <button
                   key={style.id}
-                  onClick={() => {
-                    applyTextStyle(activeObject, style, activeObject.canvas!);
-                    commitCanvasMutation();
-                  }}
-                  onContextMenu={(e) => {
-                    if (style.id.startsWith('default-')) return;
-                    e.preventDefault();
-                    handleDeleteStyle(style.id, e as any);
-                  }}
+                  onClick={() => { applyTextStyle(activeObject as Textbox, style, activeObject.canvas!); commitCanvasMutation(); }}
                   className="group relative flex h-9 w-20 flex-shrink-0 flex-col items-center justify-center rounded-xl border border-white/8 bg-[#14171C] transition-all hover:border-[#4E576A] hover:bg-[#212631]"
                 >
-                  <span 
-                    style={{
-                      fontFamily: style.fontFamily,
-                      fontWeight: style.fontWeight,
-                      color: style.gradientFill?.enabled ? 'transparent' : style.fill,
-                      background: style.gradientFill?.enabled ? `linear-gradient(${90 - style.gradientFill.angle}deg, ${style.gradientFill.color1}, ${style.gradientFill.color2})` : 'none',
-                      WebkitBackgroundClip: style.gradientFill?.enabled ? 'text' : 'none',
-                    }}
-                    className="text-sm font-bold"
-                  >
-                    Aa
-                  </span>
-                  <span className="absolute -bottom-5 left-0 right-0 truncate text-center text-[9px] text-[#4E576A] opacity-0 transition-opacity group-hover:opacity-100">
-                    {style.name}
-                  </span>
+                   <span style={{ fontFamily: style.fontFamily, fontWeight: style.fontWeight, color: style.fill as string }} className="text-sm font-bold">Aa</span>
                 </button>
               ))}
               <button
                 onClick={() => setIsSaveDialogOpen(true)}
-                className="flex h-9 w-20 flex-shrink-0 items-center justify-center rounded-xl border border-dashed border-white/10 bg-transparent text-[9px] font-bold text-[#4E576A] transition-colors hover:border-[#4E576A] hover:text-[#E0E5EB]"
-              >
-                + Guardar
-              </button>
+                className="flex h-9 w-20 flex-shrink-0 items-center justify-center rounded-xl border border-dashed border-white/10 bg-transparent text-[9px] font-bold text-[#4E576A] hover:border-[#4E576A] hover:text-[#E0E5EB]"
+              > + </button>
             </div>
           </div>
 
-          <FontFamilyPicker
-            value={activeObject.fontFamily ?? "Inter"}
-            recentFontIds={recentFontIds}
-            onChange={(family, id) => updateTextboxProperty({ fontFamily: family })}
-          />
-
-          <div className="space-y-1 text-xs text-[#8D95A6]">
-            <span>Tamaño {activeObject.fontSize}px</span>
-            <div className="flex gap-2">
-              <input
-                type="range"
-                min={12}
-                max={400}
-                value={activeObject.fontSize}
-                onChange={(event) => updateTextboxProperty({ fontSize: Number(event.target.value) })}
-                className="w-full"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-1 text-xs text-[#8D95A6]">
-            <span>Grosor</span>
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { label: "Book", value: "300" },
-                { label: "Medium", value: "500" },
-                { label: "Bold", value: "700" },
-              ].map((weight) => (
-                <PropertyButton
-                  key={weight.value}
-                  active={String(activeObject.fontWeight ?? "400") === weight.value}
-                  onClick={() => updateTextboxProperty({ fontWeight: weight.value })}
-                >
-                  {weight.label}
-                </PropertyButton>
-              ))}
-            </div>
-          </div>
-
-          <div className="space-y-1 text-xs text-[#8D95A6]">
-            <span>Estilo</span>
-            <div className="flex gap-2">
-              <PropertyButton 
-                active={(activeObject.fontStyle ?? "normal") === "normal"} 
-                onClick={() => updateTextboxProperty({ fontStyle: "normal" })}
-                className="flex-1"
-              >
-                Normal
-              </PropertyButton>
-              <PropertyButton 
-                active={activeObject.fontStyle === "italic"} 
-                onClick={() => updateTextboxProperty({ fontStyle: "italic" })}
-                className="flex-1"
-              >
-                <Italic className="h-3 w-3 inline mr-1" /> Italic
-              </PropertyButton>
-            </div>
-          </div>
-
-          {!effectsState.gradient.enabled && (
-            <ColorPicker
-              label="Color"
-              value={String(activeObject.fill ?? "#E0E5EB").slice(0, 7)}
-              onChange={(hex) => updateTextboxProperty({ fill: hex })}
+          <PropertySection title="Tipografía" id="typography">
+             <FontFamilyPicker
+              value={activeObject.fontFamily ?? "Inter"}
+              recentFontIds={recentFontIds}
+              onChange={(family) => updateTextboxProperty({ fontFamily: family })}
             />
-          )}
-
-          <div className="space-y-1 text-xs text-[#8D95A6]">
-            <span>Alineación</span>
-            <div className="flex gap-2">
-              {(["left", "center", "right"] as const).map((align) => (
-                <PropertyButton 
-                  key={align} 
-                  active={(activeObject.textAlign ?? "left") === align} 
-                  onClick={() => updateTextboxProperty({ textAlign: align })}
-                  className="flex-1"
-                >
-                  {align === 'left' && <AlignLeft className="h-3 w-3" />}
-                  {align === 'center' && <AlignCenter className="h-3 w-3" />}
-                  {align === 'right' && <AlignRight className="h-3 w-3" />}
-                </PropertyButton>
-              ))}
+            <div className="space-y-1 text-xs text-[#8D95A6]">
+              <div className="flex justify-between items-center"><span>Tamaño</span><span className="font-mono">{activeObject.fontSize}px</span></div>
+              <input type="range" min={12} max={400} value={activeObject.fontSize} onChange={(e) => updateTextboxProperty({ fontSize: Number(e.target.value) })} className="w-full" />
             </div>
-          </div>
-
-          <label className="space-y-1 text-xs text-[#8D95A6]">
-            <span>Interlineado {Number(activeObject.lineHeight ?? 1.16).toFixed(2)}</span>
-            <input 
-              type="range" 
-              min={0.8} 
-              max={2.5} 
-              step={0.05} 
-              value={Number(activeObject.lineHeight ?? 1.16)} 
-              onChange={(event) => updateTextboxProperty({ lineHeight: Number(event.target.value) })} 
-              className="w-full" 
-            />
-          </label>
-        </PropertySection>
-      ) : null}
-
-      {activeObject && isTextbox(activeObject) ? (
-        <PropertySection title="Efectos" id="effects" defaultExpanded={false}>
-          {/* Live Preview Box */}
-          <div className="mb-4 flex h-16 w-full items-center justify-center rounded-xl bg-[#101417] border border-white/5 overflow-hidden">
-            <span 
-              className="text-lg truncate max-w-[90%] pointer-events-none"
-              style={{
-                fontFamily: activeObject.fontFamily,
-                fontWeight: activeObject.fontWeight,
-                fontStyle: activeObject.fontStyle,
-                color: effectsState.gradient.enabled ? 'transparent' : (activeObject.fill as string),
-                background: effectsState.gradient.enabled ? `linear-gradient(${90 - effectsState.gradient.angle}deg, ${effectsState.gradient.color1}, ${effectsState.gradient.color2})` : 'none',
-                WebkitBackgroundClip: effectsState.gradient.enabled ? 'text' : 'none',
-                WebkitTextStroke: effectsState.stroke.enabled ? `${effectsState.stroke.width / 4}px ${effectsState.stroke.color}` : 'none',
-                textShadow: effectsState.shadow.enabled ? `${effectsState.shadow.offsetX / 4}px ${effectsState.shadow.offsetY / 4}px ${effectsState.shadow.blur / 4}px ${effectsState.shadow.color}` : 'none',
-              }}
-            >
-              {activeObject.text?.split('\n')[0] || "Preview"}
-            </span>
-          </div>
-
-          {/* Shadow Effect */}
-          <div className="space-y-3 pt-2">
-            <label className="flex items-center justify-between cursor-pointer">
-              <span className="text-xs text-[#E0E5EB]">Sombra</span>
-              <div 
-                className={cn(
-                  "relative h-5 w-9 rounded-full transition-colors",
-                  effectsState.shadow.enabled ? "bg-[#E0E5EB]" : "bg-[#212631]"
-                )}
-                onClick={() => handleShadowChange({ enabled: !effectsState.shadow.enabled })}
-              >
-                <div className={cn(
-                  "absolute top-1 h-3 w-3 rounded-full bg-[#101417] transition-all",
-                  effectsState.shadow.enabled ? "left-5" : "left-1"
-                )} />
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <span className="text-[10px] text-[#4E576A] uppercase tracking-wider">Grosor</span>
+                <select className="w-full rounded-xl border border-white/8 bg-[#14171C] px-2 py-1.5 text-xs text-[#E0E5EB] outline-none" value={String(activeObject.fontWeight ?? "400")} onChange={(e) => updateTextboxProperty({ fontWeight: e.target.value })}>
+                  <option value="300">Book (300)</option><option value="400">Regular (400)</option><option value="500">Medium (500)</option><option value="700">Bold (700)</option><option value="900">Black (900)</option>
+                </select>
               </div>
-            </label>
-            
-            {effectsState.shadow.enabled && (
-              <div className="space-y-3 pl-2 border-l border-white/5 animate-in fade-in slide-in-from-left-2 duration-200">
-                <ColorPicker
-                  label="Color Sombra"
-                  value={effectsState.shadow.color}
-                  onChange={(hex) => handleShadowChange({ color: hex })}
-                />
-                <label className="block space-y-1 text-[10px] text-[#8D95A6]">
-                  <span>Difuminado: {effectsState.shadow.blur}px</span>
-                  <input 
-                    type="range" min={0} max={40} 
-                    value={effectsState.shadow.blur} 
-                    onChange={(e) => handleShadowChange({ blur: Number(e.target.value) })}
-                    className="w-full h-1"
-                  />
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="block space-y-1 text-[10px] text-[#8D95A6]">
-                    <span>Offset X: {effectsState.shadow.offsetX}</span>
-                    <input 
-                      type="range" min={-20} max={20} 
-                      value={effectsState.shadow.offsetX} 
-                      onChange={(e) => handleShadowChange({ offsetX: Number(e.target.value) })}
-                      className="w-full h-1"
-                    />
-                  </label>
-                  <label className="block space-y-1 text-[10px] text-[#8D95A6]">
-                    <span>Offset Y: {effectsState.shadow.offsetY}</span>
-                    <input 
-                      type="range" min={-20} max={20} 
-                      value={effectsState.shadow.offsetY} 
-                      onChange={(e) => handleShadowChange({ offsetY: Number(e.target.value) })}
-                      className="w-full h-1"
-                    />
-                  </label>
+              <div className="space-y-1">
+                <span className="text-[10px] text-[#4E576A] uppercase tracking-wider">Alineación</span>
+                <div className="flex gap-1 h-[32px]">
+                  {(["left", "center", "right"] as const).map((align) => (
+                    <button key={align} onClick={() => updateTextboxProperty({ textAlign: align })} className={cn("flex-1 flex items-center justify-center rounded-lg border transition-all", (activeObject.textAlign ?? "left") === align ? "border-[#4E576A] bg-[#212631] text-white" : "border-white/5 text-[#4E576A] hover:text-[#8D95A6]")}>
+                      {align === 'left' && <AlignLeft size={14} />}
+                      {align === 'center' && <AlignCenter size={14} />}
+                      {align === 'right' && <AlignRight size={14} />}
+                    </button>
+                  ))}
                 </div>
               </div>
-            )}
-          </div>
-
-          {/* Stroke Effect */}
-          <div className="space-y-3 pt-2">
-            <label className="flex items-center justify-between cursor-pointer">
-              <span className="text-xs text-[#E0E5EB]">Contorno</span>
-              <div 
-                className={cn(
-                  "relative h-5 w-9 rounded-full transition-colors",
-                  effectsState.stroke.enabled ? "bg-[#E0E5EB]" : "bg-[#212631]"
-                )}
-                onClick={() => handleStrokeChange({ enabled: !effectsState.stroke.enabled })}
-              >
-                <div className={cn(
-                  "absolute top-1 h-3 w-3 rounded-full bg-[#101417] transition-all",
-                  effectsState.stroke.enabled ? "left-5" : "left-1"
-                )} />
-              </div>
-            </label>
-            
-            {effectsState.stroke.enabled && (
-              <div className="space-y-3 pl-2 border-l border-white/5 animate-in fade-in slide-in-from-left-2 duration-200">
-                <ColorPicker
-                  label="Color Contorno"
-                  value={effectsState.stroke.color}
-                  onChange={(hex) => handleStrokeChange({ color: hex })}
-                />
-                <label className="block space-y-1 text-[10px] text-[#8D95A6]">
-                  <span>Grosor: {effectsState.stroke.width}px</span>
-                  <input 
-                    type="range" min={1} max={20} 
-                    value={effectsState.stroke.width} 
-                    onChange={(e) => handleStrokeChange({ width: Number(e.target.value) })}
-                    className="w-full h-1"
-                  />
-                </label>
-              </div>
-            )}
-          </div>
-
-          {/* Letter Spacing */}
-          <div className="space-y-2 pt-2">
-            <span className="text-[10px] uppercase tracking-wider text-[#4E576A]">Espaciado de letras</span>
-            <div className="flex items-center gap-3">
-              <input 
-                type="range" min={-200} max={500} 
-                value={activeObject.charSpacing ?? 0} 
-                onChange={(e) => updateTextboxProperty({ charSpacing: Number(e.target.value) })}
-                className="flex-1 h-1"
-              />
-              <span className="w-12 text-right text-[11px] font-mono text-[#E0E5EB]">
-                {getCharSpacingLabel(activeObject.charSpacing ?? 0)}
-              </span>
             </div>
-            <div className="grid grid-cols-4 gap-1">
-              {[
-                { label: "Tight", value: -80 },
-                { label: "Normal", value: 0 },
-                { label: "Wide", value: 150 },
-                { label: "Extra", value: 400 },
-              ].map(preset => (
-                <button
-                  key={preset.label}
-                  onClick={() => updateTextboxProperty({ charSpacing: preset.value })}
-                  className={cn(
-                    "rounded-lg border py-1 text-[9px] transition-colors",
-                    (activeObject.charSpacing ?? 0) === preset.value
-                      ? "border-[#4E576A] bg-[#212631] text-[#E0E5EB]"
-                      : "border-white/5 text-[#4E576A] hover:text-[#8D95A6]"
-                  )}
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-          </div>
+          </PropertySection>
 
-          {/* Text Transform */}
-          <div className="space-y-2 pt-2">
-            <span className="text-[10px] uppercase tracking-wider text-[#4E576A]">Transformar texto</span>
-            <div className="flex gap-2">
-              {[
-                { mode: 'original' as const, label: 'Aa' },
-                { mode: 'upper' as const, label: 'AA' },
-                { mode: 'lower' as const, label: 'aa' },
-                { mode: 'cap' as const, label: 'Ab' },
-              ].map(item => (
-                <button
-                  key={item.mode}
-                  onClick={() => handleTextTransform(item.mode)}
-                  className={cn(
-                    "flex-1 h-9 rounded-xl border text-xs transition-colors",
-                    ((activeObject as any).data?.textTransform || 'original') === item.mode
-                      ? "border-[#4E576A] bg-[#212631] text-[#E0E5EB]"
-                      : "border-white/8 text-[#8D95A6] hover:border-[#4E576A] hover:text-[#E0E5EB]"
-                  )}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Gradient Text Fill */}
-          <div className="space-y-3 pt-2">
-            <label className="flex items-center justify-between cursor-pointer">
-              <span className="text-xs text-[#E0E5EB]">Relleno gradiente</span>
-              <div 
-                className={cn(
-                  "relative h-5 w-9 rounded-full transition-colors",
-                  effectsState.gradient.enabled ? "bg-[#E0E5EB]" : "bg-[#212631]"
-                )}
-                onClick={() => handleGradientChange({ enabled: !effectsState.gradient.enabled })}
-              >
-                <div className={cn(
-                  "absolute top-1 h-3 w-3 rounded-full bg-[#101417] transition-all",
-                  effectsState.gradient.enabled ? "left-5" : "left-1"
-                )} />
-              </div>
-            </label>
-            
-            {effectsState.gradient.enabled && (
-              <div className="space-y-3 pl-2 border-l border-white/5 animate-in fade-in slide-in-from-left-2 duration-200">
-                <div className="grid grid-cols-2 gap-2">
-                  <ColorPicker
-                    label="Color 1"
-                    value={effectsState.gradient.color1}
-                    onChange={(hex) => handleGradientChange({ color1: hex })}
-                  />
-                  <ColorPicker
-                    label="Color 2"
-                    value={effectsState.gradient.color2}
-                    onChange={(hex) => handleGradientChange({ color2: hex })}
-                  />
-                </div>
-                <div className="flex items-center gap-4 rounded-xl border border-white/8 bg-[#14171C] p-3">
-                  <AngleWheel
-                    value={effectsState.gradient.angle}
-                    onChange={(nextAngle) => handleGradientChange({ angle: nextAngle })}
-                  />
-                  <div className="flex-1 space-y-1">
-                    <span className="text-[10px] text-[#8D95A6]">Ángulo: {effectsState.gradient.angle}°</span>
+          <PropertySection title="Espaciado" id="spacing" defaultExpanded={false}>
+            <div className="space-y-4">
+               {/* Icon Size Presets */}
+               {isIcon(activeObject) && (
+                <PropertySection title="Tamaño del ícono" id="icon-size">
+                  <div className="flex flex-wrap gap-2">
+                    {([
+                      { label: 'XS', size: 40 },
+                      { label: 'S', size: 60 },
+                      { label: 'M', size: 80 },
+                      { label: 'L', size: 120 },
+                      { label: 'XL', size: 200 }
+                    ] as const).map(preset => (
+                      <button
+                        key={preset.label}
+                        onClick={() => updateIconSize(preset.size)}
+                        className={cn(
+                          "flex-1 rounded-xl border border-white/8 bg-[#14171C] py-2 text-[10px] font-bold text-[#8D95A6] transition-all hover:border-[#4E576A] hover:text-[#E0E5EB]",
+                          Math.round(Math.max(activeObject.width! * activeObject.scaleX!, activeObject.height! * activeObject.scaleY!)) === preset.size && "border-[#4E576A] bg-[#212631] text-[#E0E5EB]"
+                        )}
+                      >
+                        {preset.label} ({preset.size}px)
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-4 space-y-1">
+                    <div className="flex justify-between items-center text-[10px]">
+                      <span className="text-[#4E576A] uppercase tracking-wider">Ajuste fino</span>
+                      <span className="font-mono text-[#8D95A6]">{Math.round(Math.max(activeObject.width! * activeObject.scaleX!, activeObject.height! * activeObject.scaleY!))}px</span>
+                    </div>
                     <input 
-                      type="range" min={0} max={360} 
-                      value={effectsState.gradient.angle} 
-                      onChange={(e) => handleGradientChange({ angle: Number(e.target.value) })}
-                      className="w-full h-1"
+                      type="range" 
+                      min={20} 
+                      max={400} 
+                      value={Math.round(Math.max(activeObject.width! * activeObject.scaleX!, activeObject.height! * activeObject.scaleY!))} 
+                      onChange={(e) => updateIconSize(Number(e.target.value))} 
+                      className="w-full"
                     />
                   </div>
-                </div>
-                <button 
-                  onClick={() => handleGradientChange({ enabled: false })}
-                  className="text-[10px] text-[#4E576A] underline underline-offset-2 hover:text-[#8D95A6]"
-                >
-                  Desactivar gradiente → Color sólido
-                </button>
+                </PropertySection>
+              )}
+
+              {isIcon(activeObject) && (
+                <PropertySection title="Color del ícono" id="icon-color">
+                   <ColorPicker label="Color" value={activeObject.fill as string || "#E0E5EB"} onChange={(hex) => { activeObject.set('fill', hex); activeObject.canvas?.renderAll(); commitCanvasMutation(); }} />
+                   <p className="mt-2 text-[9px] text-[#4E576A]">
+                    Tip: Los íconos se sincronizan con el color de acento automáticamente, pero puedes forzar uno manual aquí.
+                   </p>
+                </PropertySection>
+              )}
+
+              <label className="block space-y-1 text-xs text-[#8D95A6]"><div className="flex justify-between"><span>Interlineado</span><span className="font-mono">{Number(activeObject.lineHeight ?? 1.16).toFixed(2)}</span></div><input type="range" min={0.8} max={2.5} step={0.05} value={Number(activeObject.lineHeight ?? 1.16)} onChange={(e) => updateTextboxProperty({ lineHeight: Number(e.target.value) })} className="w-full" /></label>
+              <label className="block space-y-1 text-xs text-[#8D95A6]"><div className="flex justify-between"><span>Espaciado letras</span><span className="font-mono">{activeObject.charSpacing ?? 0}</span></div><input type="range" min={-200} max={500} value={activeObject.charSpacing ?? 0} onChange={(e) => updateTextboxProperty({ charSpacing: Number(e.target.value) })} className="w-full" /></label>
+            </div>
+          </PropertySection>
+
+          <PropertySection title="Color y Relleno" id="fill">
+            <div className="space-y-4">
+              <div className="flex gap-2 p-1 rounded-xl bg-black/20 border border-white/5">
+                {['solid', 'gradient', 'outline'].map(type => (
+                  <button key={type} onClick={() => {
+                    if (type === 'outline') updateTextboxProperty({ fill: 'transparent', stroke: '#E0E5EB', strokeWidth: 2, paintFirst: 'stroke' });
+                    else updateTextboxProperty({ fill: '#E0E5EB', stroke: 'transparent', strokeWidth: 0 });
+                  }} className={cn("flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all", (activeObject.fill === 'transparent' && type === 'outline') || (activeObject.fill !== 'transparent' && type !== 'outline') ? "bg-[#212631] text-white" : "text-[#4E576A]")}>{type === 'solid' ? 'Sólido' : type === 'gradient' ? 'Gradiente' : 'Contorno'}</button>
+                ))}
               </div>
-            )}
-          </div>
-        </PropertySection>
-      ) : null}
+              {activeObject.fill !== 'transparent' && <ColorPicker label="Color Principal" value={String(activeObject.fill ?? "#E0E5EB").slice(0, 7)} onChange={(hex) => updateTextboxProperty({ fill: hex })} />}
+              {activeObject.fill === 'transparent' && <ColorPicker label="Color Contorno" value={String(activeObject.stroke ?? "#E0E5EB").slice(0, 7)} onChange={(hex) => updateTextboxProperty({ stroke: hex })} />}
+            </div>
+          </PropertySection>
 
-      {/* --- Shape Properties --- */}
-      {activeObject && !isTextbox(activeObject) && activeObject.type !== 'image' ? (
+          <PropertySection title="Efectos" id="effects" defaultExpanded={false}>
+            <div className="space-y-3">
+              <label className="flex items-center justify-between cursor-pointer"><span className="text-xs text-[#E0E5EB]">Sombra</span><div className={cn("relative h-5 w-9 rounded-full transition-colors", effectsState.shadow.enabled ? "bg-[#E0E5EB]" : "bg-[#212631]")} onClick={() => handleShadowChange({ enabled: !effectsState.shadow.enabled })}><div className={cn("absolute top-1 h-3 w-3 rounded-full bg-[#101417] transition-all", effectsState.shadow.enabled ? "left-5" : "left-1")} /></div></label>
+              {effectsState.shadow.enabled && (
+                <div className="space-y-3 pl-2 border-l border-white/5 mx-1">
+                  <ColorPicker label="Color" value={effectsState.shadow.color} onChange={(hex) => handleShadowChange({ color: hex })} />
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="block space-y-1 text-[10px] text-[#4E576A]"><span>Brad: {effectsState.shadow.blur}px</span><input type="range" min={0} max={40} value={effectsState.shadow.blur} onChange={(e) => handleShadowChange({ blur: Number(e.target.value) })} className="w-full h-1" /></label>
+                    <label className="block space-y-1 text-[10px] text-[#4E576A]"><span>Offset: {effectsState.shadow.offsetX}px</span><input type="range" min={-20} max={20} value={effectsState.shadow.offsetX} onChange={(e) => handleShadowChange({ offsetX: Number(e.target.value), offsetY: Number(e.target.value) })} className="w-full h-1" /></label>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="space-y-3 pt-3 border-t border-white/5">
+              <label className="flex items-center justify-between cursor-pointer"><span className="text-xs text-[#E0E5EB]">Contorno</span><div className={cn("relative h-5 w-9 rounded-full transition-colors", effectsState.stroke.enabled ? "bg-[#E0E5EB]" : "bg-[#212631]")} onClick={() => {
+                const enabled = !effectsState.stroke.enabled;
+                if (enabled) updateTextboxProperty({ stroke: effectsState.stroke.color, strokeWidth: effectsState.stroke.width });
+                else updateTextboxProperty({ stroke: 'transparent', strokeWidth: 0, gradientStroke: { enabled: false } });
+              }}><div className={cn("absolute top-1 h-3 w-3 rounded-full bg-[#101417] transition-all", effectsState.stroke.enabled ? "left-5" : "left-1")} /></div></label>
+              {effectsState.stroke.enabled && (
+                <div className="space-y-3 pl-2 border-l border-white/5 mx-1">
+                  <div className="flex gap-2 p-1 rounded-lg bg-black/20 border border-white/5">
+                    {['solid', 'gradient'].map(type => (
+                      <button key={type} onClick={() => {
+                        if (type === 'gradient') updateTextboxProperty({ gradientStroke: { ...effectsState.stroke.gradient, enabled: true } });
+                        else updateTextboxProperty({ gradientStroke: { enabled: false }, stroke: effectsState.stroke.color });
+                      }} className={cn("flex-1 py-1 text-[9px] font-bold rounded-md transition-all", effectsState.stroke.type === type ? "bg-[#212631] text-white" : "text-[#4E576A]")}>{type === 'solid' ? 'Sólido' : 'Gradiente'}</button>
+                    ))}
+                  </div>
+                  {effectsState.stroke.type === 'solid' ? (<ColorPicker label="Color" value={effectsState.stroke.color} onChange={(hex) => updateTextboxProperty({ stroke: hex })} />) : (
+                    <div className="space-y-2"><div className="grid grid-cols-2 gap-2"><ColorPicker label="C1" value={effectsState.stroke.gradient.color1} onChange={(c) => updateTextboxProperty({ gradientStroke: { ...effectsState.stroke.gradient, color1: c, enabled: true } })} /><ColorPicker label="C2" value={effectsState.stroke.gradient.color2} onChange={(c) => updateTextboxProperty({ gradientStroke: { ...effectsState.stroke.gradient, color2: c, enabled: true } })} /></div><input type="range" min={0} max={360} value={effectsState.stroke.gradient.angle} onChange={(e) => updateTextboxProperty({ gradientStroke: { ...effectsState.stroke.gradient, angle: Number(e.target.value), enabled: true } })} className="w-full h-1" /></div>
+                  )}
+                  <input type="range" min={1} max={30} value={effectsState.stroke.width} onChange={(e) => updateTextboxProperty({ strokeWidth: Number(e.target.value) })} className="w-full h-1" />
+                </div>
+              )}
+            </div>
+            <div className="space-y-3 pt-3 border-t border-white/5">
+              <span className="text-[10px] text-[#4E576A] uppercase tracking-wider">Forma</span>
+              <div className="flex gap-2">{[{ id: 'rect', label: 'Recto' }, { id: 'arc', label: 'Arco' }, { id: 'circle', label: 'Círculo' }].map(shape => (<button key={shape.id} onClick={() => updateTextboxProperty({ pathText: { type: shape.id, enabled: shape.id !== 'rect' } })} className={cn("flex-1 py-1.5 text-[10px] font-bold rounded-xl border transition-all", effectsState.shape.type === shape.id ? "border-[#4E576A] bg-[#212631] text-white" : "border-white/5 text-[#4E576A] hover:text-[#8D95A6]")}>{shape.label}</button>))}</div>
+            </div>
+          </PropertySection>
+
+          <PropertySection title="Fondo de Texto" id="background" defaultExpanded={false}>
+            <div className="space-y-4">
+              <label className="flex items-center justify-between cursor-pointer"><span className="text-xs text-[#E0E5EB]">Highlight</span><div className={cn("relative h-5 w-9 rounded-full transition-colors", effectsState.background.enabled ? "bg-[#E0E5EB]" : "bg-[#212631]")} onClick={() => updateTextboxProperty({ backgroundHighlight: { enabled: !effectsState.background.enabled } })}><div className={cn("absolute top-1 h-3 w-3 rounded-full bg-[#101417] transition-all", effectsState.background.enabled ? "left-5" : "left-1")} /></div></label>
+              {effectsState.background.enabled && (
+                <div className="space-y-3 pl-2 border-l border-white/5 mx-1">
+                  <ColorPicker label="Color" value={effectsState.background.color} onChange={(c) => updateTextboxProperty({ backgroundHighlight: { color: c } })} />
+                  <div className="grid grid-cols-2 gap-2"><label className="block space-y-1 text-[10px] text-[#4E576A]"><span>Padding</span><input type="range" min={0} max={50} value={effectsState.background.padding} onChange={(e) => updateTextboxProperty({ backgroundHighlight: { padding: Number(e.target.value) } })} className="w-full h-1" /></label><label className="block space-y-1 text-[10px] text-[#4E576A]"><span>Radio</span><input type="range" min={0} max={30} value={effectsState.background.radius} onChange={(e) => updateTextboxProperty({ backgroundHighlight: { radius: Number(e.target.value) } })} className="w-full h-1" /></label></div>
+                </div>
+              )}
+            </div>
+          </PropertySection>
+        </div>
+      ) : activeObject && !isTextbox(activeObject) && activeObject.type !== 'image' ? (
         <PropertySection title="Forma" id="shape">
-          <ColorPicker
-            label="Fill"
-            value={String(activeObject.fill ?? "#212631").slice(0, 7)}
-            onChange={(hex) => updateShapeProperty({ fill: hex })}
-          />
-          <ColorPicker
-            label="Stroke"
-            value={String(activeObject.stroke ?? "#4E576A").slice(0, 7)}
-            onChange={(hex) => updateShapeProperty({ stroke: hex })}
-          />
-          <label className="space-y-1 text-xs text-[#8D95A6]">
-            <span>Stroke width</span>
-            <input 
-              type="number" min={0} max={20} 
-              value={Number(activeObject.strokeWidth ?? 0)} 
-              onChange={(event) => updateShapeProperty({ strokeWidth: Number(event.target.value) })} 
-              className="w-full rounded-xl border border-white/8 bg-[#14171C] px-3 py-2 text-sm text-[#E0E5EB] focus:outline-none" 
-            />
-          </label>
-          {activeObject.type === 'rect' && (
-            <label className="space-y-1 text-xs text-[#8D95A6]">
-              <span>Radio</span>
-              <input 
-                type="number" min={0} max={100} 
-                value={Number((activeObject as any).rx ?? 0)} 
-                onChange={(event) => updateShapeProperty({ rx: Number(event.target.value), ry: Number(event.target.value) })} 
-                className="w-full rounded-xl border border-white/8 bg-[#14171C] px-3 py-2 text-sm text-[#E0E5EB] focus:outline-none" 
-              />
-            </label>
-          )}
-          <label className="space-y-1 text-xs text-[#8D95A6]">
-            <span>Opacidad</span>
-            <input 
-              type="range" min={0} max={1} 
-              step={0.01} 
-              value={Number(activeObject.opacity ?? 1)} 
-              onChange={(event) => updateShapeProperty({ opacity: Number(event.target.value) })} 
-              className="w-full" 
-            />
-          </label>
+          <ColorPicker label="Llenado" value={String(activeObject.fill ?? "#212631").slice(0, 7)} onChange={(hex) => updateShapeProperty({ fill: hex })} />
+          <ColorPicker label="Contorno" value={String(activeObject.stroke ?? "#4E576A").slice(0, 7)} onChange={(hex) => updateShapeProperty({ stroke: hex })} />
+          <label className="block space-y-1 text-xs text-[#8D95A6]"><span>Opacidad</span><input type="range" min={0} max={1} step={0.01} value={Number(activeObject.opacity ?? 1)} onChange={(e) => updateShapeProperty({ opacity: Number(e.target.value) })} className="w-full" /></label>
         </PropertySection>
-      ) : null}
-
-      {/* --- Image Properties --- */}
-      {activeObject && activeObject.type === 'image' ? (
+      ) : activeObject && activeObject.type === 'image' ? (
         <PropertySection title="Imagen" id="image">
-          <label className="space-y-1 text-xs text-[#8D95A6]">
-            <span>Opacidad</span>
-            <input 
-              type="range" min={0} max={1} 
-              step={0.01} 
-              value={Number(activeObject.opacity ?? 1)} 
-              onChange={(event) => updateSelectedObjectProperty({ opacity: Number(event.target.value) })} 
-              className="w-full" 
-            />
-          </label>
-          <div className="flex flex-col gap-2 pt-2">
-            <PropertyButton onClick={() => layerActions[0]?.onClick()}>Ajustar a canvas</PropertyButton>
-            <PropertyButton onClick={() => layerActions[1]?.onClick()}>Enviar al fondo</PropertyButton>
-          </div>
+          <label className="block space-y-1 text-xs text-[#8D95A6]"><span>Opacidad</span><input type="range" min={0} max={1} step={0.01} value={Number(activeObject.opacity ?? 1)} onChange={(e) => updateSelectedObjectProperty({ opacity: Number(e.target.value) })} className="w-full" /></label>
+          <div className="flex flex-col gap-2 pt-2"><PropertyButton onClick={() => layerActions[0]?.onClick()}>Ajustar a canvas</PropertyButton><PropertyButton onClick={() => layerActions[1]?.onClick()}>Enviar al fondo</PropertyButton></div>
         </PropertySection>
-      ) : null}
-
-      {/* --- Background Section --- */}
-      {!activeObject && (
+      ) : (
         <>
           <PropertySection title="Fondo del slide" id="background">
-            <div className="flex gap-2">
-              {(["solid", "gradient", "image"] as const).map((type) => (
-                <PropertyButton
-                  key={type}
-                  active={activeBackground?.type === type}
-                  onClick={() => {
-                    if (type === "gradient") {
-                      setGradientDraft(
-                        normalizeGradientConfig(activeBackground?.gradientConfig ?? BRAND_GRADIENT_SUGGESTIONS[0]?.config)
-                      );
-                    }
-                    void applyBackgroundUpdate((background) => {
-                      if (type === "gradient") {
-                        return {
-                          ...background,
-                          gradientConfig: normalizeGradientConfig(background.gradientConfig ?? BRAND_GRADIENT_SUGGESTIONS[0]?.config),
-                          type,
-                        };
-                      }
-                      if (type === "image") {
-                        return { ...background, overlayOpacity: background.overlayOpacity ?? 0.55, type };
-                      }
-                      return { ...background, solidColor: background.solidColor ?? "#101417", type };
-                    });
-                  }}
-                  className="flex-1"
-                >
-                  {type === "solid" ? "Sólido" : type === "gradient" ? "Gradiente" : "Imagen"}
-                </PropertyButton>
-              ))}
-            </div>
-
-            {activeBackground?.type === "solid" && (
-              <ColorPicker
-                label="Color sólido"
-                value={activeBackground.solidColor ?? "#101417"}
-                onChange={(hex) => applyBackgroundUpdate((background) => ({ ...background, solidColor: hex, type: "solid" }))}
-              />
-            )}
-
+             <div className="flex gap-2">{(["solid", "gradient", "image"] as const).map((type) => (<PropertyButton key={type} active={activeBackground?.type === type} onClick={() => { if (type === "gradient") setGradientDraft(normalizeGradientConfig(activeBackground?.gradientConfig ?? BRAND_GRADIENT_SUGGESTIONS[0]?.config)); void applyBackgroundUpdate((bg) => ({ ...bg, type })); }} className="flex-1">{type === "solid" ? "Sólido" : type === "gradient" ? "Gradiente" : "Imagen"}</PropertyButton>))}</div>
+            {activeBackground?.type === "solid" && <ColorPicker label="Color sólido" value={activeBackground.solidColor ?? "#101417"} onChange={(hex) => applyBackgroundUpdate(bg => ({ ...bg, solidColor: hex }))} />}
             {activeBackground?.type === "gradient" && (
               <div className="space-y-3">
-                <div className="flex gap-2">
-                  {(["linear", "radial"] as const).map((gradientType) => (
-                    <PropertyButton
-                      key={gradientType}
-                      active={gradientDraft.type === gradientType}
-                      onClick={() => setGradientDraft((current) => normalizeGradientConfig({ ...current, type: gradientType }))}
-                      className="flex-1"
-                    >
-                      {gradientType === "linear" ? "Linear" : "Radial"}
-                    </PropertyButton>
-                  ))}
-                </div>
-                
-                {/* Presets */}
-                <div className="grid grid-cols-3 gap-2">
-                  {[...BRAND_GRADIENT_SUGGESTIONS.map(i => i.config), ...savedGradients.slice(0, 3)].map((preset, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setGradientDraft(normalizeGradientConfig(preset))}
-                      className="h-10 rounded-lg border border-white/5"
-                      style={{ background: gradientConfigToCss(preset) }}
-                    />
-                  ))}
-                </div>
-
-                <div className="space-y-3">
-                  <ColorPicker
-                    label="Color 1"
-                    value={gradientDraft.stops[0] ?? "#101417"}
-                    onChange={(hex) => setGradientDraft(c => ({ ...c, stops: [hex, c.stops[1] || '#1C2028'] }))}
-                  />
-                  <ColorPicker
-                    label="Color 2"
-                    value={gradientDraft.stops[1] ?? "#1C2028"}
-                    onChange={(hex) => setGradientDraft(c => ({ ...c, stops: [c.stops[0] || '#101417', hex] }))}
-                  />
-                </div>
-
-                {gradientDraft.type === "linear" && (
-                   <div className="flex items-center gap-4 rounded-xl border border-white/8 bg-[#14171C] p-3">
-                    <AngleWheel
-                      value={gradientDraft.angle}
-                      onChange={(nextAngle) => setGradientDraft((current) => ({ ...current, angle: nextAngle }))}
-                    />
-                    <div className="flex-1 space-y-1">
-                      <span className="text-[10px] text-[#8D95A6]">Ángulo: {gradientDraft.angle}°</span>
-                      <input 
-                        type="range" min={0} max={360} 
-                        value={gradientDraft.angle} 
-                        onChange={(e) => setGradientDraft(c => ({ ...c, angle: Number(e.target.value) }))}
-                        className="w-full h-1"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex gap-2">
-                   <button
-                    type="button"
-                    onClick={() => setSavedGradients(saveGradient(gradientDraft))}
-                    className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/8 text-[#8D95A6] hover:text-white"
-                  >
-                    <Bookmark className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => applyBackgroundUpdate(bg => ({ ...bg, gradientConfig: gradientDraft, type: 'gradient' }))}
-                    className="flex-1 rounded-xl bg-[#E0E5EB] py-2 text-sm font-medium text-[#101417]"
-                  >
-                    Aplicar fondo
-                  </button>
-                </div>
+                <div className="flex gap-2">{(["linear", "radial"] as const).map(t => (<PropertyButton key={t} active={gradientDraft.type === t} onClick={() => setGradientDraft(c => normalizeGradientConfig({ ...c, type: t }))} className="flex-1">{t}</PropertyButton>))}</div>
+                <div className="grid grid-cols-2 gap-2"><ColorPicker label="C1" value={gradientDraft.stops[0]} onChange={(h) => setGradientDraft(c => ({ ...c, stops: [h, c.stops[1]] }))} /><ColorPicker label="C2" value={gradientDraft.stops[1]} onChange={(h) => setGradientDraft(c => ({ ...c, stops: [c.stops[0], h] }))} /></div>
+                <div className="flex gap-2"><PropertyButton onClick={() => setSavedGradients(saveGradient(gradientDraft))} className="w-9"><Bookmark size={14} /></PropertyButton><button onClick={() => applyBackgroundUpdate(bg => ({ ...bg, gradientConfig: gradientDraft, type: 'gradient' }))} className="flex-1 rounded-xl bg-[#E0E5EB] py-2 text-sm font-medium text-[#101417]">Aplicar</button></div>
               </div>
             )}
-
             {activeBackground?.type === "image" && (
               <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-2">
-                  <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/8 bg-[#14171C] py-2 text-xs text-[#E0E5EB]">
-                    <Upload className="h-3 w-3" />
-                    Subir
-                    <input type="file" accept="image/*" className="hidden" onChange={handleBackgroundFile} />
-                  </label>
-                  <PropertyButton onClick={() => openUnsplashModal("background")}>Unsplash</PropertyButton>
-                </div>
-                {activeBackground.imageUrl && (
-                  <div className="flex items-center gap-3 rounded-xl border border-white/5 bg-[#14171C] p-2">
-                    <Image src={activeBackground.imageThumb || activeBackground.imageUrl} alt="" width={40} height={40} unoptimized className="rounded-lg object-cover" />
-                    <div className="min-w-0">
-                      <p className="truncate text-[10px] text-[#E0E5EB]">{activeBackground.photographer || 'Imagen'}</p>
-                      <p className="text-[10px] text-[#4E576A]">Overlay {Math.round((activeBackground.overlayOpacity || 0.55) * 100)}%</p>
-                    </div>
-                  </div>
-                )}
-                <label className="block space-y-1 text-[10px] text-[#8D95A6]">
-                  <span>Opacidad overlay</span>
-                  <input 
-                    type="range" min={0} max={0.8} step={0.01} 
-                    value={activeBackground.overlayOpacity ?? 0.55} 
-                    onChange={(e) => applyBackgroundUpdate(bg => ({ ...bg, overlayOpacity: Number(e.target.value), type: 'image' }))} 
-                    className="w-full" 
-                  />
-                </label>
+                <div className="grid grid-cols-2 gap-2"><label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/8 bg-[#14171C] py-2 text-xs text-[#E0E5EB]"><Upload size={12} />Subir<input type="file" className="hidden" onChange={handleBackgroundFile} /></label><PropertyButton onClick={onOpenImages}>Unsplash</PropertyButton></div>
+                <input type="range" min={0} max={0.8} step={0.01} value={activeBackground.overlayOpacity ?? 0.55} onChange={(e) => applyBackgroundUpdate(bg => ({ ...bg, overlayOpacity: Number(e.target.value) }))} className="w-full" />
               </div>
             )}
           </PropertySection>
 
-          <PropertySection title="Gestión de Slide" id="slide-mgmt">
-            <div className="grid grid-cols-2 gap-2">
-              <PropertyButton onClick={handleDuplicateSlide}>Duplicar</PropertyButton>
-              <PropertyButton onClick={handleDeleteSlide}>Eliminar</PropertyButton>
+          <PropertySection title="Escala tipográfica" id="type-scale">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <p className="text-[10px] font-bold text-[#E0E5EB]">
+                    Base: {currentScale?.base || 36}px
+                  </p>
+                  <p className="text-[9px] text-[#4E576A]">
+                    Ratio: {currentScale?.ratio.toFixed(3) || '1.200'}
+                  </p>
+                </div>
+                <button 
+                  onClick={toggleAutoScale}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-lg px-2 py-1 text-[9px] font-bold transition-all",
+                    autoScale ? "bg-green-500/10 text-green-500" : "bg-white/5 text-[#4E576A]"
+                  )}
+                >
+                  <RefreshCw className={cn("h-3 w-3", autoScale && "animate-spin-slow")} />
+                  {autoScale ? 'AUTO' : 'MANUAL'}
+                </button>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5">
+                {([
+                  { id: 'major_second', label: 'Compacto' },
+                  { id: 'minor_third', label: 'Equilibrado' },
+                  { id: 'major_third', label: 'Editorial' },
+                  { id: 'perfect_fourth', label: 'Dramático' },
+                  { id: 'perfect_fifth', label: 'Bold' },
+                  { id: 'golden_ratio', label: 'Máximo' }
+                ] as { id: TypeScaleRatioKey; label: string }[]).map((preset) => (
+                  <button
+                    key={preset.id}
+                    onClick={() => handleScaleChange(preset.id)}
+                    className={cn(
+                      "rounded-lg border px-2 py-1 text-[10px] font-medium transition-all",
+                      currentScale?.ratioKey === preset.id
+                        ? "border-[#4E576A] bg-[#212631] text-[#E0E5EB]"
+                        : "border-white/5 text-[#4E576A] hover:border-white/10 hover:text-[#8D95A6]"
+                    )}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Scale Visualization */}
+              <div className="space-y-1 pt-2">
+                {[5, 4, 3, 2, 1, 0, -1].map((step, i) => {
+                  const items = ['display', 'headingLarge', 'heading', 'bodyLarge', 'body', 'caption'];
+                  const label = ['Display', 'H1', 'H2', 'Sub', 'Body', 'Cap'][i] || '';
+                  const size = Math.round((currentScale?.base || 36) * Math.pow(currentScale?.ratio || 1.2, step));
+                  const maxWidth = 100;
+                  const width = (size / 100) * maxWidth; // visual approximation
+                  
+                  return (
+                    <div key={step} className="group flex items-center gap-3">
+                      <span className="w-8 text-[8px] uppercase tracking-tighter text-[#4E576A] group-hover:text-[#8D95A6]">{label}</span>
+                      <div className="relative h-1.5 flex-1 rounded-full bg-white/5 overflow-hidden">
+                        <div 
+                          className="h-full bg-[#4E576A] transition-all duration-500 group-hover:bg-[#8D95A6]" 
+                          style={{ width: `${Math.min(width, 100)}%` }} 
+                        />
+                      </div>
+                      <span className="w-6 text-[8px] font-mono text-[#4E576A] text-right">{size}</span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </PropertySection>
+
+          <PropertySection title="Slide" id="slide-mgmt"><div className="grid grid-cols-2 gap-2"><PropertyButton onClick={handleDuplicateSlide}>Duplicar</PropertyButton><PropertyButton onClick={handleDeleteSlide}>Eliminar</PropertyButton></div></PropertySection>
         </>
       )}
-
-      {/* --- Layers Section --- */}
-      {activeObject && (
-        <PropertySection title="Capas" id="layers" defaultExpanded={false}>
-          <div className="grid grid-cols-2 gap-2">
-            {layerActions.map((action) => (
-              <PropertyButton key={action.label} onClick={action.onClick}>{action.label}</PropertyButton>
-            ))}
-          </div>
-        </PropertySection>
-      )}
-      {activeObject && isTextbox(activeObject) && (
-        <SaveTextStyleDialog
-          isOpen={isSaveDialogOpen}
-          onClose={() => setIsSaveDialogOpen(false)}
-          activeObject={activeObject}
-          onSave={refreshStyles}
-        />
-      )}
+      {activeObject && (<PropertySection title="Capas" id="layers" defaultExpanded={false}><div className="grid grid-cols-2 gap-2">{layerActions.map(a => (<PropertyButton key={a.label} onClick={a.onClick}>{a.label}</PropertyButton>))}</div></PropertySection>)}
+      <SaveTextStyleDialog isOpen={isSaveDialogOpen} onClose={() => setIsSaveDialogOpen(false)} activeObject={activeObject as Textbox} onSave={refreshStyles} />
     </div>
   );
 }

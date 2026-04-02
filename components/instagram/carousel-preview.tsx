@@ -2,8 +2,10 @@
 
 import Image from 'next/image'
 import { AnimatePresence, motion } from 'framer-motion'
-import { useEffect, useState, type CSSProperties, type ChangeEvent, type FormEvent } from 'react'
-import { Bookmark, ChevronLeft, ChevronRight, Info, ImageIcon, Loader2, Palette, Pencil, Plus, Search, Square, Upload } from 'lucide-react'
+import { useEffect, useState, useRef, type CSSProperties, type ChangeEvent, type FormEvent } from 'react'
+import { Bookmark, ChevronLeft, ChevronRight, Info, ImageIcon, Loader2, Palette, Pencil, Plus, Search, Square, Upload, Heart, MessageCircle, Send, MoreHorizontal } from 'lucide-react'
+import { cn } from '@/lib/utils'
+
 import type { InstagramCarouselSlide, SlideBackgroundSelection } from '@/lib/social-content'
 import { getEditedSlidePreview, type CarouselEditorSlide } from '@/lib/instagram-carousel-editor'
 import {
@@ -28,7 +30,7 @@ type UnsplashPhoto = {
   unsplash_link: string
 }
 
-type SlideBackgroundState = {
+export type SlideBackgroundState = {
   type: SlideBackgroundType
   gradientConfig?: CarouselGradientConfig
   imageUrl?: string
@@ -37,6 +39,13 @@ type SlideBackgroundState = {
   solidColor?: string
   unsplashResults?: UnsplashPhoto[]
   showInlineSearch?: boolean
+  filters?: {
+    brightness?: number
+    contrast?: number
+    saturate?: number
+    sepia?: number
+    grayscale?: number
+  }
 }
 
 type CarouselPreviewProps = {
@@ -46,12 +55,13 @@ type CarouselPreviewProps = {
   onOpenDetailEditor: (activeIndex: number) => void
   slides: InstagramCarouselSlide[]
   onBackgroundChange?: (backgrounds: SlideBackgroundSelection[]) => void
+  onUpdateSlide?: (slideNumber: number, updates: Partial<InstagramCarouselSlide>) => void
 }
 
-type SlideTemplateProps = {
+export type SlideTemplateProps = {
   angle?: string
   background: SlideBackgroundState
-  isPreview: true
+  isPreview: boolean
   slide: InstagramCarouselSlide
   totalSlides: number
 }
@@ -66,8 +76,9 @@ type ResolvedBackground = {
 }
 
 const SLIDE_SIZE = 1080
-const PREVIEW_SCALE = 0.347
-const SCALE_MULTIPLIER = 1 / PREVIEW_SCALE
+const DESIGN_PREVIEW_WIDTH = 375
+const DEFAULT_PREVIEW_SCALE = DESIGN_PREVIEW_WIDTH / SLIDE_SIZE
+const SCALE_MULTIPLIER = SLIDE_SIZE / DESIGN_PREVIEW_WIDTH
 const NOISE_TEXTURE = `url("data:image/svg+xml,${encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" stitchTiles="stitch"/></filter><rect width="160" height="160" filter="url(#n)" opacity=".8"/></svg>'
 )}")`
@@ -100,7 +111,7 @@ const slideVariants = {
   }),
 }
 
-function toCanvasPx(value: number) {
+export function toCanvasPx(value: number) {
   return value * SCALE_MULTIPLIER
 }
 
@@ -160,8 +171,104 @@ function getInitialBackground(slide: InstagramCarouselSlide): SlideBackgroundSta
   return { solidColor: resolved.color, type: 'solid' }
 }
 
+function serializeGradientConfig(config?: CarouselGradientConfig) {
+  if (!config) {
+    return ''
+  }
+
+  return JSON.stringify(normalizeGradientConfig(config))
+}
+
+function serializeFilters(filters?: SlideBackgroundState['filters']) {
+  if (!filters) {
+    return ''
+  }
+
+  return JSON.stringify({
+    brightness: filters.brightness ?? null,
+    contrast: filters.contrast ?? null,
+    grayscale: filters.grayscale ?? null,
+    saturate: filters.saturate ?? null,
+    sepia: filters.sepia ?? null,
+  })
+}
+
+function areBackgroundStatesEqual(a?: SlideBackgroundState, b?: SlideBackgroundState) {
+  if (!a && !b) {
+    return true
+  }
+
+  if (!a || !b) {
+    return false
+  }
+
+  return (
+    a.type === b.type &&
+    a.imageUrl === b.imageUrl &&
+    a.imageThumb === b.imageThumb &&
+    a.photographer === b.photographer &&
+    a.solidColor === b.solidColor &&
+    serializeGradientConfig(a.gradientConfig) === serializeGradientConfig(b.gradientConfig) &&
+    serializeFilters(a.filters) === serializeFilters(b.filters)
+  )
+}
+
+function areBackgroundMapsEqual(
+  a: Record<number, SlideBackgroundState>,
+  b: Record<number, SlideBackgroundState>
+) {
+  const aKeys = Object.keys(a)
+  const bKeys = Object.keys(b)
+
+  if (aKeys.length !== bKeys.length) {
+    return false
+  }
+
+  return aKeys.every((key) => {
+    const slideNumber = Number(key)
+    return areBackgroundStatesEqual(a[slideNumber], b[slideNumber])
+  })
+}
+
+function toBackgroundSelection(
+  slide: InstagramCarouselSlide,
+  background: SlideBackgroundState
+): SlideBackgroundSelection {
+  return {
+    slide_number: slide.slide_number,
+    bg_type: background.type,
+    gradient_config: background.gradientConfig,
+    image_url: background.imageUrl,
+    photographer: background.photographer,
+    solid_color: background.solidColor,
+    filters: background.filters,
+  }
+}
+
+function serializeBackgroundSelections(selections: SlideBackgroundSelection[]) {
+  return JSON.stringify(
+    selections.map((selection) => ({
+      bg_type: selection.bg_type,
+      filters: selection.filters
+        ? {
+            brightness: selection.filters.brightness ?? null,
+            contrast: selection.filters.contrast ?? null,
+            grayscale: selection.filters.grayscale ?? null,
+            saturate: selection.filters.saturate ?? null,
+            sepia: selection.filters.sepia ?? null,
+          }
+        : null,
+      gradient_config: selection.gradient_config ? normalizeGradientConfig(selection.gradient_config) : null,
+      image_url: selection.image_url ?? null,
+      photographer: selection.photographer ?? null,
+      slide_number: selection.slide_number,
+      solid_color: selection.solid_color ?? null,
+    }))
+  )
+}
+
 function getResolvedBackground(slide: InstagramCarouselSlide, background: SlideBackgroundState): ResolvedBackground {
-  const resolved = resolveSlideBackground(slide, background)
+  const resolved = resolveSlideBackground(slide, background as any)
   const baseBackground =
     resolved.type === 'gradient'
       ? gradientConfigToCss(resolved.config)
@@ -185,6 +292,14 @@ function getCounterLabel(slideNumber: number, totalSlides: number) {
 
 function SlideBackdrop({ background, slide }: Pick<SlideTemplateProps, 'background' | 'slide'>) {
   const resolved = getResolvedBackground(slide, background)
+  const filters = background.filters || {}
+  const filterStyle = [
+    filters.brightness !== undefined ? `brightness(${filters.brightness}%)` : '',
+    filters.contrast !== undefined ? `contrast(${filters.contrast}%)` : '',
+    filters.saturate !== undefined ? `saturate(${filters.saturate}%)` : '',
+    filters.sepia !== undefined ? `sepia(${filters.sepia}%)` : '',
+    filters.grayscale !== undefined ? `grayscale(${filters.grayscale}%)` : '',
+  ].filter(Boolean).join(' ')
 
   return (
     <>
@@ -197,6 +312,7 @@ function SlideBackdrop({ background, slide }: Pick<SlideTemplateProps, 'backgrou
             fill
             sizes="1080px"
             className="object-cover"
+            style={{ filter: filterStyle || undefined }}
           />
           <div className="absolute inset-0" style={{ background: resolved.overlay }} />
         </>
@@ -229,68 +345,71 @@ function CoverSlide({ angle, background, slide }: SlideTemplateProps) {
       >
         <div className="flex-1" />
 
-        <div>
-          {eyebrow ? (
-            <span
-              className="inline-block"
+        <div style={{ display: 'flex', flexDirection: slide.text_order === 'body-first' ? 'column-reverse' : 'column', gap: toCanvasPx(8) }}>
+          <div>
+            {eyebrow ? (
+              <span
+                className="inline-block"
+                style={{
+                  marginBottom: toCanvasPx(10),
+                  borderRadius: toCanvasPx(4),
+                  background: resolved.accentColor,
+                  color: '#E0E5EB',
+                  fontFamily: 'var(--font-inter)',
+                  fontSize: toCanvasPx(10),
+                  fontWeight: 500,
+                  letterSpacing: '0.15em',
+                  padding: `${toCanvasPx(3)}px ${toCanvasPx(8)}px`,
+                }}
+              >
+                {eyebrow}
+              </span>
+            ) : null}
+
+            <h3
               style={{
-                marginBottom: toCanvasPx(10),
-                borderRadius: toCanvasPx(4),
-                background: resolved.accentColor,
+                ...clampLines(3),
                 color: '#E0E5EB',
-                fontFamily: 'var(--font-inter)',
-                fontSize: toCanvasPx(10),
-                fontWeight: 500,
-                letterSpacing: '0.15em',
-                padding: `${toCanvasPx(3)}px ${toCanvasPx(8)}px`,
+                fontFamily: 'var(--font-brand-display)',
+                fontSize: toCanvasPx(28),
+                fontWeight: 900,
+                letterSpacing: '-0.02em',
+                lineHeight: 1.15,
+                maxWidth: '84%',
+                textShadow: resolved.imageUrl ? '0 12px 36px rgba(0, 0, 0, 0.42)' : 'none',
+                margin: 0,
               }}
             >
-              {eyebrow}
-            </span>
-          ) : null}
-
-          <h3
-            style={{
-              ...clampLines(3),
-              color: '#E0E5EB',
-              fontFamily: 'var(--font-brand-display)',
-              fontSize: toCanvasPx(28),
-              fontWeight: 900,
-              letterSpacing: '-0.02em',
-              lineHeight: 1.15,
-              maxWidth: '84%',
-              textShadow: resolved.imageUrl ? '0 12px 36px rgba(0, 0, 0, 0.42)' : 'none',
-            }}
-          >
-            {headline}
-          </h3>
+              {headline}
+            </h3>
+          </div>
 
           {subtitle ? (
             <p
               style={{
                 ...clampLines(2),
-                marginTop: toCanvasPx(8),
                 color: 'rgba(224, 229, 235, 0.6)',
                 fontFamily: 'var(--font-inter)',
                 fontSize: toCanvasPx(13),
                 fontWeight: 400,
                 lineHeight: 1.45,
                 maxWidth: '72%',
+                margin: 0,
               }}
             >
               {subtitle}
             </p>
           ) : null}
-
-          <div
-            style={{
-              background: resolved.accentColor,
-              height: toCanvasPx(2),
-              marginTop: toCanvasPx(16),
-              width: toCanvasPx(32),
-            }}
-          />
         </div>
+
+        <div
+          style={{
+            background: resolved.accentColor,
+            height: toCanvasPx(2),
+            marginTop: toCanvasPx(16),
+            width: toCanvasPx(32),
+          }}
+        />
 
         <div
           className="absolute inset-x-0 z-10 flex items-center justify-between"
@@ -328,115 +447,157 @@ function ContentSlide({ background, slide, totalSlides }: SlideTemplateProps) {
   const headline = sanitizeSlideText(slide.headline)
   const body = sanitizeSlideText(slide.body)
   const stat = sanitizeSlideText(slide.stat_or_example)
+  const template = slide.suggested_template || 'editorial'
+
+  // Dynamic Font Scaling Logic (Simplified for CSS)
+  const getHeadlineSize = (text: string) => {
+    const len = text.length
+    if (len > 80) return toCanvasPx(12)
+    if (len > 60) return toCanvasPx(14)
+    if (len > 40) return toCanvasPx(16)
+    if (len > 25) return toCanvasPx(18)
+    return toCanvasPx(24)
+  }
+
+  const getBodySize = (text: string) => {
+    const len = text.length
+    if (len > 150) return toCanvasPx(8)
+    if (len > 100) return toCanvasPx(10)
+    if (len > 60) return toCanvasPx(11)
+    return toCanvasPx(13)
+  }
+
+  const renderTemplate = () => {
+    switch (template) {
+      case 'bold-statement':
+        return (
+          <div className="flex h-full flex-col items-center justify-center text-center p-12">
+            <h3
+              style={{
+                ...clampLines(4),
+                color: '#E0E5EB',
+                fontFamily: 'var(--font-brand-display)',
+                fontSize: getHeadlineSize(headline) * 1.5,
+                fontWeight: 900,
+                lineHeight: 1.1,
+                textTransform: 'uppercase',
+                letterSpacing: '-0.04em',
+                textShadow: resolved.imageUrl ? '0 20px 40px rgba(0,0,0,0.5)' : 'none',
+                margin: 0,
+                width: '100%',
+              }}
+            >
+              {headline}
+            </h3>
+          </div>
+        )
+      case 'split':
+        return (
+          <div className="flex h-full flex-col">
+            <div className="flex-1 flex flex-col justify-end pb-8">
+               <h3 style={{ ...clampLines(3), fontSize: getHeadlineSize(headline), fontWeight: 800, color: '#E0E5EB', lineHeight: 1.2, margin: 0 }}>{headline}</h3>
+            </div>
+            <div className="flex-1 bg-white/5 rounded-t-2xl p-8 backdrop-blur-sm overflow-hidden">
+               <p style={{ ...clampLines(5), fontSize: getBodySize(body), lineHeight: 1.6, color: 'rgba(224,229,235,0.8)', margin: 0 }}>{body}</p>
+            </div>
+          </div>
+        )
+      case 'list':
+        return (
+          <div className="flex h-full flex-col justify-center gap-6 overflow-hidden">
+            <h3 style={{ ...clampLines(2), fontSize: getHeadlineSize(headline), fontWeight: 700, color: resolved.accentColor, margin: 0 }}>{headline}</h3>
+            <div className="space-y-4">
+              {body.split('.').filter(s => s.trim()).slice(0, 4).map((item, i) => (
+                <div key={i} className="flex gap-4 items-start">
+                  <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-[10px] font-bold text-white shrink-0" style={{ fontSize: toCanvasPx(10) }}>{i+1}</div>
+                  <p style={{ ...clampLines(2), fontSize: getBodySize(item), color: '#E0E5EB', lineHeight: 1.4, margin: 0 }}>{item.trim()}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      case 'stat-hero':
+        return (
+          <div className="flex h-full flex-col items-center justify-center text-center overflow-hidden">
+            <div style={{ fontSize: toCanvasPx(64), fontWeight: 900, color: resolved.accentColor, lineHeight: 1 }}>{stat || "50%"}</div>
+            <h3 style={{ ...clampLines(2), fontSize: getHeadlineSize(headline), fontWeight: 700, color: '#E0E5EB', marginTop: toCanvasPx(12), margin: 0 }}>{headline}</h3>
+            <p style={{ ...clampLines(3), fontSize: getBodySize(body), color: 'rgba(224,229,235,0.6)', marginTop: toCanvasPx(8), margin: 0 }}>{body} / {stat}</p>
+          </div>
+        )
+      case 'minimal-quote':
+        return (
+          <div className="flex h-full flex-col justify-center items-center text-center p-16 overflow-hidden">
+            <span style={{ fontSize: toCanvasPx(48), color: resolved.accentColor, opacity: 0.5, lineHeight: 1 }}>"</span>
+            <h3 style={{ ...clampLines(4), fontSize: getHeadlineSize(headline), fontStyle: 'italic', color: '#E0E5EB', lineHeight: 1.6, maxWidth: '80%', margin: 0 }}>{headline}</h3>
+            <div style={{ height: 1, width: toCanvasPx(40), background: resolved.accentColor, margin: `${toCanvasPx(12)}px 0` }} />
+            <p style={{ fontSize: toCanvasPx(10), textTransform: 'uppercase', letterSpacing: '0.2em', color: 'rgba(224,229,235,0.5)', margin: 0 }}>@noctra.studio</p>
+          </div>
+        )
+      case 'editorial':
+      default:
+        return (
+          <div className="flex h-full flex-col justify-center overflow-hidden">
+            <h3
+              style={{
+                ...clampLines(3),
+                color: '#E0E5EB',
+                fontFamily: 'var(--font-brand-display)',
+                fontSize: getHeadlineSize(headline) * 1.2,
+                fontWeight: 700,
+                lineHeight: 1.2,
+                marginBottom: toCanvasPx(12),
+                margin: 0,
+              }}
+            >
+              {headline}
+            </h3>
+            <p
+              style={{
+                ...clampLines(5),
+                color: 'rgba(224, 229, 235, 0.7)',
+                fontFamily: 'var(--font-inter)',
+                fontSize: getBodySize(body),
+                lineHeight: 1.6,
+                maxWidth: '92%',
+                margin: 0,
+              }}
+            >
+              {body}
+            </p>
+          </div>
+        )
+    }
+  }
 
   return (
     <div className="relative h-[1080px] w-[1080px] overflow-hidden">
       <SlideBackdrop background={background} slide={slide} />
-
-      <div
-        className="relative z-10 h-full"
-        style={{ padding: toCanvasPx(24) }}
-      >
-        <div className="flex items-center justify-between">
-          <span
-            style={{
-              color: '#4E576A',
-              fontFamily: 'var(--font-inter)',
-              fontSize: toCanvasPx(10),
-              fontWeight: 500,
-              letterSpacing: '0.1em',
-            }}
-          >
-            {getCounterLabel(slide.slide_number, totalSlides)}
-          </span>
-          <div
-            style={{
-              alignSelf: 'center',
-              background: '#2A3040',
-              height: toCanvasPx(1),
-              width: toCanvasPx(40),
-            }}
-          />
+      <div className="relative z-10 h-full flex flex-col" style={{ padding: toCanvasPx(32) }}>
+        <div className="flex justify-between items-center mb-8">
+           <span style={{ fontSize: toCanvasPx(10), color: 'rgba(224,229,235,0.4)', fontWeight: 500, letterSpacing: '0.1em' }}>
+              {getCounterLabel(slide.slide_number, totalSlides)}
+           </span>
+           <div style={{ width: toCanvasPx(40), height: 1, background: 'rgba(224,229,235,0.1)' }} />
+        </div>
+        
+        <div className="flex-1 min-h-0">
+           {renderTemplate()}
         </div>
 
-        <div style={{ marginTop: toCanvasPx(20) }}>
-          <h3
-            style={{
-              ...clampLines(2),
-              color: '#E0E5EB',
-              fontFamily: 'var(--font-brand-display)',
-              fontSize: toCanvasPx(20),
-              fontWeight: 700,
-              letterSpacing: '-0.01em',
-              lineHeight: 1.25,
-              maxWidth: '86%',
-              textShadow: resolved.imageUrl ? '0 10px 28px rgba(0, 0, 0, 0.38)' : 'none',
-            }}
-          >
-            {headline}
-          </h3>
-
-          <p
-            style={{
-              ...clampLines(5),
-              marginTop: toCanvasPx(12),
-              color: 'rgba(224, 229, 235, 0.75)',
-              fontFamily: 'var(--font-inter)',
-              fontSize: toCanvasPx(12),
-              fontWeight: 400,
-              lineHeight: 1.65,
-              maxWidth: '88%',
-            }}
-          >
-            {body}
-          </p>
-
-          {stat ? (
-            <div
-              style={{
-                background: 'rgba(70, 45, 110, 0.12)',
-                borderLeft: `${toCanvasPx(2)}px solid ${resolved.accentColor}`,
-                borderRadius: `0 ${toCanvasPx(6)}px ${toCanvasPx(6)}px 0`,
-                marginTop: toCanvasPx(14),
-                maxWidth: '84%',
-                padding: `${toCanvasPx(8)}px ${toCanvasPx(12)}px`,
-              }}
-            >
-              <p
-                style={{
-                  color: '#E0E5EB',
-                  fontFamily: 'var(--font-inter)',
-                  fontSize: toCanvasPx(11),
-                  fontWeight: 500,
-                  lineHeight: 1.5,
-                }}
-              >
-                {stat}
-              </p>
-            </div>
-          ) : null}
-        </div>
-
-        <div
-          className="absolute inset-x-0 flex justify-end"
-          style={{
-            bottom: toCanvasPx(14),
-            paddingLeft: toCanvasPx(24),
-            paddingRight: toCanvasPx(24),
-          }}
-        >
-          <Image
-            src={`/brand/favicon-${resolved.logoVariant}.svg`}
-            alt=""
-            width={Math.round(toCanvasPx(18))}
-            height={Math.round(toCanvasPx(18))}
-            style={{ opacity: 0.5 }}
-          />
+        <div className="flex justify-end mt-4">
+           <Image
+             src={`/brand/favicon-${resolved.logoVariant}.svg`}
+             alt=""
+             width={Math.round(toCanvasPx(20))}
+             height={Math.round(toCanvasPx(20))}
+             style={{ opacity: 0.4 }}
+           />
         </div>
       </div>
     </div>
   )
 }
+
 
 function CTASlide({ background, slide }: SlideTemplateProps) {
   const resolved = getResolvedBackground(slide, background)
@@ -542,7 +703,7 @@ function CTASlide({ background, slide }: SlideTemplateProps) {
   )
 }
 
-function SlideCanvas(props: SlideTemplateProps) {
+export function SlideCanvas(props: SlideTemplateProps) {
   if (props.slide.type === 'cover') {
     return <CoverSlide {...props} />
   }
@@ -602,45 +763,6 @@ function SlideThumbnail({
           opacity: 0.03,
         }}
       />
-
-      {slide.type === 'cover' ? (
-        <div
-          className="absolute rounded-full"
-          style={{
-            background: '#462D6E',
-            bottom: 7,
-            height: 2,
-            left: 7,
-            width: 16,
-          }}
-        />
-      ) : null}
-
-      {slide.type === 'content' ? (
-        <div
-          className="absolute"
-          style={{
-            background: '#2A3040',
-            height: 1,
-            right: 6,
-            top: 7,
-            width: 12,
-          }}
-        />
-      ) : null}
-
-      {slide.type === 'cta' ? (
-        <div
-          className="absolute left-1/2"
-          style={{
-            background: '#462D6E',
-            height: 1,
-            top: '50%',
-            transform: 'translate(-50%, -50%)',
-            width: 12,
-          }}
-        />
-      ) : null}
     </button>
   )
 }
@@ -652,6 +774,7 @@ export function InstagramCarouselPreview({
   onOpenDetailEditor,
   slides,
   onBackgroundChange,
+  onUpdateSlide,
 }: CarouselPreviewProps) {
   const [activeIndex, setActiveIndex] = useState(0)
   const [direction, setDirection] = useState(1)
@@ -661,17 +784,29 @@ export function InstagramCarouselPreview({
   const [searchResults, setSearchResults] = useState<UnsplashPhoto[]>([])
   const [recentColors, setRecentColors] = useState<string[]>([])
   const [savedGradients, setSavedGradients] = useState<CarouselGradientConfig[]>([])
+  const [dynamicScale, setDynamicScale] = useState(DEFAULT_PREVIEW_SCALE)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const onBackgroundChangeRef = useRef(onBackgroundChange)
+  const lastBackgroundSelectionSignatureRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!containerRef.current) return
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const width = entry.contentRect.width
+        if (width > 0) {
+          setDynamicScale(width / SLIDE_SIZE)
+        }
+      }
+    })
+
+    observer.observe(containerRef.current)
+    return () => observer.disconnect()
+  }, [])
 
   const currentSlide = slides[activeIndex] ?? null
   const totalSlides = slides.length
-
-  useEffect(() => {
-    if (activeIndex < slides.length) {
-      return
-    }
-
-    setActiveIndex(Math.max(slides.length - 1, 0))
-  }, [activeIndex, slides.length])
 
   useEffect(() => {
     setRecentColors(getRecentColors())
@@ -679,647 +814,291 @@ export function InstagramCarouselPreview({
   }, [])
 
   useEffect(() => {
-    let isMounted = true
-    const nextBackgrounds: Record<number, SlideBackgroundState> = {}
+    onBackgroundChangeRef.current = onBackgroundChange
+  }, [onBackgroundChange])
 
+  useEffect(() => {
+    const nextBackgrounds: Record<number, SlideBackgroundState> = {}
     slides.forEach((slide) => {
       const selection = initialBackgrounds.find((item) => item.slide_number === slide.slide_number)
-
       nextBackgrounds[slide.slide_number] = selection
         ? {
-            type: selection.bg_type,
-            gradientConfig: selection.gradient_config
-              ? normalizeGradientConfig(selection.gradient_config)
-              : selection.gradient_style === 'brand_navy'
-                ? BRAND_GRADIENT_SUGGESTIONS[1]?.config
-                : selection.gradient_style === 'brand_subtle'
-                  ? BRAND_GRADIENT_SUGGESTIONS[2]?.config
-                  : selection.gradient_style === 'brand_dark'
-                    ? BRAND_GRADIENT_SUGGESTIONS[0]?.config
-                    : undefined,
+            type: selection.bg_type as any,
+            gradientConfig: selection.gradient_config,
             imageUrl: selection.image_url,
             imageThumb: selection.image_url,
             photographer: selection.photographer,
             solidColor: selection.solid_color,
+            filters: selection.filters,
           }
         : getInitialBackground(slide)
     })
 
-    setSlideBackgrounds(nextBackgrounds)
-
-    const imageSlides = slides.filter((slide) => slide.bg_type === 'image' && slide.unsplash_query)
-
-    void Promise.allSettled(
-      imageSlides.map(async (slide) => {
-        try {
-          const res = await fetch('/api/visual/search', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              keywords: [slide.unsplash_query],
-              platform: 'instagram',
-              count: 4,
-            }),
-          })
-          const data = (await res.json()) as { photos?: UnsplashPhoto[] }
-
-          if (!isMounted) {
-            return
-          }
-
-          if (data.photos?.length) {
-            const [first] = data.photos
-
-            setSlideBackgrounds((prev) => ({
-              ...prev,
-              [slide.slide_number]: {
-                ...prev[slide.slide_number],
-                type: prev[slide.slide_number]?.type === 'image' ? 'image' : prev[slide.slide_number]?.type ?? 'image',
-                imageUrl: first.url,
-                imageThumb: first.thumb_url,
-                photographer: first.photographer,
-                unsplashResults: data.photos,
-              },
-            }))
-          }
-        } catch (error) {
-          console.error('Failed to auto-search Unsplash:', error)
-        }
-      })
-    )
-
-    return () => {
-      isMounted = false
-    }
+    setSlideBackgrounds((prev) => (
+      areBackgroundMapsEqual(prev, nextBackgrounds) ? prev : nextBackgrounds
+    ))
   }, [initialBackgrounds, slides])
 
   useEffect(() => {
-    if (!onBackgroundChange) {
-      return
-    }
+    const handleBackgroundChange = onBackgroundChangeRef.current
+
+    if (!handleBackgroundChange) return
 
     const selections: SlideBackgroundSelection[] = slides.map((slide) => {
       const background = slideBackgrounds[slide.slide_number] ?? getInitialBackground(slide)
-
-      return {
-        slide_number: slide.slide_number,
-        bg_type: background.type,
-        gradient_config: background.gradientConfig,
-        image_url: background.imageUrl,
-        photographer: background.photographer,
-        solid_color: background.solidColor,
-      }
+      return toBackgroundSelection(slide, background)
     })
+    const nextSignature = serializeBackgroundSelections(selections)
 
-    onBackgroundChange(selections)
-  }, [onBackgroundChange, slideBackgrounds, slides])
+    if (lastBackgroundSelectionSignatureRef.current === nextSignature) {
+      return
+    }
+
+    lastBackgroundSelectionSignatureRef.current = nextSignature
+    handleBackgroundChange(selections)
+  }, [slideBackgrounds, slides])
 
   const currentBg = currentSlide ? slideBackgrounds[currentSlide.slide_number] ?? getInitialBackground(currentSlide) : null
 
-  const handleInlineSearch = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-
-    if (!searchQuery.trim() || !currentSlide) {
-      return
-    }
-
-    setIsSearching(true)
-
-    try {
-      const res = await fetch('/api/visual/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          keywords: [searchQuery],
-          platform: 'instagram',
-          count: 8,
-        }),
-      })
-      const data = (await res.json()) as { photos?: UnsplashPhoto[] }
-
-      setSearchResults(data.photos ?? [])
-    } catch (error) {
-      console.error('Manual search failed:', error)
-    } finally {
-      setIsSearching(false)
-    }
-  }
-
-  const goToSlide = (nextIndex: number) => {
-    if (nextIndex < 0 || nextIndex >= slides.length || nextIndex === activeIndex) {
-      return
-    }
-
-    setDirection(nextIndex > activeIndex ? 1 : -1)
-    setActiveIndex(nextIndex)
-  }
-
-  const handleOpenDetailEditor = () => {
-    if (!currentSlide) {
-      return
-    }
-
-    onOpenDetailEditor(activeIndex)
-  }
+  const previewQuickColors = [
+    ...BRAND_COLOR_SWATCHES,
+    ...recentColors.filter((color) => !BRAND_COLOR_SWATCHES.includes(color as any)).slice(0, 3),
+  ]
+  const previewGradientSuggestions = [...BRAND_GRADIENT_SUGGESTIONS.map((item) => item.config), ...savedGradients.slice(0, 2)]
 
   const updateCurrentBackground = (updater: (background: SlideBackgroundState) => SlideBackgroundState) => {
-    if (!currentSlide) {
-      return
-    }
-
-    setSlideBackgrounds((prev) => {
-      const current = prev[currentSlide.slide_number] ?? getInitialBackground(currentSlide)
-      return {
-        ...prev,
-        [currentSlide.slide_number]: updater(current),
-      }
-    })
+    if (!currentSlide) return
+    setSlideBackgrounds((prev) => ({
+      ...prev,
+      [currentSlide.slide_number]: updater(prev[currentSlide.slide_number] ?? getInitialBackground(currentSlide)),
+    }))
   }
 
   const handlePreviewBackgroundUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
-
-    if (!file) {
-      return
-    }
-
-    const dataUrl = await new Promise<string>((resolve, reject) => {
+    if (!file) return
+    const dataUrl = await new Promise<string>((resolve) => {
       const reader = new FileReader()
-      reader.onload = () => resolve(String(reader.result))
-      reader.onerror = () => reject(reader.error)
+      reader.onload = (e) => resolve(e.target?.result as string)
       reader.readAsDataURL(file)
     })
-
-    updateCurrentBackground((background) => ({
-      ...background,
-      imageThumb: dataUrl,
-      imageUrl: dataUrl,
-      type: 'image',
-    }))
+    updateCurrentBackground((bg) => ({ ...bg, imageUrl: dataUrl, type: 'image' }))
   }
 
-  if (!currentSlide || !currentBg) {
-    return null
-  }
-
-  const editedPreview = getEditedSlidePreview(editedSlides, currentSlide.slide_number)
-  const previewQuickColors = [
-    ...BRAND_COLOR_SWATCHES,
-    ...recentColors.filter((color) => !BRAND_COLOR_SWATCHES.includes(color as (typeof BRAND_COLOR_SWATCHES)[number])).slice(0, 3),
-  ]
-  const previewGradientSuggestions = [...BRAND_GRADIENT_SUGGESTIONS.map((item) => item.config), ...savedGradients.slice(0, 2)]
+  if (!currentSlide || !currentBg) return null
 
   return (
-    <div className="flex flex-col items-center gap-5">
+    <div className="flex flex-col items-center gap-6">
       <div className="mx-auto w-full max-w-[399px]">
-        <div className="relative flex w-full flex-col overflow-hidden rounded-[42px] border border-white/10 bg-black p-3 shadow-[0_24px_80px_rgba(0,0,0,0.45),inset_0_0_0_1px_rgba(255,255,255,0.05)]">
-          <div className="absolute inset-x-0 top-0 z-10 flex justify-center py-3">
-            <div className="h-1.5 w-20 rounded-full bg-white/10" />
+        <div className="relative flex w-full flex-col overflow-hidden rounded-[42px] border border-white/10 bg-black p-3 shadow-2xl">
+          <div className="flex items-center justify-between px-4 py-2 border-b border-white/5">
+            <div className="flex items-center gap-2">
+              <div className="h-8 w-8 rounded-full bg-zinc-800 overflow-hidden ring-1 ring-white/10">
+                <span className="flex h-full w-full items-center justify-center text-[10px] font-bold text-zinc-500">NS</span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[13px] font-semibold text-white">noctrastudio</span>
+                <span className="text-[10px] text-zinc-500">Málaga, Spain</span>
+              </div>
+            </div>
+            <MoreHorizontal className="h-4 w-4 text-white" />
           </div>
 
-          <div className="mt-6 flex min-h-[430px] items-center justify-center rounded-[24px] bg-[radial-gradient(circle_at_top,rgba(70,45,110,0.18),transparent_44%),linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))]">
-            <div className="relative h-[375px] w-[375px] overflow-hidden rounded-[22px] bg-[#101417] shadow-[0_18px_40px_rgba(0,0,0,0.28)]">
-              <AnimatePresence initial={false} custom={direction} mode="wait">
-                <motion.div
-                  key={currentSlide.slide_number}
-                  custom={direction}
-                  initial="enter"
-                  animate="center"
-                  exit="exit"
-                  variants={slideVariants}
-                  className="absolute inset-0"
-                >
-                  {editedPreview ? (
-                    <Image src={editedPreview} alt="" fill unoptimized sizes="375px" className="object-cover" />
-                  ) : (
-                    <div
-                      className="origin-top-left"
-                      style={{
-                        height: SLIDE_SIZE,
-                        transform: `scale(${PREVIEW_SCALE})`,
-                        transformOrigin: 'top left',
-                        width: SLIDE_SIZE,
-                      }}
-                    >
-                      <SlideCanvas
-                        angle={angle}
-                        background={currentBg}
-                        isPreview
-                        slide={currentSlide}
-                        totalSlides={totalSlides}
-                      />
-                    </div>
-                  )}
-                </motion.div>
-              </AnimatePresence>
+          <div 
+            ref={containerRef}
+            className="flex aspect-square items-center justify-center bg-black overflow-hidden relative"
+          >
+            <AnimatePresence initial={false} custom={direction}>
+              <motion.div
+                key={activeIndex}
+                custom={direction}
+                variants={slideVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                className="absolute origin-top-left"
+                style={{
+                  height: SLIDE_SIZE,
+                  transform: `scale(${dynamicScale})`,
+                  transformOrigin: 'top left',
+                  width: SLIDE_SIZE,
+                }}
+              >
+                <SlideCanvas
+                  angle={angle}
+                  background={currentBg}
+                  isPreview
+                  slide={currentSlide}
+                  totalSlides={totalSlides}
+                />
+              </motion.div>
+            </AnimatePresence>
+          </div>
+
+          <div className="px-4 py-3">
+             <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <Heart className="h-6 w-6 text-white" />
+                <MessageCircle className="h-6 w-6 text-white" />
+                <Send className="h-6 w-6 text-white" />
+              </div>
+              <div className="flex gap-1">
+                {slides.map((_, i) => (
+                  <div key={i} className={cn("h-1.5 w-1.5 rounded-full transition-all", i === activeIndex ? 'bg-blue-500 scale-110' : 'bg-zinc-600 opacity-50')} />
+                ))}
+              </div>
+              <Bookmark className="h-6 w-6 text-white" />
+            </div>
+            <div className="mt-2.5">
+              <p className="text-[13px] font-semibold text-white">1,248 likes</p>
+              <div className="mt-1 flex items-start gap-1 text-[13px] leading-snug">
+                <span className="font-semibold text-white">noctrastudio</span>
+                <span className="text-zinc-200 line-clamp-2">
+                  {sanitizeSlideText(currentSlide.headline)}
+                </span>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={() => goToSlide(activeIndex - 1)}
-          disabled={activeIndex === 0}
-          className={`flex h-8 w-8 items-center justify-center rounded-full border border-[#2A3040] backdrop-blur-[4px] transition-all ${
-            activeIndex === 0
-              ? 'cursor-default bg-[rgba(33,38,49,0.8)] opacity-30'
-              : 'bg-[rgba(33,38,49,0.8)] text-[#E0E5EB] hover:border-[#4E576A] hover:bg-[#212631]'
-          }`}
-        >
-          <ChevronLeft className="h-4 w-4 text-[#E0E5EB]" />
-        </button>
-
-        <div className="flex items-center gap-1.5">
+       <div className="mx-auto w-full max-w-[399px] flex flex-col gap-4">
+        <div className="flex h-[52px] items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
           {slides.map((slide, index) => (
-            <button
+            <SlideThumbnail
               key={slide.slide_number}
-              type="button"
-              onClick={() => goToSlide(index)}
-              className={`transition-all duration-200 ${
-                index === activeIndex
-                  ? 'h-[6px] w-6 rounded-[3px] bg-[#E0E5EB]'
-                  : 'h-[6px] w-[6px] rounded-full bg-[#2A3040] hover:bg-[#4E576A]'
-              }`}
+              background={slideBackgrounds[slide.slide_number] ?? getInitialBackground(slide)}
+              editedPreview={getEditedSlidePreview(editedSlides, slide.slide_number)}
+              isSelected={index === activeIndex}
+              onClick={() => {
+                setDirection(index > activeIndex ? 1 : -1)
+                setActiveIndex(index)
+              }}
+              slide={slide}
             />
           ))}
         </div>
 
         <button
-          type="button"
-          onClick={() => goToSlide(activeIndex + 1)}
-          disabled={activeIndex === totalSlides - 1}
-          className={`flex h-8 w-8 items-center justify-center rounded-full border border-[#2A3040] backdrop-blur-[4px] transition-all ${
-            activeIndex === totalSlides - 1
-              ? 'cursor-default bg-[rgba(33,38,49,0.8)] opacity-30'
-              : 'bg-[rgba(33,38,49,0.8)] text-[#E0E5EB] hover:border-[#4E576A] hover:bg-[#212631]'
-          }`}
+          onClick={() => onOpenDetailEditor(activeIndex)}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 py-3 text-sm font-medium text-white transition-all hover:bg-white/10"
         >
-          <ChevronRight className="h-4 w-4 text-[#E0E5EB]" />
+          <Pencil className="h-4 w-4" />
+          Editar en detalle
         </button>
-      </div>
 
-      <div className="flex h-[52px] max-w-full items-center gap-1.5 overflow-x-auto pb-1">
-        {slides.map((slide, index) => (
-          <SlideThumbnail
-            key={slide.slide_number}
-            background={slideBackgrounds[slide.slide_number] ?? getInitialBackground(slide)}
-            editedPreview={getEditedSlidePreview(editedSlides, slide.slide_number)}
-            isSelected={index === activeIndex}
-            onClick={() => goToSlide(index)}
-            slide={slide}
-          />
-        ))}
-      </div>
-
-      <button
-        type="button"
-        onClick={handleOpenDetailEditor}
-        className="inline-flex items-center gap-2 rounded-lg border border-[#2A3040] px-4 py-2 text-[13px] font-medium text-[#4E576A] transition-colors hover:border-[#4E576A] hover:text-[#E0E5EB]"
-      >
-        <Pencil className="h-3.5 w-3.5" />
-        Editar en detalle →
-      </button>
-
-      <div className="mx-auto w-full max-w-[399px]">
-        <div className="rounded-[18px] border border-[#2A3040] bg-[#161b24] p-3.5 shadow-lg">
-          <div className="mb-3 flex items-center justify-between">
-            <div className="group relative flex items-center gap-1.5">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-[#4E576A]">Fondo</span>
-              <div className="cursor-help text-[#4E576A] transition-colors hover:text-[#E0E5EB]">
-                <Info className="h-3 w-3" />
-              </div>
-              <div className="absolute bottom-full left-0 z-20 mb-2 hidden w-[180px] rounded-lg border border-white/10 bg-[#212631] p-2.5 text-[11px] leading-relaxed text-[#B5BDCA] shadow-xl group-hover:block">
-                La IA sugirió {currentSlide.bg_type === 'image' ? 'foto' : currentSlide.bg_type === 'gradient' ? 'gradiente' : 'sólido'} porque: {currentSlide.bg_reasoning}
-              </div>
-            </div>
-
-            <div className="flex rounded-lg border border-white/5 bg-black/20 p-0.5">
-              {BACKGROUND_TYPES.map((backgroundType) => (
+        <div className="rounded-2xl border border-white/10 bg-[#161b24] p-4 shadow-lg space-y-4">
+           <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#4E576A]">Fondo</span>
+            <div className="flex rounded-lg border border-white/5 bg-black/20 p-1">
+              {BACKGROUND_TYPES.map((type) => (
                 <button
-                  key={backgroundType.id}
-                  type="button"
-                  onClick={() => {
-                    updateCurrentBackground((background) => {
-                      if (backgroundType.id === 'gradient') {
-                        return {
-                          ...background,
-                          gradientConfig: normalizeGradientConfig(
-                            background.gradientConfig ?? BRAND_GRADIENT_SUGGESTIONS[0]?.config
-                          ),
-                          type: 'gradient',
-                        }
-                      }
-
-                      if (backgroundType.id === 'solid') {
-                        return {
-                          ...background,
-                          solidColor: background.solidColor ?? '#101417',
-                          type: 'solid',
-                        }
-                      }
-
-                      return {
-                        ...background,
-                        type: 'image',
-                      }
-                    })
-                  }}
-                  className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[10px] font-medium transition-all ${
-                    currentBg.type === backgroundType.id
-                      ? 'border border-[#4E576A] bg-[#212631] text-[#E0E5EB]'
-                      : 'text-[#4E576A] hover:text-[#B5BDCA]'
-                  }`}
+                  key={type.id}
+                  onClick={() => updateCurrentBackground((bg) => ({ ...bg, type: type.id as any }))}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-md px-3 py-1 text-[10px] font-medium transition-all",
+                    currentBg.type === type.id ? "bg-[#212631] text-white ring-1 ring-white/10" : "text-[#4E576A] hover:text-zinc-300"
+                  )}
                 >
-                  <backgroundType.icon className="h-3 w-3" />
-                  {backgroundType.label}
+                  <type.icon className="h-3 w-3" />
+                  {type.label}
                 </button>
               ))}
             </div>
           </div>
-
-          <div className="min-h-[52px]">
-            {currentBg.type === 'image' ? (
-              <div className="space-y-3">
+          
+          <div className="min-h-[60px]">
+            {currentBg.type === 'image' && (
+               <div className="space-y-4">
                 <div className="flex items-center gap-2 overflow-x-auto pb-1">
-                  {currentBg.unsplashResults?.map((photo) => (
-                    <button
-                      key={photo.id}
-                      type="button"
-                      onClick={() => {
-                        updateCurrentBackground((background) => ({
-                          ...background,
-                          imageUrl: photo.url,
-                          imageThumb: photo.thumb_url,
-                          photographer: photo.photographer,
-                          type: 'image',
-                        }))
-                      }}
-                      className={`relative h-[52px] w-[52px] flex-shrink-0 overflow-hidden rounded-md transition-all ${
-                        currentBg.imageUrl === photo.url ? 'scale-95 ring-2 ring-[#E0E5EB]' : 'hover:brightness-110'
-                      }`}
-                    >
-                      <Image src={photo.thumb_url} alt="" fill sizes="52px" className="object-cover" />
-                    </button>
-                  ))}
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      updateCurrentBackground((background) => ({
-                        ...background,
-                        showInlineSearch: !background.showInlineSearch,
-                      }))
-                    }}
-                    className="flex h-[52px] w-[52px] flex-shrink-0 flex-col items-center justify-center rounded-md border border-dashed border-[#4E576A] text-[#4E576A] transition-colors hover:border-[#E0E5EB] hover:text-[#E0E5EB]"
-                  >
-                    <Plus className="h-4 w-4" />
-                    <span className="mt-0.5 text-[8px] font-bold">BUSCAR</span>
-                  </button>
-
-                  <label className="flex h-[52px] w-[52px] cursor-pointer flex-shrink-0 flex-col items-center justify-center rounded-md border border-dashed border-[#4E576A] text-[#4E576A] transition-colors hover:border-[#E0E5EB] hover:text-[#E0E5EB]">
-                    <Upload className="h-4 w-4" />
-                    <span className="mt-0.5 text-[8px] font-bold">SUBIR</span>
-                    <input type="file" accept="image/*" className="hidden" onChange={(event) => { void handlePreviewBackgroundUpload(event) }} />
-                  </label>
+                   <button 
+                    onClick={() => updateCurrentBackground(bg => ({ ...bg, showInlineSearch: !bg.showInlineSearch }))}
+                    className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg border border-dashed border-[#4E576A] text-[#4E576A]"
+                   >
+                     <Search className="h-4 w-4" />
+                   </button>
+                   <label className="flex h-12 w-12 flex-shrink-0 cursor-pointer items-center justify-center rounded-lg border border-dashed border-[#4E576A] text-[#4E576A]">
+                     <Upload className="h-4 w-4" />
+                     <input type="file" className="hidden" onChange={(e) => void handlePreviewBackgroundUpload(e)} />
+                   </label>
                 </div>
 
-                {currentBg.showInlineSearch ? (
-                  <form onSubmit={handleInlineSearch} className="animate-in fade-in slide-in-from-top-1 duration-200">
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={searchQuery}
-                        onChange={(event) => setSearchQuery(event.target.value)}
-                        placeholder="Buscar otra foto..."
-                        className="w-full rounded-lg border border-white/10 bg-black/40 py-2 pl-3 pr-10 text-xs text-[#E0E5EB] placeholder:text-[#4E576A] focus:border-[#462D6E]/50 focus:outline-none"
-                      />
-                      <button
-                        type="submit"
-                        disabled={isSearching}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-[#4E576A] hover:text-[#E0E5EB]"
-                      >
-                        {isSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                      </button>
-                    </div>
-
-                    {searchResults.length ? (
-                      <div className="mt-3 grid max-h-[120px] grid-cols-4 gap-2 overflow-y-auto rounded-lg border border-white/5 bg-black/20 p-2">
-                        {searchResults.map((photo) => (
-                          <button
-                            key={photo.id}
-                            type="button"
-                            onClick={() => {
-                              updateCurrentBackground((background) => ({
-                                ...background,
-                                imageUrl: photo.url,
-                                imageThumb: photo.thumb_url,
-                                photographer: photo.photographer,
-                                type: 'image',
-                                unsplashResults: [photo, ...(background.unsplashResults ?? []).slice(0, 3)],
-                              }))
-                              setSearchResults([])
-                              updateCurrentBackground((background) => ({
-                                ...background,
-                                showInlineSearch: false,
-                              }))
-                            }}
-                            className="relative aspect-square overflow-hidden rounded-md hover:brightness-110"
-                          >
-                            <Image src={photo.thumb_url} alt="" fill sizes="64px" className="object-cover" />
-                          </button>
-                        ))}
+                <div className="space-y-3 rounded-xl bg-black/20 p-3 border border-white/5">
+                  <span className="text-[10px] font-semibold uppercase text-zinc-500 tracking-wider">Filtros</span>
+                  <div className="space-y-2">
+                    {[
+                      { key: 'brightness', label: 'Brillo', min: 0, max: 200, default: 100 },
+                      { key: 'contrast', label: 'Contraste', min: 0, max: 200, default: 100 },
+                      { key: 'saturate', label: 'Saturación', min: 0, max: 200, default: 100 },
+                    ].map((f) => (
+                      <div key={f.key} className="space-y-1">
+                        <div className="flex justify-between text-[10px]">
+                          <span className="text-zinc-400">{f.label}</span>
+                          <span className="text-white">{(currentBg.filters as any)?.[f.key] ?? f.default}%</span>
+                        </div>
+                        <input 
+                          type="range" min={f.min} max={f.max}
+                          value={(currentBg.filters as any)?.[f.key] ?? f.default}
+                          onChange={(e) => updateCurrentBackground(bg => ({
+                            ...bg, filters: { ...(bg.filters || {}), [f.key]: parseInt(e.target.value) }
+                          }))}
+                          className="h-1 w-full bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-[#462D6E]"
+                        />
                       </div>
-                    ) : null}
-                  </form>
-                ) : null}
-              </div>
-            ) : null}
-
-            {currentBg.type === 'gradient' ? (
-              <div className="space-y-3">
-                <div className="flex gap-2">
-                  {(['linear', 'radial'] as const).map((gradientType) => (
-                    <button
-                      key={gradientType}
-                      type="button"
-                      onClick={() =>
-                        updateCurrentBackground((background) => ({
-                          ...background,
-                          gradientConfig: normalizeGradientConfig({
-                            angle: background.gradientConfig?.angle ?? 145,
-                            stops: background.gradientConfig?.stops ?? ['#101417', '#1C2028'],
-                            type: gradientType,
-                          }),
-                          type: 'gradient',
-                        }))
-                      }
-                      className={`rounded-xl border px-3 py-2 text-xs transition-colors ${
-                        (currentBg.gradientConfig?.type ?? 'linear') === gradientType
-                          ? 'border-[#4E576A] bg-[#212631] text-[#E0E5EB]'
-                          : 'border-white/8 text-[#8D95A6] hover:border-[#4E576A] hover:text-[#E0E5EB]'
-                      }`}
-                    >
-                      {gradientType === 'linear' ? 'Linear' : 'Radial'}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <ColorPicker
-                    label="Color stop 1"
-                    value={currentBg.gradientConfig?.stops[0] ?? '#101417'}
-                    onChange={(hex) => {
-                      setRecentColors(saveRecentColor(hex))
-                      updateCurrentBackground((background) => ({
-                        ...background,
-                        gradientConfig: normalizeGradientConfig({
-                          angle: background.gradientConfig?.angle ?? 145,
-                          stops: [hex, background.gradientConfig?.stops?.[1] ?? '#1C2028', background.gradientConfig?.stops?.[2]].filter(Boolean) as string[],
-                          type: background.gradientConfig?.type ?? 'linear',
-                        }),
-                        type: 'gradient',
-                      }))
-                    }}
-                  />
-                  <ColorPicker
-                    label="Color stop 2"
-                    value={currentBg.gradientConfig?.stops[1] ?? '#1C2028'}
-                    onChange={(hex) => {
-                      setRecentColors(saveRecentColor(hex))
-                      updateCurrentBackground((background) => ({
-                        ...background,
-                        gradientConfig: normalizeGradientConfig({
-                          angle: background.gradientConfig?.angle ?? 145,
-                          stops: [background.gradientConfig?.stops?.[0] ?? '#101417', hex, background.gradientConfig?.stops?.[2]].filter(Boolean) as string[],
-                          type: background.gradientConfig?.type ?? 'linear',
-                        }),
-                        type: 'gradient',
-                      }))
-                    }}
-                  />
-                </div>
-
-                {(currentBg.gradientConfig?.type ?? 'linear') === 'linear' ? (
-                  <label className="space-y-1 text-xs text-[#8D95A6]">
-                    <span>Ángulo {Math.round(currentBg.gradientConfig?.angle ?? 145)}°</span>
-                    <input
-                      type="range"
-                      min={0}
-                      max={360}
-                      step={1}
-                      value={currentBg.gradientConfig?.angle ?? 145}
-                      onChange={(event) =>
-                        updateCurrentBackground((background) => ({
-                          ...background,
-                          gradientConfig: normalizeGradientConfig({
-                            angle: Number(event.target.value),
-                            stops: background.gradientConfig?.stops ?? ['#101417', '#1C2028'],
-                            type: 'linear',
-                          }),
-                          type: 'gradient',
-                        }))
-                      }
-                      className="w-full"
-                    />
-                  </label>
-                ) : null}
-
-                <div className="flex items-center justify-between rounded-xl border border-white/8 bg-black/15 p-2">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8D95A6]">Sugeridos:</p>
-                    <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
-                      {previewGradientSuggestions.map((gradientConfig, index) => (
-                        <button
-                          key={`${gradientConfig.type}-${gradientConfig.angle}-${gradientConfig.stops.join('-')}-${index}`}
-                          type="button"
-                          onClick={() =>
-                            updateCurrentBackground((background) => ({
-                              ...background,
-                              gradientConfig: normalizeGradientConfig(gradientConfig),
-                              type: 'gradient',
-                            }))
-                          }
-                          className="h-[52px] w-[74px] flex-shrink-0 rounded-md border border-white/8 transition-transform hover:scale-[1.02]"
-                          style={{ background: gradientConfigToCss(gradientConfig) }}
-                        />
-                      ))}
-                    </div>
+                    ))}
                   </div>
+                </div>
+              </div>
+            )}
+            
+            {currentBg.type === 'gradient' && (
+              <div className="grid grid-cols-2 gap-3">
+                 <ColorPicker 
+                  label="Color 1" 
+                  value={currentBg.gradientConfig?.stops[0] || '#101417'} 
+                  onChange={(hex) => updateCurrentBackground(bg => ({
+                    ...bg, gradientConfig: normalizeGradientConfig({ ...bg.gradientConfig!, stops: [hex, bg.gradientConfig?.stops[1] || '#1C2028'] })
+                  }))}
+                 />
+                 <ColorPicker 
+                  label="Color 2" 
+                  value={currentBg.gradientConfig?.stops[1] || '#1C2028'} 
+                  onChange={(hex) => updateCurrentBackground(bg => ({
+                    ...bg, gradientConfig: normalizeGradientConfig({ ...bg.gradientConfig!, stops: [bg.gradientConfig?.stops[0] || '#101417', hex] })
+                  }))}
+                 />
+              </div>
+            )}
 
+            {currentBg.type === 'solid' && (
+              <div className="grid grid-cols-4 gap-2">
+                {previewQuickColors.slice(0, 8).map((color) => (
                   <button
-                    type="button"
-                    onClick={() => {
-                      if (!currentBg.gradientConfig) {
-                        return
-                      }
-
-                      setSavedGradients(saveGradient(currentBg.gradientConfig))
-                    }}
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/8 text-[#8D95A6] transition-colors hover:border-[#4E576A] hover:text-[#E0E5EB]"
-                    aria-label="Guardar este gradiente"
-                    title="Guardar este gradiente"
-                  >
-                    <Bookmark className="h-4 w-4" />
-                  </button>
-                </div>
+                    key={color}
+                    onClick={() => updateCurrentBackground(bg => ({ ...bg, type: 'solid', solidColor: color }))}
+                    className={cn("h-10 rounded-lg border", currentBg.solidColor === color ? "border-white" : "border-white/10")}
+                    style={{ backgroundColor: color }}
+                  />
+                ))}
               </div>
-            ) : null}
+            )}
+          </div>
+        </div>
 
-            {currentBg.type === 'solid' ? (
-              <div className="space-y-3">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8D95A6]">Quick picks</p>
-                  <div className="mt-2 grid grid-cols-4 gap-2">
-                    {Array.from({ length: 8 }).map((_, index) => {
-                      const color = previewQuickColors[index]
-
-                      if (!color) {
-                        return (
-                          <div
-                            key={`empty-${index}`}
-                            className="h-11 rounded-xl border border-dashed border-white/10 bg-black/10"
-                          />
-                        )
-                      }
-
-                      return (
-                        <button
-                          key={color}
-                          type="button"
-                          onClick={() => {
-                            setRecentColors(saveRecentColor(color))
-                            updateCurrentBackground((background) => ({
-                              ...background,
-                              solidColor: color,
-                              type: 'solid',
-                            }))
-                          }}
-                          className={`h-11 rounded-xl border transition-transform hover:scale-[1.02] ${
-                            currentBg.solidColor === color ? 'border-[#E0E5EB]' : 'border-white/10'
-                          }`}
-                          style={{ backgroundColor: color }}
-                        />
-                      )
-                    })}
-                  </div>
-                </div>
-
-                <ColorPicker
-                  label="O elige cualquier color →"
-                  value={currentBg.solidColor ?? '#101417'}
-                  onChange={(hex) => {
-                    setRecentColors(saveRecentColor(hex))
-                    updateCurrentBackground((background) => ({
-                      ...background,
-                      solidColor: hex,
-                      type: 'solid',
-                    }))
-                  }}
-                />
-              </div>
-            ) : null}
+        <div className="rounded-2xl border border-white/10 bg-[#161b24] p-4 shadow-lg">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#4E576A]">Distribución</span>
+            <div className="flex rounded-lg border border-white/5 bg-black/20 p-1">
+              {['headline-first', 'body-first'].map((opt) => (
+                <button
+                  key={opt}
+                  onClick={() => onUpdateSlide?.(currentSlide.slide_number, { text_order: opt as any })}
+                  className={cn("px-3 py-1 text-[10px] font-medium rounded-md", (currentSlide.text_order || 'headline-first') === opt ? "bg-[#212631] text-white ring-1 ring-white/10" : "text-[#4E576A]")}
+                >
+                  {opt === 'headline-first' ? 'Títulos up' : 'Cuerpo up'}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>

@@ -1,14 +1,23 @@
 import { Circle, Line, Rect, StaticCanvas, Textbox, type FabricObject } from 'fabric'
 import type { InstagramCarouselSlide } from '@/lib/social-content'
-import type { SlideTemplate, TemplateObject } from './templates'
+import type { SlideTemplate } from './templates'
+import { recommendTypeScale, applyTypeScaleToCanvas } from '@/lib/typography/type-scale'
 
 export function initSlideFromTemplate(
   canvas: StaticCanvas,
   template: SlideTemplate,
-  data: InstagramCarouselSlide,
+  data: Partial<InstagramCarouselSlide> | null | undefined,
   slideNumber: number
 ): void {
   canvas.clear()
+
+  const slideData = {
+    body: data?.body ?? '',
+    headline: data?.headline ?? '',
+    stat_or_example: data?.stat_or_example ?? null,
+    type: data?.type ?? 'content',
+    visual_direction: data?.visual_direction ?? '',
+  }
 
   // Set background
   if (template.canvasBackground.type === 'solid') {
@@ -29,16 +38,16 @@ export function initSlideFromTemplate(
       
       switch (obj.role) {
         case 'headline':
-          text = data.headline
+          text = slideData.headline
           break
         case 'body':
-          text = data.body
+          text = slideData.body
           break
         case 'stat':
-          text = data.stat_or_example || '00'
+          text = slideData.stat_or_example || '00'
           break
         case 'eyebrow':
-          text = data.visual_direction?.toUpperCase() || ''
+          text = slideData.visual_direction.toUpperCase()
           break
         case 'counter':
           text = slideNumber.toString().padStart(2, '0')
@@ -73,6 +82,19 @@ export function initSlideFromTemplate(
       canvas.add(finalObj)
     }
   })
+
+  // Calculate and apply type scale automatically
+  const scale = recommendTypeScale(
+    slideData.type,
+    slideData.headline.length,
+    !!slideData.body,
+    !!slideData.stat_or_example
+  )
+  
+  applyTypeScaleToCanvas(canvas, scale)
+  
+  // Store scale in canvas data for reference
+  ;(canvas as any).data = { ...(canvas as any).data, typeScale: scale, autoTypeScale: true }
 
   canvas.renderAll()
 }

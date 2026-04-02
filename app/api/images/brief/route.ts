@@ -50,21 +50,20 @@ export async function POST(req: Request) {
     Please adjust the visual brief and search queries to accommodate this specific feedback while maintaining alignment with the post content.` : ''}
     
     Generate a visual brief with maximum precision.
-   Think like a creative director who needs to brief a photo researcher. Be specific about:
-   - What emotion the image should trigger
-   - What compositional style works for this text
-   - What colors will complement or contrast the content
-   - What to absolutely avoid
-   
-   Respond ONLY with valid JSON — no preamble, no markdown:
-   {
-     "queries": [
-       {
-         "query": "string",
-         "rationale": "string",
-         "priority": 1
-       }
-     ],
+    
+    IMPORTANT: The "queries" field is for Unsplash search. Unsplash works best with 2-4 keywords (e.g., "minimal architecture ocean" or "woman working laptop"). 
+    DO NOT use full sentences or descriptive phrases like "business person pointing at target". 
+    Use concrete, visual keywords.
+    
+    Respond ONLY with valid JSON — no preamble, no markdown:
+    {
+      "queries": [
+        {
+          "query": "string", // 2-4 visual keywords reflecting the intent
+          "rationale": "string",
+          "priority": 1
+        }
+      ],
      "visual_brief": {
        "mood": "string",
        "composition": "string",
@@ -79,14 +78,43 @@ export async function POST(req: Request) {
      "per_slide_notes": "string"
    }`
 
-    const message = await anthropic.messages.create({
-      model: 'claude-3-5-haiku-20241022',
-      max_tokens: 1200,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: 'Generate the visual brief for this post.' }],
-    })
+    let message: import('@anthropic-ai/sdk/resources').Message | undefined
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        message = await anthropic.messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 1200,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: 'Generate the visual brief for this post.' }],
+        })
+        break
+      } catch (err: any) {
+        if (err?.status === 429 && attempt < 2) {
+          const retryAfter = parseInt(err?.headers?.['retry-after'] ?? '10', 10)
+          await new Promise(r => setTimeout(r, retryAfter * 1000))
+          continue
+        }
+        throw err
+      }
+    }
 
-    const brief = parseAnthropicJson<VisualBrief>(message)
+    if (!message) throw new Error('Failed to get response from Anthropic')
+
+    // Use parseAnthropicJson but fall back to raw JSON extraction if it fails
+    let brief: VisualBrief
+    try {
+      brief = parseAnthropicJson<VisualBrief>(message)
+    } catch {
+      // Model added preamble — extract the JSON object directly
+      const raw = message.content
+        .filter((b): b is import('@anthropic-ai/sdk/resources').TextBlock => b.type === 'text')
+        .map(b => b.text)
+        .join('')
+      const start = raw.indexOf('{')
+      const end = raw.lastIndexOf('}')
+      if (start === -1 || end === -1) throw new Error('Anthropic did not return a JSON object')
+      brief = JSON.parse(raw.slice(start, end + 1)) as VisualBrief
+    }
 
     // Log token usage
     await supabase.from('token_ledger').insert({

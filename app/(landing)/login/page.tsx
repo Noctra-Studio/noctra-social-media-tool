@@ -46,7 +46,7 @@ export default function LoginPage() {
         return;
       }
 
-      window.location.assign('/compose');
+      window.location.assign('/home');
     } catch (error) {
       setErrorMsg(
         error instanceof Error

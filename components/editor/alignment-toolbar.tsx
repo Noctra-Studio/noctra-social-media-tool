@@ -9,8 +9,15 @@ import {
   AlignCenterVertical, 
   AlignEndVertical,
   AlignHorizontalDistributeCenter,
-  AlignVerticalDistributeCenter
+  AlignVerticalDistributeCenter,
+  Palette,
+  Type,
+  ChevronUp,
+  ChevronDown,
+  Layers,
+  Ghost
 } from "lucide-react";
+import { ColorPicker } from "./color-picker";
 import { type Canvas, type FabricObject, ActiveSelection } from "fabric";
 
 type AlignmentToolbarProps = {
@@ -23,6 +30,8 @@ export function AlignmentToolbar({ canvas, selectedObject, onCommit }: Alignment
   if (!canvas || !selectedObject) return null;
 
   const isMultiple = selectedObject instanceof ActiveSelection;
+  const isTextbox = selectedObject?.type === 'textbox' || selectedObject?.type === 'itext';
+  const isCurved = selectedObject?.type === 'group' && (selectedObject as any).data?.type === 'arc-text';
   const CANVAS_SIZE = 1080;
 
   const align = (type: 'left' | 'center-h' | 'right' | 'top' | 'center-v' | 'bottom') => {
@@ -113,6 +122,76 @@ export function AlignmentToolbar({ canvas, selectedObject, onCommit }: Alignment
             <AlignmentButton onClick={() => distribute('h')} icon={AlignHorizontalDistributeCenter} title="Distribuir horizontal" />
             <AlignmentButton onClick={() => distribute('v')} icon={AlignVerticalDistributeCenter} title="Distribuir vertical" />
           </div>
+        </>
+      )}
+
+      <div className="h-4 w-px bg-white/10" />
+
+      {/* Layer Order */}
+      <div className="flex items-center gap-1">
+        <AlignmentButton onClick={() => { canvas.bringObjectToFront(selectedObject); canvas.renderAll(); onCommit(); }} icon={ChevronUp} title="Traer al frente" />
+        <AlignmentButton onClick={() => { canvas.sendObjectToBack(selectedObject); canvas.renderAll(); onCommit(); }} icon={ChevronDown} title="Enviar al fondo" />
+      </div>
+
+      <div className="h-4 w-px bg-white/10" />
+
+      {/* Opacity */}
+      <div className="flex items-center gap-2 px-2 group relative">
+        <Ghost className="h-3.5 w-3.5 text-[#4E576A]" />
+        <input 
+          type="range" 
+          min="0" 
+          max="1" 
+          step="0.1" 
+          value={selectedObject.opacity} 
+          onChange={(e) => {
+            const val = parseFloat(e.target.value);
+            if (isMultiple) {
+              (selectedObject as ActiveSelection).getObjects().forEach(o => o.set('opacity', val));
+            } else {
+              selectedObject.set('opacity', val);
+            }
+            canvas.renderAll();
+            onCommit();
+          }}
+          className="w-16 accent-[#E0E5EB]"
+        />
+      </div>
+
+      <div className="h-4 w-px bg-white/10" />
+      
+      {/* Quick Color */}
+      <div className="relative flex items-center px-1">
+        <ColorPicker 
+          value={String(selectedObject.stroke !== 'transparent' && selectedObject.fill === 'transparent' ? selectedObject.stroke : selectedObject.fill || "#E0E5EB").slice(0, 7)}
+          onChange={(hex) => {
+            if (isMultiple) {
+              (selectedObject as ActiveSelection).getObjects().forEach(o => o.set('fill', hex));
+            } else {
+              selectedObject.set(selectedObject.fill === 'transparent' ? 'stroke' : 'fill', hex);
+              // Handle per-character if selected
+              if ((selectedObject as any).isEditing) {
+                (selectedObject as any).setSelectionStyles({ fill: hex });
+              }
+            }
+            canvas.renderAll();
+            onCommit();
+          }}
+          label=""
+          showLabel={false}
+        />
+      </div>
+
+      {isCurved && (
+        <>
+          <div className="h-4 w-px bg-white/10" />
+          <button 
+            onClick={() => (canvas as any).fire('text:edit-curved', { target: selectedObject })}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 text-[11px] font-bold text-[#E0E5EB] hover:bg-white/10"
+          >
+            <Type className="h-3.5 w-3.5" />
+            Editar texto
+          </button>
         </>
       )}
     </div>

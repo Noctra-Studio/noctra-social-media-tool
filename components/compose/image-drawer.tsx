@@ -116,7 +116,8 @@ export function ImageDrawer({ isOpen, onClose, postContent, onConfirm }: ImageDr
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        keywords: query ? [query, filters] : postContent.keywords,
+        query: query || undefined,
+        keywords: query ? undefined : postContent.keywords,
         platform: postContent.platform,
         context: isInitial ? { caption: postContent.caption, angle: postContent.angle } : undefined,
         count: 15,
@@ -161,7 +162,7 @@ export function ImageDrawer({ isOpen, onClose, postContent, onConfirm }: ImageDr
   const handleImageSelect = (img: any) => {
     setTempSelection({
       url: img.url,
-      thumbUrl: img.thumb_url,
+      thumbUrl: img.thumbUrl,
       photographer: img.photographer,
       unsplashId: img.id,
       onBrandScore: img.onBrandScore || 0.5
@@ -406,7 +407,7 @@ export function ImageDrawer({ isOpen, onClose, postContent, onConfirm }: ImageDr
                               getScoreColor(img.onBrandScore || 0.5)
                             )}
                           >
-                            <img src={img.thumb_url} alt="" className="w-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                            <img src={img.thumbUrl} alt="" className="w-full object-cover transition-transform duration-500 group-hover:scale-110" />
                             <div className="absolute inset-x-0 bottom-0 flex translate-y-full items-end bg-gradient-to-t from-black/80 to-transparent p-3 transition-transform group-hover:translate-y-0">
                               <span className="text-[10px] text-white opacity-80">📷 {img.photographer}</span>
                             </div>

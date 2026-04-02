@@ -58,27 +58,29 @@ export function AIButton({
   ...props
 }: AIButtonProps) {
   const [phaseIndex, setPhaseIndex] = useState(0)
+  const phaseCount = loadingPhases?.length ?? 0
 
   useEffect(() => {
-    if (state !== 'loading' || !loadingPhases?.length) {
-      setPhaseIndex(0)
+    if (state !== 'loading' || phaseCount === 0) {
       return
     }
 
-    const timer = setInterval(() => {
+    const timer = window.setInterval(() => {
       setPhaseIndex((current) =>
-        current < loadingPhases.length - 1 ? current + 1 : current
+        current < phaseCount - 1 ? current + 1 : current
       )
     }, phaseInterval)
 
-    return () => clearInterval(timer)
-  }, [state, loadingPhases, phaseInterval])
+    return () => window.clearInterval(timer)
+  }, [state, phaseCount, phaseInterval])
 
   const isDisabled = disabled || state === 'loading'
+  const activePhaseIndex =
+    phaseCount === 0 ? 0 : Math.min(phaseIndex, phaseCount - 1)
 
   let stateLabel: string
   if (state === 'loading') {
-    stateLabel = loadingPhases?.length ? loadingPhases[phaseIndex] : (loadingLabel || idleLabel)
+    stateLabel = loadingPhases?.length ? loadingPhases[activePhaseIndex] : (loadingLabel || idleLabel)
   } else if (state === 'success') {
     stateLabel = successLabel || idleLabel
   } else if (state === 'error') {

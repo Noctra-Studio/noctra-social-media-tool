@@ -1,24 +1,21 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { 
-  Sparkles, 
-  Brain, 
-  Search, 
-  Loader2, 
-  ChevronDown, 
-  ChevronUp, 
-  X, 
-  CheckCircle2, 
+import {
+  Sparkles,
+  Brain,
+  Search,
+  Loader2,
+  ChevronDown,
+  ChevronUp,
+  X,
   AlertCircle,
-  Undo2,
   RefreshCcw,
-  ExternalLink,
   Info
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
-import type { VisualBrief, ScoredImage, EfficacyReport } from "@/lib/social-content";
+import type { VisualBrief, ScoredImage } from "@/lib/social-content";
 
 type ImageRecommendationsProps = {
   postContent: {
@@ -37,12 +34,11 @@ type ImageRecommendationsProps = {
 
 type AnalysisStep = 'analyzing' | 'searching' | 'done' | 'error';
 
-export function ImageRecommendations({ 
-  postContent, 
-  slideIndex = -1, 
+export function ImageRecommendations({
+  postContent,
+  slideIndex = -1,
   slideType = 'content',
   onSelect,
-  onClose
 }: ImageRecommendationsProps) {
   const [step, setStep] = useState<AnalysisStep>('analyzing');
   const [brief, setBrief] = useState<VisualBrief | null>(null);
@@ -59,9 +55,23 @@ export function ImageRecommendations({
   const [refineKey, setRefineKey] = useState(0);
   const [activeFeedback, setActiveFeedback] = useState<string | undefined>(undefined);
 
+  // Stable references to avoid infinite re-runs when parent re-renders with new object literals
+  const captionRef = useRef(postContent.caption);
+  const platformRef = useRef(postContent.platform);
+  const angleRef = useRef(postContent.angle);
+  const postIdRef = useRef(postContent.post_id);
+
+  useEffect(() => {
+    captionRef.current = postContent.caption;
+    platformRef.current = postContent.platform;
+    angleRef.current = postContent.angle;
+    postIdRef.current = postContent.post_id;
+  });
+
   // Initial Analysis
   useEffect(() => {
-    let isMounted = true;
+    const controller = new AbortController();
+    const { signal } = controller;
 
     const runPipeline = async (feedback?: string) => {
       try {
@@ -69,23 +79,40 @@ export function ImageRecommendations({
         setError(null);
         setResults({ recommended: [], good: [], alternatives: [] });
         setLoadingProgress(0);
-        
+
+        const caption = captionRef.current;
+        const platform = platformRef.current;
+        const angle = angleRef.current;
+        const postId = postIdRef.current;
+
+        if (!caption?.trim()) {
+          setError('No hay contenido de post para analizar.');
+          setStep('error');
+          return;
+        }
+
         // Stage 1: Brief
         const briefRes = await fetch('/api/images/brief', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal,
           body: JSON.stringify({
-            post_content: postContent,
+            post_content: { caption, platform, angle, post_id: postId },
             slide_index: slideIndex,
             slide_type: slideType,
-            post_id: postContent.post_id,
-            feedback: feedback // pass refinement feedback
+            post_id: postId,
+            feedback,
           })
         });
 
-        if (!briefRes.ok) throw new Error('Error al generar el brief visual');
+        if (signal.aborted) return;
+        if (!briefRes.ok) {
+          const errData = await briefRes.json().catch(() => ({}));
+          throw new Error((errData as { error?: string }).error || 'Error al generar el brief visual');
+        }
         const briefData = await briefRes.json();
-        if (!isMounted) return;
+        if (signal.aborted) return;
+
         setBrief(briefData);
         setStep('searching');
 
@@ -93,36 +120,37 @@ export function ImageRecommendations({
         const recommendRes = await fetch('/api/images/recommend', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal,
           body: JSON.stringify({
             brief: briefData,
-            post_content: postContent,
-            platform: postContent.platform,
-            feedback: feedback // pass refinement feedback
+            post_content: { caption, platform, angle },
+            platform,
+            feedback,
           })
         });
-        
+
+        if (signal.aborted) return;
         if (!recommendRes.ok) throw new Error('Error al buscar imágenes');
         const reader = recommendRes.body?.getReader();
-        if (!reader) throw new Error('Readable stream not supported');
+        if (!reader) throw new Error('Streaming no soportado');
 
         const decoder = new TextDecoder();
         while (true) {
           const { done, value } = await reader.read();
-          if (done) break;
-          
+          if (done || signal.aborted) break;
+
           const chunk = decoder.decode(value);
           const lines = chunk.split('\n').filter(Boolean);
-          
+
           for (const line of lines) {
             try {
               const message = JSON.parse(line);
               if (message.type === 'image_scored') {
                 setLoadingProgress(prev => prev + 1);
-                const img = message.data;
+                const img = message.data as import('@/lib/social-content').ScoredImage;
                 setResults(prev => {
                   const alreadyExists = [...prev.recommended, ...prev.good, ...prev.alternatives].some(x => x.unsplashId === img.unsplashId);
                   if (alreadyExists) return prev;
-
                   if (img.scores.total >= 0.75) return { ...prev, recommended: [...prev.recommended, img] };
                   if (img.scores.total >= 0.5) return { ...prev, good: [...prev.good, img] };
                   return { ...prev, alternatives: [...prev.alternatives, img] };
@@ -135,23 +163,25 @@ export function ImageRecommendations({
                 });
                 setStep('done');
               }
-            } catch (e) {
-              console.warn('Failed to parse chunk', line);
+            } catch {
+              // malformed chunk — skip
             }
           }
         }
 
-      } catch (err: any) {
-        if (isMounted) {
-          setError(err.message);
-          setStep('error');
-        }
+      } catch (err: unknown) {
+        if (signal.aborted) return;
+        const msg = err instanceof Error ? err.message : 'Error inesperado';
+        setError(msg);
+        setStep('error');
       }
     };
 
     runPipeline(activeFeedback);
-    return () => { isMounted = false; };
-  }, [postContent, slideIndex, slideType, refineKey]);
+    return () => { controller.abort(); };
+    // Only re-run when content semantics change, not on every parent render
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [postContent.caption, postContent.platform, postContent.angle, postContent.post_id, slideIndex, slideType, refineKey]);
 
   const [refineFeedback, setRefineFeedback] = useState("");
   const [selectedChips, setSelectedChips] = useState<string[]>([]);
@@ -329,7 +359,7 @@ export function ImageRecommendations({
 
           {/* Tier 2: Good Options */}
           {results.good.length > 0 && (
-            <CollapsibleSection title={`Buenas opciones (${results.good.length})`} defaultOpen={false}>
+            <CollapsibleSection title={`Buenas opciones (${results.good.length})`} defaultOpen={results.recommended.length === 0}>
               <div className="grid grid-cols-2 gap-3">
                 {results.good.map((img) => (
                   <RecommendationCard key={img.unsplashId} image={img} onSelect={onSelect} slideType={slideType} />

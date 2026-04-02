@@ -109,14 +109,14 @@ Include CTA slide: ${includeCta}
 Generate each slide with:
 - slide_number: number
 - type: 'cover' | 'content' | 'cta'
-- headline: string (max 8 words)
-- body: string (max 30 words)
+- headline: string (STRICT MAX 32 chars - MUST fit in one or two lines)
+- body: string (STRICT MAX 80 chars - NO paragraphs, just punchy sentences)
 - visual_direction: string
 - design_note: string using Noctra palette (#101417, #212631, #E0E5EB, #462D6E)
-- stat_or_example: (optional) a short case study, statistic, or example related to the headline to be highlighted in a separate box.
+- stat_or_example: (optional) short metric or highlight (max 5 words)
 - bg_type: 'image' | 'gradient' | 'solid'
-- bg_reasoning: string (1 sentence why this bg type fits)
-- unsplash_query: string | null (only when bg_type is 'image', specific terms like "editorial portrait", "startup team meeting", "minimal workspace")
+- bg_reasoning: string
+- unsplash_query: string | null
 - color_suggestion: string | null
 - suggested_template: 'editorial' | 'bold-statement' | 'split' | 'list' | 'stat-hero' | 'minimal-quote'
 
@@ -127,14 +127,16 @@ Suggest background type based on content and emotion:
 - Use 'solid' when typography is the hero.
 
 Suggest a layout template for each slide:
-- editorial     -> narrative content, case studies, general info
-- bold-statement -> cover slides with strong claims, CTA slides
-- split         -> content with strong visual contrast needed
-- list          -> 3-4 distinct points or steps
-- stat-hero     -> when a number is the main message
-- minimal-quote -> quotes, opinions, thought leadership
+- editorial     -> Large headline, minimal body, offset layout.
+- bold-statement -> Massive centered headline, high impact.
+- split         -> Text vs Visual (balanced 50/50 look).
+- list          -> Clean bullet points with icons/numbers.
+- stat-hero     -> Large number/metric as the focal point.
+- minimal-quote -> Atmospheric, breathable, small text. (Use for philosophical or high-level quotes).
 
-Provide color_suggestion as either one HEX color for solid backgrounds or two HEX colors separated by a comma for gradients.
+CRITICAL: Content MUST be extremely concise. Instagram users scan quickly. Avoid filler words. Every word must earn its place.
+
+Provide color_suggestion as HEX colors matching "Premium Noctra" (Deep purples, dark greys, emerald accents).
 
 Return ONLY valid JSON:
 {

@@ -13,7 +13,7 @@ Notes: ${feedback.notes || 'None'}`;
 
   try {
     const msg = await anthropic.messages.create({
-      model: "claude-3-5-haiku-20241022",
+      model: "claude-haiku-4-5-20251001",
       max_tokens: 500,
       temperature: 0.1,
       system: `You analyze social media post performance feedback to extract actionable learnings. Respond ONLY with JSON:

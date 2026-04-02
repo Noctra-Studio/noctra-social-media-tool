@@ -18,15 +18,23 @@ import {
   FabricObject,
   FabricImage,
   Gradient,
+  Group,
   Line,
   Rect,
   Shadow,
   StaticCanvas,
   Textbox,
   ActiveSelection,
+  Point,
+  type TextboxProps
 } from 'fabric'
+import { makeTextOnArc, makeTextOnCircle } from '@/lib/editor/text-effects'
 import { ExportModal } from './export-modal'
 import { quickExportCurrentSlide } from '@/lib/editor/export'
+import { PreviewModal } from '@/components/editor/preview/preview-modal'
+import { exportCanvasUHD, UHD_PRESET } from '@/lib/editor/export-utils'
+import { ExportDialog } from '@/components/editor/export/export-dialog'
+import { CanvasToolbar } from '@/components/editor/canvas/canvas-toolbar'
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -57,6 +65,7 @@ import {
   Trash2,
   Grid,
   Ruler,
+  Sliders,
   Maximize2,
   Minimize2,
   Settings2,
@@ -75,6 +84,9 @@ import {
   Camera,
   Briefcase,
   Zap,
+  Eye,
+  Square,
+  History as HistoryIcon,
 } from 'lucide-react'
 import { AlignmentToolbar } from './alignment-toolbar'
 import { CanvasRuler } from './canvas-ruler'
@@ -122,9 +134,27 @@ import { TemplateSelector } from '@/components/editor/template-selector'
 import { PropertiesPanel } from '@/components/editor/properties-panel'
 import { ThemePanel } from '@/components/editor/theme-panel'
 import { AssetPanel } from '@/components/editor/asset-panel'
+import { ImagePanel } from '@/components/editor/image-panel'
+import { FilterPanel } from '@/components/editor/canvas/filter-panel'
+import { FeedPreview } from '@/components/instagram/feed-preview'
+import { CritiquePanel } from '@/components/editor/critique-panel'
+import { setCanvasBackground, removeCanvasBackground } from '@/lib/editor/canvas-background'
+import '@/lib/editor/text-effects'
 import { cn } from '@/lib/utils'
+import type { Platform } from '@/lib/product'
+
+import { VersionPanel } from './version-panel'
+import { versionToSlides, saveDesignVersion } from '@/lib/editor/versions'
+import { applyTypeScaleToCanvas, getRecommendedRatio, type TypeScaleRatioKey } from '@/lib/typography/type-scale'
+import { ContextualBar } from './contextual-bar'
+import { addShapeToCanvas } from '@/lib/editor/shape-utils'
+import { TEXTURE_PATTERNS } from "@/lib/editor/asset-utils";
+import type { ExportOptions } from '@/types/editor'
+
+type LeftTab = 'slides' | 'tema' | 'assets' | 'imagen' | 'filtros' | 'historico'
 
 type FabricEditorProps = {
+  platform?: Platform
   angle?: string
   initialActiveSlideIndex: number
   initialBackgrounds?: SlideBackgroundSelection[]
@@ -135,6 +165,11 @@ type FabricEditorProps = {
   onSave: (payload: CarouselEditorSavePayload) => void
   slides: InstagramCarouselSlide[]
   postId?: string
+  userId: string
+  caption?: string
+  hashtags?: string[]
+  initialActiveFilterId?: string
+  initialActiveFilterCSS?: string
 }
 
 type FabricCanvasRef = Canvas | null
@@ -149,18 +184,6 @@ type DragState = {
   originY: number
   shape: FabricObject | null
 } | null
-
-type UnsplashPhoto = {
-  id: string
-  photographer: string
-  thumb_url: string
-  url: string
-}
-
-type UnsplashModalState = {
-  mode: 'background' | 'toolbar'
-  open: boolean
-}
 
 const CANVAS_SIZE = 1080
 const MAX_CANVAS_DISPLAY = 540
@@ -179,7 +202,7 @@ const TOOL_BUTTON_CLASS =
   'flex h-9 w-9 items-center justify-center rounded-xl border text-[#8D95A6] transition-colors hover:border-[#4E576A] hover:text-[#E0E5EB]'
 const PANEL_CLASS = 'rounded-[24px] border border-white/8 bg-[#10151A]'
 
-FabricObject.customProperties = ['id', 'slideType', 'isLocked']
+FabricObject.customProperties = ['id', 'slideType', 'isLocked', 'data', 'shadow', 'styles', 'paintFirst']
 
 function getScaleForCanvas(viewportWidth: number, viewportHeight: number) {
   const side = Math.min(MAX_CANVAS_DISPLAY, viewportWidth - 120, viewportHeight - 180)
@@ -310,6 +333,27 @@ function applyLockedObjectOptions(object: FabricObject) {
   })
 }
 
+function setObjectLockState(object: FabricObject, locked: boolean) {
+  object.set({
+    evented: true,
+    hasControls: !locked,
+    hoverCursor: locked ? 'default' : 'move',
+    lockMovementX: locked,
+    lockMovementY: locked,
+    lockRotation: locked,
+    lockScalingFlip: locked,
+    lockScalingX: locked,
+    lockScalingY: locked,
+    selectable: true,
+  })
+
+  if (!locked) {
+    applyDefaultObjectControls(object)
+  }
+
+  object.set('isLocked', locked)
+}
+
 function buildSlideCounter(slideNumber: number, totalSlides: number) {
   return `${String(slideNumber).padStart(2, '0')} / ${String(totalSlides).padStart(2, '0')}`
 }
@@ -415,7 +459,7 @@ async function applySlideBackground(canvas: Canvas, background: CarouselEditorBa
               x1: CANVAS_SIZE / 2,
               x2: CANVAS_SIZE / 2,
               y1: CANVAS_SIZE / 2,
-              y2: CANVAS_SIZE,
+              y2: CANVAS_SIZE / 2,
             },
             type: 'radial',
           })
@@ -709,11 +753,13 @@ async function initSlideFromData(args: {
 function SortableSlideThumb({
   isSelected,
   onSelect,
+  onSetTab,
   slide,
   totalSlides,
 }: {
   isSelected: boolean
   onSelect: () => void
+  onSetTab?: (tab: LeftTab) => void
   slide: CarouselEditorSlide
   totalSlides: number
 }) {
@@ -736,15 +782,47 @@ function SortableSlideThumb({
 
       <button type="button" onClick={onSelect} className="w-[148px] text-left">
         <div
-          className={`relative aspect-square overflow-hidden rounded-lg border-2 transition-colors ${
-            isSelected ? 'border-[#E0E5EB]' : 'border-transparent hover:border-[#4E576A]'
-          }`}
+          className={cn(
+            "relative aspect-square w-full overflow-hidden rounded-xl bg-[#0A0C0F] transition-all group",
+            isSelected ? "ring-2 ring-[#462D6E] ring-offset-2 ring-offset-[#10151A]" : "hover:ring-1 hover:ring-white/20"
+          )}
         >
           {slide.previewDataURL ? (
-            <Image src={slide.previewDataURL} alt="" fill unoptimized sizes="148px" className="object-cover" />
+            <img src={slide.previewDataURL} alt={`Slide ${slide.originalData.slide_number}`} className="h-full w-full object-cover" />
           ) : (
-            <div className="h-full w-full bg-[#212631]" />
+            <div className="flex h-full items-center justify-center text-[10px] text-[#4E576A]">
+              Sin vista previa
+            </div>
           )}
+
+          {/* Status Indicator */}
+          <div className="absolute top-2 right-2 flex items-center gap-1 rounded-md bg-black/40 px-1.5 py-0.5 text-[9px] font-bold text-white/80 backdrop-blur-sm opacity-0 transition-opacity group-hover:opacity-100">
+            {slide.background.type === 'image' ? (
+              <>
+                <ImageIcon className="h-2.5 w-2.5" />
+                <span>IMG</span>
+              </>
+            ) : (
+              <>
+                <Square className="h-2.5 w-2.5" />
+                <span>CLR</span>
+              </>
+            )}
+          </div>
+
+          {/* Hover Action */}
+          <div 
+            className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 transition-opacity group-hover:opacity-100 cursor-pointer"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect();
+              onSetTab?.('imagen');
+            }}
+          >
+            <span className="text-[10px] font-bold text-white bg-[#462D6E] px-2 py-1 rounded-lg">
+              {slide.background.type === 'image' ? 'Cambiar fondo' : 'Poner fondo'}
+            </span>
+          </div>
         </div>
         <div className="mt-2 flex items-center justify-between text-[10px] text-[#4E576A]">
           <span>{SLIDE_TYPE_LABELS[slide.type]}</span>
@@ -790,14 +868,26 @@ export function FabricEditor({
   onSave,
   slides,
   postId,
+  userId,
+  platform = 'instagram',
+  caption,
+  hashtags,
+  initialActiveFilterId = 'none',
+  initialActiveFilterCSS = '',
 }: FabricEditorProps) {
   const canvasElementRef = useRef<HTMLCanvasElement | null>(null)
   const canvasRef = useRef<FabricCanvasRef>(null)
-  const [leftTab, setLeftTab] = useState<'slides' | 'tema' | 'assets'>('slides')
+  const [leftTab, setLeftTab] = useState<LeftTab>('slides')
   const [currentThemeId, setCurrentThemeId] = useState<string>('nocturno')
   const [customThemes, setCustomThemes] = useState<CarouselTheme[]>([])
   const [showThemeConfirm, setShowThemeConfirm] = useState(false)
   const [coherenceScore, setCoherenceScore] = useState(100)
+  const [activeRightPanel, setActiveRightPanel] = useState<'properties' | 'feed' | 'critique'>('properties')
+  const [isUpdatingFeed, setIsUpdatingFeed] = useState(false)
+  const [isAnalyzingDesign, setIsAnalyzingDesign] = useState(false)
+  const [critiqueResults, setCritiqueResults] = useState<any | null>(null)
+  const [critiqueHistory, setCritiqueHistory] = useState<any[]>([])
+  const [critiqueCooldown, setCritiqueCooldown] = useState(0)
   const [editingCustomTheme, setEditingCustomTheme] = useState<CarouselTheme>(
     PRESET_THEMES.find((t) => t.id === 'custom')!
   )
@@ -828,7 +918,16 @@ export function FabricEditor({
   const [isBootstrapping, setIsBootstrapping] = useState(true)
   const [isSavingAll, setIsSavingAll] = useState(false)
   const [isExportModalOpen, setIsExportModalOpen] = useState(false)
+  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false)
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false)
+  const [previewDataURL, setPreviewDataURL] = useState<string>('')
+  const [isPreviewExporting, setIsPreviewExporting] = useState(false)
+  const [isDialogExporting, setIsDialogExporting] = useState(false)
   const [exportStats, setExportStats] = useState<{ count: number; lastExport: string | null }>({ count: 0, lastExport: null })
+  const [activeFilterId, setActiveFilterId] = useState(initialActiveFilterId)
+  const [activeFilterCSS, setActiveFilterCSS] = useState(initialActiveFilterCSS)
+  const [canvasPreviewDataURL, setCanvasPreviewDataURL] = useState<string | null>(null)
+  const previewTimeoutRef = useRef<number | null>(null)
 
   const handleExportSuccess = useCallback(async (pId: string, platform: string, format: string) => {
     try {
@@ -853,10 +952,6 @@ export function FabricEditor({
         .catch(console.error)
     }
   }, [postId])
-  const [unsplashModal, setUnsplashModal] = useState<UnsplashModalState>({ mode: 'background', open: false })
-  const [unsplashQuery, setUnsplashQuery] = useState('')
-  const [unsplashResults, setUnsplashResults] = useState<UnsplashPhoto[]>([])
-  const [isUnsplashLoading, setIsUnsplashLoading] = useState(false)
   const [savedGradients, setSavedGradients] = useState<CarouselGradientConfig[]>([])
   const [recentFontIds, setRecentFontIds] = useState<string[]>([])
   const [gradientDraft, setGradientDraft] = useState<CarouselGradientConfig>(
@@ -866,13 +961,23 @@ export function FabricEditor({
   const [gridSize, setGridSize] = useState(16)
   const [rulerEnabled, setRulerEnabled] = useState(false)
   const [smartGuidesEnabled, setSmartGuidesEnabled] = useState(true)
+  const [isVersionPanelOpen, setIsVersionPanelOpen] = useState(false)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
   const activeSlide = editorState.slides[editorState.activeSlideIndex]
   const activeBackground = activeSlide?.background
+  const currentSlideImage = activeSlide?.previewDataURL ?? null
   const history = activeSlide ? historiesRef.current[activeSlide.id] : undefined
+  const canUndo = Boolean(history && history.cursor > 0)
+  const canRedo = Boolean(history && history.cursor < history.states.length - 1)
   const showDesktopProperties = viewportWidth >= 1200
   const showMobileOnlyMessage = viewportWidth < 768
   const canvasScale = getScaleForCanvas(viewportWidth, viewportHeight)
+  const previewFormat = platform === 'instagram' ? 'carousel_slide' : 'single_image'
+  const exportFormatKey = previewFormat
+  const isActiveObjectLocked = Boolean(selectedObject?.get('isLocked'))
+  const previewCaption = [caption, hashtags?.map((tag) => (tag.startsWith('#') ? tag : `#${tag}`)).join(' ')]
+    .filter((value): value is string => Boolean(value && value.trim().length > 0))
+    .join('\n\n')
 
   editorStateRef.current = editorState
 
@@ -893,6 +998,106 @@ export function FabricEditor({
   const setDirty = useCallback((value: boolean) => {
     setEditorState((current) => ({ ...current, isDirty: value }))
   }, [])
+
+  const generatePreview = useCallback(() => {
+    const canvas = canvasRef.current
+
+    if (!canvas) {
+      return
+    }
+
+    const url = canvas.toDataURL({
+      format: 'jpeg',
+      quality: 0.5,
+      multiplier: 0.4,
+    })
+
+    setCanvasPreviewDataURL(url)
+  }, [])
+
+  const openPreview = useCallback(async () => {
+    const canvas = canvasRef.current
+
+    if (!canvas) {
+      return
+    }
+
+    const url = canvas.toDataURL({
+      format: 'png',
+      quality: 1,
+      multiplier: 1,
+    })
+
+    setPreviewDataURL(url)
+    setIsPreviewOpen(true)
+  }, [])
+
+  const handlePreviewExport = useCallback(async () => {
+    const canvas = canvasRef.current
+
+    if (!canvas) {
+      return
+    }
+
+    setIsPreviewExporting(true)
+
+    try {
+      await exportCanvasUHD(canvas, {
+        ...UHD_PRESET,
+        activeFilterCSS,
+        filename: `noctra-${platform}-${previewFormat}`,
+      })
+
+      if (postId) {
+        await handleExportSuccess(postId, platform, 'png')
+      }
+    } finally {
+      setIsPreviewExporting(false)
+    }
+  }, [activeFilterCSS, handleExportSuccess, platform, postId, previewFormat])
+
+  const handleDialogExport = useCallback(async (options: ExportOptions) => {
+    const canvas = canvasRef.current
+
+    if (!canvas) {
+      return
+    }
+
+    setIsDialogExporting(true)
+
+    try {
+      await exportCanvasUHD(canvas, options)
+
+      if (postId) {
+        await handleExportSuccess(postId, platform, options.format)
+      }
+
+      setIsExportDialogOpen(false)
+    } finally {
+      setIsDialogExporting(false)
+    }
+  }, [handleExportSuccess, platform, postId])
+
+  const schedulePreviewRefresh = useCallback(
+    (delay = 800) => {
+      if (typeof window === 'undefined') {
+        return
+      }
+
+      if (previewTimeoutRef.current !== null) {
+        window.clearTimeout(previewTimeoutRef.current)
+      }
+
+      previewTimeoutRef.current = window.setTimeout(() => {
+        if (!loadingRef.current) {
+          generatePreview()
+        }
+
+        previewTimeoutRef.current = null
+      }, delay)
+    },
+    [generatePreview]
+  )
 
   const updateSelectedObject = useCallback(() => {
     const canvas = canvasRef.current
@@ -997,6 +1202,7 @@ export function FabricEditor({
       return
     }
 
+    setIsUpdatingFeed(true)
     const savedSlide = persistCurrentCanvas({ markDirty: true, refreshPreview: true })
 
     if (!savedSlide) {
@@ -1005,6 +1211,275 @@ export function FabricEditor({
 
     pushHistoryState(savedSlide.id, savedSlide.fabricJSON ?? '')
   }, [persistCurrentCanvas, pushHistoryState])
+
+  const handleDeleteSelection = useCallback(() => {
+    const canvas = canvasRef.current
+
+    if (!canvas) {
+      return
+    }
+
+    const objects = canvas
+      .getActiveObjects()
+      .filter((object) => !Boolean(object.get('isLocked')))
+
+    if (objects.length === 0) {
+      return
+    }
+
+    objects.forEach((object) => canvas.remove(object))
+    canvas.discardActiveObject()
+    canvas.requestRenderAll()
+    commitCanvasMutation()
+    updateSelectedObject()
+  }, [commitCanvasMutation, updateSelectedObject])
+
+  const handleDuplicateSelection = useCallback(() => {
+    const canvas = canvasRef.current
+
+    if (!canvas) {
+      return
+    }
+
+    const active = canvas.getActiveObject()
+
+    if (!active || Boolean(active.get('isLocked'))) {
+      return
+    }
+
+    active.clone().then((cloned) => {
+      canvas.discardActiveObject()
+
+      cloned.set({
+        evented: true,
+        left: (cloned.left ?? 0) + 20,
+        top: (cloned.top ?? 0) + 20,
+      })
+
+      if (cloned instanceof ActiveSelection) {
+        cloned.canvas = canvas
+        cloned.forEachObject((object: FabricObject) => {
+          applyDefaultObjectControls(object)
+          canvas.add(object)
+        })
+        cloned.setCoords()
+      } else {
+        applyDefaultObjectControls(cloned)
+        canvas.add(cloned)
+      }
+
+      canvas.setActiveObject(cloned)
+      canvas.requestRenderAll()
+      commitCanvasMutation()
+      updateSelectedObject()
+    })
+  }, [commitCanvasMutation, updateSelectedObject])
+
+  const handleBringForwardSelection = useCallback(() => {
+    const canvas = canvasRef.current
+
+    if (!canvas) {
+      return
+    }
+
+    const objects = canvas
+      .getActiveObjects()
+      .filter((object) => !Boolean(object.get('isLocked')))
+
+    if (objects.length === 0) {
+      return
+    }
+
+    objects.forEach((object) => {
+      canvas.bringObjectForward(object)
+    })
+
+    canvas.requestRenderAll()
+    commitCanvasMutation()
+    updateSelectedObject()
+  }, [commitCanvasMutation, updateSelectedObject])
+
+  const handleSendBackwardSelection = useCallback(() => {
+    const canvas = canvasRef.current
+
+    if (!canvas) {
+      return
+    }
+
+    const objects = canvas
+      .getActiveObjects()
+      .filter((object) => !Boolean(object.get('isLocked')))
+
+    if (objects.length === 0) {
+      return
+    }
+
+    objects.forEach((object) => {
+      canvas.sendObjectBackwards(object)
+    })
+
+    canvas.requestRenderAll()
+    commitCanvasMutation()
+    updateSelectedObject()
+  }, [commitCanvasMutation, updateSelectedObject])
+
+  const handleToggleLockSelection = useCallback(() => {
+    const canvas = canvasRef.current
+
+    if (!canvas) {
+      return
+    }
+
+    const objects = canvas.getActiveObjects()
+
+    if (objects.length === 0) {
+      return
+    }
+
+    const nextLocked = !objects.every((object) => Boolean(object.get('isLocked')))
+
+    objects.forEach((object) => {
+      setObjectLockState(object, nextLocked)
+    })
+
+    canvas.requestRenderAll()
+    commitCanvasMutation()
+    updateSelectedObject()
+  }, [commitCanvasMutation, updateSelectedObject])
+
+  // --- Advanced Text Effects Helpers ---
+
+  const syncLinkedBackground = useCallback((textObj: Textbox) => {
+    const canvas = canvasRef.current
+    if (!canvas || !(textObj as any).data?.backgroundHighlight?.enabled) return
+
+    const rectId = (textObj as any).data.backgroundHighlight.rectId
+    const bgRect = canvas.getObjects().find(o => (o as any).id === rectId) as Rect
+
+    if (!bgRect) return
+
+    const padding = (textObj as any).data.backgroundHighlight.padding || 0
+    const bounds = textObj.getBoundingRect()
+    
+    bgRect.set({
+      left: bounds.left - padding,
+      top: bounds.top - padding,
+      width: bounds.width + (padding * 2),
+      height: bounds.height + (padding * 2),
+      angle: textObj.angle,
+      scaleX: 1,
+      scaleY: 1,
+    })
+    
+    // Position correctly if text is rotated
+    canvas.requestRenderAll()
+  }, [])
+
+  const handleApplyLetterColor = useCallback((color: string) => {
+    const canvas = canvasRef.current
+    const active = canvas?.getActiveObject() as Textbox
+    if (!active || !active.isEditing) return
+
+    // Apply color to current selection
+    active.setSelectionStyles({ fill: color })
+    canvas?.requestRenderAll()
+    commitCanvasMutation()
+  }, [commitCanvasMutation])
+
+  useEffect(() => {
+    if (critiqueCooldown <= 0) return
+    const timer = setInterval(() => setCritiqueCooldown(prev => prev - 1), 1000)
+    return () => clearInterval(timer)
+  }, [critiqueCooldown])
+
+  const handleAnalyzeDesign = useCallback(async () => {
+    if (isAnalyzingDesign || critiqueCooldown > 0 || !canvasRef.current) return
+    
+    setIsAnalyzingDesign(true)
+    setActiveRightPanel('critique')
+    
+    try {
+      const canvas = canvasRef.current
+      const imageData = canvas.toDataURL({ 
+        format: 'png', 
+        multiplier: 1, 
+        quality: 0.8 
+      }).split(',')[1]
+
+      const currentSlide = editorState.slides[editorState.activeSlideIndex]
+      const slideType = currentSlide.originalData?.type || 'content'
+      
+      const response = await fetch('/api/editor/critique', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageBase64: imageData,
+          slideType,
+          platform: 'instagram',
+          angle: angle || 'general'
+        })
+      })
+
+      if (!response.ok) throw new Error('API request failed')
+      
+      const results = await response.json()
+      const newResult = {
+        ...results,
+        timestamp: Date.now(),
+        thumbnail: `data:image/png;base64,${imageData}`
+      }
+      
+      setCritiqueResults(newResult)
+      setCritiqueHistory(prev => [newResult, ...prev.slice(0, 4)])
+      setCritiqueCooldown(10) // 10s cooldown
+    } catch (error) {
+      console.error('Critique Error:', error)
+      alert("Error al analizar el diseño. Inténtalo de nuevo.")
+    } finally {
+      setIsAnalyzingDesign(false)
+    }
+  }, [isAnalyzingDesign, critiqueCooldown, angle, editorState.slides, editorState.activeSlideIndex])
+
+  const handleApplyCritiqueFix = useCallback((fixText: string, element: string) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const normalizedElement = (element || '').toLowerCase()
+    const normalizedFix = fixText.toLowerCase()
+    
+    // Heuristic: Find target object
+    const objects = canvas.getObjects()
+    let target = canvas.getActiveObject()
+
+    if (!target) {
+      if (normalizedElement.includes('headline') || normalizedElement.includes('título')) {
+        target = objects.find(o => (o as any).fontSize > 40 || (o as any).text?.length < 50)
+      } else if (normalizedElement.includes('body') || normalizedElement.includes('cuerpo')) {
+        target = objects.find(o => (o as any).fontSize < 40 && (o as any).text?.length > 10)
+      }
+    }
+
+    if (!target) return
+
+    try {
+      if (normalizedFix.includes('aumenta') || normalizedFix.includes('más grande')) {
+        const current = (target as any).fontSize || 40
+        target.set('fontSize', current + 15)
+      } else if (normalizedFix.includes('reduce') || normalizedFix.includes('más pequeño')) {
+        const current = (target as any).fontSize || 40
+        target.set('fontSize', Math.max(12, current - 8))
+      } else if (normalizedFix.includes('contraste') || normalizedFix.includes('color')) {
+        target.set('fill', '#E0E5EB')
+      } else if (normalizedFix.includes('centra') || normalizedFix.includes('alineación')) {
+        canvas.centerObjectH(target)
+      }
+
+      canvas.renderAll()
+      commitCanvasMutation()
+    } catch (e) {
+      console.error('Error applying heuristic fix:', e)
+    }
+  }, [commitCanvasMutation])
 
   const loadSlideToCanvas = useCallback(
     async (slide: CarouselEditorSlide, totalSlides: number) => {
@@ -1040,9 +1515,52 @@ export function FabricEditor({
       loadingRef.current = false
       updateSelectedObject()
       setCanvasToolMode('select')
+      generatePreview()
     },
-    [angle, setCanvasToolMode, updateSelectedObject]
+    [angle, generatePreview, setCanvasToolMode, updateSelectedObject]
   )
+
+  const handleRestoreVersion = useCallback(async (restoredSlides: CarouselEditorSlide[]) => {
+    // 1. Update the local slides state
+    const newState = {
+      ...editorState,
+      slides: restoredSlides,
+      activeSlideIndex: 0,
+      isDirty: false
+    }
+    
+    setEditorState(newState)
+    editorStateRef.current = newState
+
+    // 2. Clear all history for all restored slides
+    restoredSlides.forEach(s => {
+      historiesRef.current[s.id] = { cursor: 0, states: s.fabricJSON ? [s.fabricJSON] : [] }
+    })
+
+    // 3. Load the first slide into canvas
+    await loadSlideToCanvas(restoredSlides[0], restoredSlides.length)
+    setIsVersionPanelOpen(false)
+  }, [editorState, loadSlideToCanvas])
+
+  const handleAutoSaveVersion = useCallback(async (nameSuffix: string) => {
+    try {
+      await saveDesignVersion({
+        userId,
+        postId: postId || null,
+        name: `Auto: ${nameSuffix} (${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`,
+        slides: editorState.slides,
+        metadata: {
+          angle: angle || '',
+          platform: platform || 'instagram',
+          postId: postId || null,
+          templateIds: [],
+          theme: currentThemeId
+        }
+      })
+    } catch (err) {
+      console.error('[AutoSave] Failed:', err)
+    }
+  }, [userId, postId, editorState.slides, angle, platform, currentThemeId])
 
   const bootstrapSlides = useCallback(async () => {
     const canvas = canvasRef.current
@@ -1121,6 +1639,9 @@ export function FabricEditor({
     document.body.style.overflow = 'hidden'
 
     return () => {
+      if (previewTimeoutRef.current !== null) {
+        window.clearTimeout(previewTimeoutRef.current)
+      }
       document.body.style.overflow = previousOverflow
     }
   }, [])
@@ -1139,6 +1660,14 @@ export function FabricEditor({
 
   useEffect(() => {
     let mounted = true
+    const handleCanvasMutation = () => {
+      if (loadingRef.current) {
+        return
+      }
+
+      commitCanvasMutation()
+      schedulePreviewRefresh()
+    }
 
     async function setupCanvas() {
       await document.fonts.ready
@@ -1158,10 +1687,36 @@ export function FabricEditor({
       canvas.on('selection:created', updateSelectedObject)
       canvas.on('selection:updated', updateSelectedObject)
       canvas.on('selection:cleared', updateSelectedObject)
-      canvas.on('object:added', commitCanvasMutation)
-      canvas.on('object:removed', commitCanvasMutation)
-      canvas.on('object:modified', commitCanvasMutation)
-      canvas.on('text:changed', commitCanvasMutation)
+      canvas.on('object:added', handleCanvasMutation)
+      canvas.on('object:removed', handleCanvasMutation)
+      canvas.on('object:modified', handleCanvasMutation)
+      canvas.on('text:changed', handleCanvasMutation)
+
+      // Handle editing for curved text
+      canvas.on('text:edit-curved' as any, (e: any) => {
+        const group = e.target as Group;
+        if (!group || (group as any).data?.type !== 'arc-text') return;
+
+        const data = (group as any).data;
+        const originalData = data.originalTextbox;
+        if (!originalData) return;
+
+        // Restore textbox
+        const textbox = new Textbox(originalData.text, {
+          ...originalData,
+          left: group.left,
+          top: group.top,
+          angle: group.angle,
+          scaleX: group.scaleX,
+          scaleY: group.scaleY,
+        });
+
+        canvas.remove(group);
+        canvas.add(textbox);
+        canvas.setActiveObject(textbox);
+        textbox.enterEditing();
+        canvas.requestRenderAll();
+      });
 
       canvas.on('object:moving', (e) => {
         const obj = e.target
@@ -1243,7 +1798,7 @@ export function FabricEditor({
         }
 
         if (activeTool === 'text') {
-          const point = getScenePoint(event)
+          const point = getScenePoint(event.e)
           const textbox = createTextbox({
             id: `text-${createSlideId()}`,
             left: point.x,
@@ -1258,7 +1813,7 @@ export function FabricEditor({
         }
 
         if (activeTool === 'rect') {
-          const point = getScenePoint(event)
+          const point = getScenePoint(event.e)
           const rect = new Rect({
             fill: '#212631',
             height: 1,
@@ -1278,7 +1833,7 @@ export function FabricEditor({
         }
 
         if (activeTool === 'circle') {
-          const point = getScenePoint(event)
+          const point = getScenePoint(event.e)
           const ellipse = new Ellipse({
             fill: 'transparent',
             id: `ellipse-${createSlideId()}`,
@@ -1298,7 +1853,7 @@ export function FabricEditor({
         }
 
         if (activeTool === 'line') {
-          const point = getScenePoint(event)
+          const point = getScenePoint(event.e)
           const line = new Line([point.x, point.y, point.x + 1, point.y + 1], {
             id: `line-${createSlideId()}`,
             stroke: '#4E576A',
@@ -1317,7 +1872,7 @@ export function FabricEditor({
           return
         }
 
-        const point = getScenePoint(event)
+        const point = getScenePoint(event.e)
         const width = point.x - dragState.originX
         const height = point.y - dragState.originY
 
@@ -1358,6 +1913,7 @@ export function FabricEditor({
       })
 
       await bootstrapSlides()
+      generatePreview()
     }
 
     void setupCanvas()
@@ -1367,7 +1923,34 @@ export function FabricEditor({
       canvasRef.current?.dispose()
       canvasRef.current = null
     }
-  }, [activeTool, bootstrapSlides, commitCanvasMutation, setCanvasToolMode, updateSelectedObject])
+  }, [activeTool, bootstrapSlides, commitCanvasMutation, generatePreview, schedulePreviewRefresh, setCanvasToolMode, updateSelectedObject])
+
+  // Synchronize Icons with Theme Accent
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const icons = canvas.getObjects().filter(obj => (obj as any).data?.role === 'icon');
+    let hasChanged = false;
+
+    icons.forEach(icon => {
+      const currentFill = icon.get('fill');
+      if (currentFill !== activeTheme.accent) {
+        icon.set('fill', activeTheme.accent);
+        hasChanged = true;
+      }
+    });
+
+    if (hasChanged) {
+      canvas.renderAll();
+      commitCanvasMutation();
+    }
+  }, [activeTheme.accent, commitCanvasMutation]);
+
+  const handleFilterChange = useCallback((filterId: string, filterCSS: string) => {
+    setActiveFilterId(filterId)
+    setActiveFilterCSS(filterCSS)
+  }, [])
 
   const switchToSlide = useCallback(
     async (nextIndex: number) => {
@@ -1532,11 +2115,23 @@ export function FabricEditor({
       const key = event.key.toLowerCase()
 
       if (key === 'v') {
+        event.preventDefault()
         setCanvasToolMode('select')
       }
 
       if (key === 't') {
-        setCanvasToolMode('text')
+        event.preventDefault()
+        handleAddText()
+      }
+
+      if (key === 'i') {
+        event.preventDefault()
+        setLeftTab('imagen')
+      }
+
+      if (key === 's') {
+        event.preventDefault()
+        setLeftTab('assets')
       }
 
       if (key === 'r') {
@@ -1690,16 +2285,91 @@ export function FabricEditor({
   )
 
   const updateTextboxProperty = useCallback(
-    (properties: Partial<Textbox>) => {
-      const object = selectedObjectRef.current
+    (props: any) => {
+      const canvas = canvasRef.current
+      const active = selectedObjectRef.current
+      if (!active) return
 
-      if (!isTextbox(object)) {
-        return
+      // Handle Background Highlight Toggle
+      if (props.backgroundHighlight && isTextbox(active)) {
+        const data = (active as any).data || {}
+        const current = data.backgroundHighlight || { enabled: false, padding: 10, color: 'rgba(70, 45, 110, 0.2)', radius: 8 }
+        const next = { ...current, ...props.backgroundHighlight }
+        
+        active.set('data', { ...data, backgroundHighlight: next })
+
+        if (next.enabled && !next.rectId) {
+          const rect = new Rect({
+            fill: next.color,
+            rx: next.radius,
+            ry: next.radius,
+            selectable: false,
+            evented: false,
+            data: { role: 'text-highlight' },
+          })
+          ;(rect as any).id = `bg-${active.get('id')}`
+          active.set('data', { ...active.get('data'), backgroundHighlight: { ...next, rectId: (rect as any).id } })
+          canvas?.add(rect)
+          canvas?.sendObjectToBack(rect)
+        } else if (!next.enabled && next.rectId) {
+          const rect = canvas?.getObjects().find(o => (o as any).id === next.rectId)
+          if (rect) canvas?.remove(rect)
+          active.set('data', { ...active.get('data'), backgroundHighlight: { ...next, rectId: null } })
+        }
+        
+        syncLinkedBackground(active as Textbox)
       }
 
-      updateSelectedObjectProperty(properties as Partial<FabricObject>)
+      // Handle Gradient Stroke
+      if (props.gradientStroke && isTextbox(active)) {
+        const data = (active as any).data || {}
+        active.set('data', { ...data, gradientStroke: { ...data.gradientStroke, ...props.gradientStroke } })
+        if (props.gradientStroke.enabled) {
+          active.set('stroke', 'transparent') // Force custom render
+        }
+      }
+
+      // Handle Path/Arc Text Transformation
+      if (props.pathText && isTextbox(active) && canvas) {
+        const { type, enabled, radius, startAngle, endAngle } = props.pathText
+        if (enabled && (active.type === 'textbox' || active.type === 'itext')) {
+          const textbox = active as Textbox
+          const arcOptions = {
+            radius: radius || 300,
+            startAngle: startAngle || -90,
+            endAngle: endAngle || 90,
+            fontSize: textbox.fontSize || 40,
+            fontFamily: textbox.fontFamily || 'Inter',
+            fill: textbox.fill as any,
+            fontWeight: textbox.fontWeight,
+            fontStyle: textbox.fontStyle,
+          }
+
+          const curvedGroup = type === 'circle' 
+            ? makeTextOnCircle(textbox.text || '', arcOptions)
+            : makeTextOnArc(textbox.text || '', arcOptions)
+
+          curvedGroup.set({
+            left: textbox.left,
+            top: textbox.top,
+            angle: textbox.angle,
+          })
+
+          // Store reference to restore
+          ;(curvedGroup as any).data = {
+            ...(curvedGroup as any).data,
+            originalTextbox: textbox.toObject(),
+          }
+
+          canvas.remove(textbox)
+          canvas.add(curvedGroup)
+          canvas.setActiveObject(curvedGroup)
+        }
+      }
+
+      updateSelectedObjectProperty(props)
     },
-    [updateSelectedObjectProperty]
+    [updateSelectedObjectProperty, syncLinkedBackground]
   )
 
   const updateShapeProperty = useCallback(
@@ -1708,34 +2378,6 @@ export function FabricEditor({
     },
     [updateSelectedObjectProperty]
   )
-
-  const openUnsplashModal = (mode: UnsplashModalState['mode']) => {
-    setUnsplashModal({ mode, open: true })
-  }
-
-  const runUnsplashSearch = async () => {
-    if (!unsplashQuery.trim()) {
-      return
-    }
-
-    setIsUnsplashLoading(true)
-
-    try {
-      const response = await fetch('/api/visual/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          count: 8,
-          keywords: [unsplashQuery],
-          platform: 'instagram',
-        }),
-      })
-      const data = (await response.json()) as { photos?: UnsplashPhoto[] }
-      setUnsplashResults(data.photos ?? [])
-    } finally {
-      setIsUnsplashLoading(false)
-    }
-  }
 
   const handleBackgroundFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -1962,7 +2604,7 @@ export function FabricEditor({
         await offCanvas.loadFromJSON(slide.fabricJSON)
         offCanvas.getObjects().forEach(obj => {
           const role = (obj as any).data?.role
-          if (role === 'decorator' || role === 'counter' || role === 'eyebrow') {
+          if (role === 'decorator' || role === 'counter' || role === 'eyebrow' || role === 'icon') {
             obj.set('fill', color)
             if ((obj as any).stroke && (obj as any).strokeWidth > 0) obj.set('stroke', color)
           }
@@ -1976,6 +2618,19 @@ export function FabricEditor({
       setIsSavingAll(false)
     }
   }, [editorState])
+
+  const handleAutoScale = useCallback(async (ratioOverride?: TypeScaleRatioKey) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const slide = editorState.slides[editorState.activeSlideIndex]
+    if (!slide) return
+
+    const ratio = ratioOverride || getRecommendedRatio(slide.type)
+    applyTypeScaleToCanvas(canvas, ratio, 40)
+    
+    commitCanvasMutation()
+  }, [editorState.slides, editorState.activeSlideIndex, commitCanvasMutation])
 
   const handleGlobalScaleChange = useCallback(async (isIncrease: boolean) => {
     if (!editorState) return
@@ -2098,12 +2753,14 @@ export function FabricEditor({
     })
 
     onSave({
+      activeFilterCSS,
+      activeFilterId,
       editorSlides: normalizedSlides,
       slideBackgrounds,
       slides: normalizedSlides.map((slide) => slide.originalData),
     })
     setIsSavingAll(false)
-  }, [loadSlideToCanvas, onSave, persistCurrentCanvas])
+  }, [activeFilterCSS, activeFilterId, loadSlideToCanvas, onSave, persistCurrentCanvas])
 
   const handleAttemptClose = useCallback(() => {
     if (editorState.isDirty && !safeConfirm('Tienes cambios sin guardar. ¿Cerrar de todos modos?')) {
@@ -2151,18 +2808,103 @@ export function FabricEditor({
     [loadSlideToCanvas, persistCurrentCanvas]
   )
 
+  const handleAddText = useCallback((options: Partial<ConstructorParameters<typeof Textbox>[1]> = {}) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const center = canvas.getCenterPoint()
+    const textbox = createTextbox({
+      id: `text-${createSlideId()}`,
+      left: center.x - 100,
+      top: center.y - 20,
+      text: 'Nuevo Texto',
+      ...options,
+    })
+    
+    canvas.add(textbox)
+    canvas.setActiveObject(textbox)
+    textbox.enterEditing()
+    canvas.requestRenderAll()
+    commitCanvasMutation()
+  }, [commitCanvasMutation])
+
   const handleCanvasDrop = useCallback(
     async (event: ReactDragEvent<HTMLElement>) => {
       event.preventDefault()
-      const file = event.dataTransfer.files?.[0]
+      const canvas = canvasRef.current
+      if (!canvas) return
 
-      if (!file || !file.type.startsWith('image/')) {
+      const noctraData = event.dataTransfer.getData('noctra/editor-object')
+      const pointer = canvas.getScenePoint(event.nativeEvent)
+      const isMultiple = selectedObjectRef.current instanceof ActiveSelection
+
+      // 1. Check for Replacement Logic
+      const target = canvas.findTarget(event.nativeEvent)
+      
+      if (noctraData) {
+        const data = JSON.parse(noctraData)
+        
+        // Replacement: Drop on existing object
+        if (target && !isMultiple) {
+          if (data.type === 'image' && target.type === 'image') {
+            const imgTarget = target as any
+            await imgTarget.setSrc(data.url)
+            canvas.renderAll()
+            commitCanvasMutation()
+            return
+          }
+          if (data.type === 'icon' && (target as any).data?.role === 'icon') {
+            const iconTarget = target as any
+            await iconTarget.setSrc(data.url)
+            iconTarget.set('data', { ...iconTarget.data, name: data.name })
+            canvas.renderAll()
+            commitCanvasMutation()
+            return
+          }
+        }
+
+        // Addition: Drop on empty space (or different type)
+        if (data.type === 'image') {
+          const img = await FabricImage.fromURL(data.url)
+          img.set({
+            left: pointer.x,
+            top: pointer.y,
+            scaleX: 0.5,
+            scaleY: 0.5,
+          });
+          applyDefaultObjectControls(img)
+          canvas.add(img)
+          canvas.setActiveObject(img)
+        } else if (data.type === 'icon') {
+          const icon = await FabricImage.fromURL(data.url)
+          icon.set({
+            left: pointer.x,
+            top: pointer.y,
+            data: { role: 'icon', name: data.name },
+            fill: activeTheme.accent
+          });
+          applyDefaultObjectControls(icon)
+          canvas.add(icon)
+          canvas.setActiveObject(icon)
+        } else if (data.type === 'shape') {
+          addShapeToCanvas(canvas, data.category, data.shapeType, { 
+            left: pointer.x, 
+            top: pointer.y 
+          }, activeTheme.accent)
+        }
+        
+        canvas.renderAll()
+        commitCanvasMutation()
         return
       }
 
-      await handleDroppedFile(file)
+      // Handle raw files
+      const file = event.dataTransfer.files?.[0]
+      if (file && file.type.startsWith('image/')) {
+        await handleDroppedFile(file)
+      }
     },
-    [handleDroppedFile]
+    [handleDroppedFile, activeTheme.accent, commitCanvasMutation]
   )
 
   const activeObject = selectedObject
@@ -2214,30 +2956,66 @@ export function FabricEditor({
     },
   ]
 
-  const propertiesPanel = (
-    <PropertiesPanel
-      activeObject={selectedObject}
-      activeBackground={activeBackground}
-      updateTextboxProperty={updateTextboxProperty}
-      updateShapeProperty={updateShapeProperty}
-      updateSelectedObjectProperty={updateSelectedObjectProperty}
-      applyBackgroundUpdate={applyBackgroundUpdate}
-      layerActions={layerActions}
-      gradientDraft={gradientDraft}
-      setGradientDraft={setGradientDraft}
-      handleDuplicateSlide={handleDuplicateSlide}
-      handleDeleteSlide={handleDeleteSlide}
-      recentFontIds={recentFontIds}
-      openUnsplashModal={openUnsplashModal}
-      handleBackgroundFile={handleBackgroundFile}
-      savedGradients={savedGradients}
-      setSavedGradients={setSavedGradients}
-      commitCanvasMutation={commitCanvasMutation}
-    />
-  )
+  const renderRightPanel = () => {
+    switch (activeRightPanel) {
+      case 'feed':
+        return (
+          <FeedPreview
+            slides={editorState.slides}
+            activeSlideIndex={editorState.activeSlideIndex}
+            onNavigate={(index) => {
+              setEditorState((prev) => ({ ...prev, activeSlideIndex: index }))
+            }}
+            currentSlideImage={currentSlideImage}
+            caption={caption}
+            hashtags={hashtags}
+            aspectRatio="1:1"
+            isUpdating={isUpdatingFeed}
+          />
+        )
+      case 'critique':
+        return (
+          <CritiquePanel
+            isAnalyzing={isAnalyzingDesign}
+            results={critiqueResults}
+            history={critiqueHistory}
+            onAnalyze={handleAnalyzeDesign}
+            onApplyFix={handleApplyCritiqueFix}
+            onClearHistory={() => setCritiqueHistory([])}
+            onSelectHistory={(res) => setCritiqueResults(res)}
+            cooldown={critiqueCooldown}
+          />
+        )
+      default:
+        return (
+          <PropertiesPanel
+            activeObject={selectedObject}
+            activeBackground={activeBackground}
+            updateTextboxProperty={updateTextboxProperty}
+            updateShapeProperty={updateShapeProperty}
+            updateSelectedObjectProperty={updateSelectedObjectProperty}
+            applyBackgroundUpdate={applyBackgroundUpdate}
+            layerActions={layerActions}
+            gradientDraft={gradientDraft}
+            setGradientDraft={setGradientDraft}
+            handleDuplicateSlide={handleDuplicateSlide}
+            handleDeleteSlide={handleDeleteSlide}
+            recentFontIds={recentFontIds}
+            onOpenImages={() => setLeftTab('imagen')}
+            handleBackgroundFile={handleBackgroundFile}
+            savedGradients={savedGradients}
+            setSavedGradients={setSavedGradients}
+            commitCanvasMutation={commitCanvasMutation}
+            canvas={canvasRef.current}
+          />
+        )
+    }
+  }
+
+  const propertiesPanel = renderRightPanel()
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#0A0C0F] text-[#E0E5EB]">
+    <div className="fixed inset-0 z-[60] bg-[#0A0C0F] text-[#E0E5EB]">
       <div className="flex h-full flex-col">
         <header className="flex h-[52px] items-center justify-between border-b border-white/8 bg-[#0F1317] px-4">
           <div className="flex items-center gap-2">
@@ -2260,6 +3038,32 @@ export function FabricEditor({
                 <tool.icon className="h-4 w-4" />
               </button>
             ))}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleAnalyzeDesign()}
+              disabled={isAnalyzingDesign || critiqueCooldown > 0}
+              className={`${TOOL_BUTTON_CLASS} ${
+                activeRightPanel === 'critique' ? 'border-[#462D6E] bg-[#462D6E]/20 text-white' : 'border-white/8'
+              }`}
+              title={critiqueCooldown > 0 ? `Analizar (${critiqueCooldown}s)` : 'Revisar con IA'}
+            >
+              <Sparkles className={cn("h-4 w-4", isAnalyzingDesign && "animate-pulse")} />
+              <span className="ml-2 text-xs font-bold hidden md:inline">Revisar con IA</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                void openPreview()
+              }}
+              className={`${TOOL_BUTTON_CLASS} ${isPreviewOpen ? 'border-[#4E576A] bg-[#212631] text-[#E0E5EB]' : 'border-white/8'}`}
+              title="Vista previa inmersiva"
+            >
+              <Eye className="h-4 w-4" />
+            </button>
           </div>
 
           <div className="flex items-center gap-3">
@@ -2367,7 +3171,7 @@ export function FabricEditor({
 
             <button
               type="button"
-              onClick={() => openUnsplashModal('toolbar')}
+              onClick={() => setLeftTab('imagen')}
               className="flex flex-col items-center justify-center rounded-xl border border-white/8 px-3 py-1.5 text-[#8D95A6] transition-colors hover:border-[#4E576A] hover:text-[#E0E5EB]"
             >
               <ImageIcon className="h-4 w-4" />
@@ -2412,7 +3216,10 @@ export function FabricEditor({
             <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={() => setIsExportModalOpen(true)}
+                onClick={() => {
+                  handleAutoSaveVersion('Exportación')
+                  setIsExportModalOpen(true)
+                }}
                 className="flex items-center gap-2 rounded-xl bg-[#462D6E] px-4 py-2 text-sm font-bold text-white transition-all hover:bg-[#5A3B8E] active:scale-95"
               >
                 <Download className="h-4 w-4" />
@@ -2423,7 +3230,12 @@ export function FabricEditor({
                 onClick={async () => {
                   const currentSlide = editorState.slides[editorState.activeSlideIndex]
                   if (currentSlide) {
-                    await quickExportCurrentSlide(currentSlide, `noctra-slide-${editorState.activeSlideIndex + 1}`)
+                    handleAutoSaveVersion('Exportación Rápida')
+                    await quickExportCurrentSlide(
+                      currentSlide,
+                      `noctra-slide-${editorState.activeSlideIndex + 1}`,
+                      activeFilterCSS
+                    )
                     if (postId) handleExportSuccess(postId, 'quick_png', 'png')
                   }
                 }}
@@ -2504,12 +3316,38 @@ export function FabricEditor({
                   Tema
                 </button>
                 <button
+                  onClick={() => setLeftTab('imagen')}
+                  className={cn(
+                    "text-[11px] font-medium uppercase tracking-[0.22em] transition-colors",
+                    leftTab === 'imagen' ? "text-[#E0E5EB]" : "text-[#4E576A] hover:text-[#8D95A6]"
+                  )}>
+                  Imagen
+                </button>
+                <button
                   onClick={() => setLeftTab('assets')}
                   className={cn(
                     "text-[11px] font-medium uppercase tracking-[0.22em] transition-colors",
                     leftTab === 'assets' ? "text-[#E0E5EB]" : "text-[#4E576A] hover:text-[#8D95A6]"
                   )}>
                   Assets
+                </button>
+                <button
+                  onClick={() => setLeftTab('filtros')}
+                  className={cn(
+                    "flex items-center gap-1 text-[11px] font-medium uppercase tracking-[0.22em] transition-colors",
+                    leftTab === 'filtros' ? "text-[#E0E5EB]" : "text-[#4E576A] hover:text-[#8D95A6]"
+                  )}>
+                  <Sliders className="h-3.5 w-3.5" />
+                  Filtros
+                </button>
+                <button
+                  onClick={() => setIsVersionPanelOpen(true)}
+                  className={cn(
+                    "flex items-center gap-1 text-[11px] font-medium uppercase tracking-[0.22em] transition-colors",
+                    isVersionPanelOpen ? "text-[#E0E5EB]" : "text-[#4E576A] hover:text-[#8D95A6]"
+                  )}>
+                  <HistoryIcon className="h-3.5 w-3.5" />
+                  Historial
                 </button>
               </div>
 
@@ -2547,6 +3385,7 @@ export function FabricEditor({
                               key={slide.id}
                               isSelected={index === editorState.activeSlideIndex}
                               onSelect={() => void switchToSlide(index)}
+                              onSetTab={setLeftTab}
                               slide={slide}
                               totalSlides={editorState.slides.length}
                             />
@@ -2614,6 +3453,27 @@ export function FabricEditor({
                     coherenceScore={coherenceScore}
                   />
                 </div>
+              ) : leftTab === 'imagen' ? (
+                <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
+                  <ImagePanel
+                    canvas={canvasRef.current}
+                    caption={caption}
+                    angle={angle}
+                    platform={platform}
+                    slideType={editorState.slides[editorState.activeSlideIndex]?.type}
+                    postId={postId}
+                    slideIndex={editorState.activeSlideIndex}
+                    onCommit={commitCanvasMutation}
+                  />
+                </div>
+              ) : leftTab === 'filtros' ? (
+                <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
+                  <FilterPanel
+                    activeFilterId={activeFilterId}
+                    onFilterChange={handleFilterChange}
+                    canvasPreviewDataURL={canvasPreviewDataURL}
+                  />
+                </div>
               ) : (
                 <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
                   <AssetPanel
@@ -2631,8 +3491,30 @@ export function FabricEditor({
             onDragOver={(event) => event.preventDefault()}
             onDrop={(event) => { void handleCanvasDrop(event) }}
           >
+            <CanvasToolbar
+              activeObject={selectedObject}
+              onDelete={handleDeleteSelection}
+              onDuplicate={handleDuplicateSelection}
+              onBringForward={handleBringForwardSelection}
+              onSendBackward={handleSendBackwardSelection}
+              onToggleLock={handleToggleLockSelection}
+              isLocked={isActiveObjectLocked}
+              onPreview={() => {
+                void openPreview()
+              }}
+              onExport={() => setIsExportDialogOpen(true)}
+              onUndo={() => {
+                void handleUndo()
+              }}
+              onRedo={() => {
+                void handleRedo()
+              }}
+              canUndo={canUndo}
+              canRedo={canRedo}
+            />
+
             {/* Quick Actions Bar */}
-            <div className="absolute top-6 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-[22px] border border-white/8 bg-[#101417]/90 p-1 backdrop-blur-md shadow-2xl">
+            <div className="absolute top-24 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-[22px] border border-white/8 bg-[#101417]/90 p-1 backdrop-blur-md shadow-2xl">
               <Tooltip content="Unificar Fuente">
                 <button 
                   onClick={() => handleGlobalFontChange(activeTheme.fontHeading)}
@@ -2654,6 +3536,10 @@ export function FabricEditor({
               </Tooltip>
               <div className="h-4 w-[1px] bg-white/10" />
               <div className="flex items-center gap-1 px-2">
+                <button onClick={() => handleAutoScale()} className="flex h-8 w-8 items-center justify-center rounded-xl text-[#8D95A6] hover:bg-white/5 hover:text-[#E0E5EB]" title="Escala Automática (S)">
+                  <Baseline className="h-4 w-4 text-[#A855F7]" />
+                </button>
+                <div className="mx-1 h-3 w-[1px] bg-white/10" />
                 <button onClick={() => handleGlobalScaleChange(false)} className="flex h-8 w-8 items-center justify-center rounded-xl text-[#8D95A6] hover:bg-white/5 hover:text-[#E0E5EB]">
                   <Baseline className="h-3.5 w-3.5" />
                 </button>
@@ -2664,10 +3550,10 @@ export function FabricEditor({
               </div>
             </div>
 
-            {/* Alignment Toolbar */}
+            {/* Top Contextual Bar */}
             {selectedObject && (
-              <div className="absolute top-20 left-1/2 z-50 -translate-x-1/2">
-                <AlignmentToolbar
+              <div className="absolute top-36 left-1/2 z-50 -translate-x-1/2">
+                <ContextualBar
                   canvas={canvasRef.current}
                   selectedObject={selectedObject}
                   onCommit={commitCanvasMutation}
@@ -2751,67 +3637,25 @@ export function FabricEditor({
         ) : null}
       </div>
 
-      {unsplashModal.open ? (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/70 p-6">
-          <div className="w-full max-w-3xl rounded-[28px] border border-white/10 bg-[#101417] p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-lg font-medium text-[#E0E5EB]">Buscar en Unsplash</p>
-                <p className="text-sm text-[#4E576A]">
-                  Usa la misma búsqueda on-brand del flujo rápido y aplícala al editor.
-                </p>
-              </div>
-              <button type="button" onClick={() => setUnsplashModal({ mode: 'background', open: false })} className="text-[#8D95A6]">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="mt-4 flex gap-2">
-              <input
-                type="text"
-                value={unsplashQuery}
-                onChange={(event) => setUnsplashQuery(event.target.value)}
-                onKeyDown={(event: ReactKeyboardEvent<HTMLInputElement>) => {
-                  if (event.key === 'Enter') {
-                    void runUnsplashSearch()
-                  }
-                }}
-                placeholder="Buscar fondos..."
-                className="flex-1 rounded-2xl border border-white/10 bg-[#14171C] px-4 py-3 text-sm text-[#E0E5EB] focus:outline-none"
-              />
-              <button type="button" onClick={() => void runUnsplashSearch()} className="rounded-2xl border border-white/10 px-4 py-3 text-[#E0E5EB]">
-                {isUnsplashLoading ? <Search className="h-4 w-4 animate-pulse" /> : <Search className="h-4 w-4" />}
-              </button>
-            </div>
-
-            <div className="mt-4 grid max-h-[50vh] grid-cols-2 gap-3 overflow-y-auto md:grid-cols-4">
-              {unsplashResults.map((photo) => (
-                <button
-                  key={photo.id}
-                  type="button"
-                  onClick={() => {
-                    void applyBackgroundUpdate((background) => ({
-                      ...background,
-                      imageThumb: photo.thumb_url,
-                      imageUrl: photo.url,
-                      overlayOpacity: background.overlayOpacity ?? 0.55,
-                      photographer: photo.photographer,
-                      type: 'image',
-                    }))
-                    setUnsplashModal({ mode: 'background', open: false })
-                  }}
-                  className="overflow-hidden rounded-2xl border border-white/8 text-left transition-colors hover:border-[#4E576A]"
-                >
-                  <div className="relative aspect-square w-full">
-                    <Image src={photo.thumb_url} alt="" fill sizes="200px" className="object-cover" />
-                  </div>
-                  <div className="px-3 py-2 text-[11px] text-[#8D95A6]">{photo.photographer}</div>
-                </button>
-              ))}
-            </div>
-          </div>
+      {/* Version Panel Overlay */}
+      {isVersionPanelOpen && (
+        <div className="absolute inset-y-0 left-0 z-[60] w-[320px] shadow-2xl border-r border-white/5 animate-in slide-in-from-left duration-300">
+          <VersionPanel
+            userId={userId}
+            postId={postId || null}
+            currentSlides={editorState.slides}
+            metadata={{
+              angle: angle || '',
+              platform: platform || 'instagram',
+              postId: postId || null,
+              templateIds: [], // We could track template history later
+              theme: currentThemeId
+            }}
+            onRestore={handleRestoreVersion}
+            onClose={() => setIsVersionPanelOpen(false)}
+          />
         </div>
-      ) : null}
+      )}
 
       {(isBootstrapping || isSavingAll) ? (
         <div className="absolute inset-0 flex items-center justify-center bg-[#0A0C0F]/70">
@@ -2855,9 +3699,39 @@ export function FabricEditor({
         onClose={() => setIsExportModalOpen(false)}
         slides={editorState.slides}
         postId={postId}
+        activeFilterCSS={activeFilterCSS}
         onExportSuccess={handleExportSuccess}
+      />
+
+      <ExportDialog
+        isOpen={isExportDialogOpen}
+        onClose={() => setIsExportDialogOpen(false)}
+        canvasSize={{
+          width: canvasRef.current?.getWidth() ?? CANVAS_SIZE,
+          height: canvasRef.current?.getHeight() ?? CANVAS_SIZE,
+        }}
+        networkId={platform}
+        formatKey={exportFormatKey}
+        activeFilterCSS={activeFilterCSS}
+        onConfirmExport={handleDialogExport}
+        isExporting={isDialogExporting}
+      />
+
+      <PreviewModal
+        isOpen={isPreviewOpen}
+        onClose={() => setIsPreviewOpen(false)}
+        networkId={platform}
+        format={previewFormat}
+        canvasDataURL={previewDataURL}
+        activeFilterCSS={activeFilterCSS}
+        onExport={handlePreviewExport}
+        isExporting={isPreviewExporting}
+        username="noctra.studio"
+        displayName="Noctra Studio"
+        handle="noctra_studio"
+        postText={caption}
+        caption={previewCaption}
       />
     </div>
   )
 }
-
