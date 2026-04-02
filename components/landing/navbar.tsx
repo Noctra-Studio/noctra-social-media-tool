@@ -7,6 +7,7 @@ import { Menu, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { landingContent, type LandingLocale } from '@/components/landing/content'
 import { LocaleToggle } from '@/components/landing/locale-toggle'
+import { motion, AnimatePresence } from 'framer-motion'
 
 type LandingNavbarProps = {
   locale: LandingLocale
@@ -58,7 +59,7 @@ export function LandingNavbar({ locale }: LandingNavbarProps) {
     >
       <div className="mx-auto max-w-[1440px]">
         <div className="flex h-16 items-center justify-between px-6 sm:px-8 lg:px-10">
-          <Link href="/" className="group flex min-w-0 items-center gap-3 md:w-[280px]">
+          <Link href="/" className="group flex min-w-0 items-center gap-3 lg:w-[280px]">
             <Image
               src="/noctra-navbar-dark.svg"
               alt="Noctra Studio"
@@ -80,7 +81,7 @@ export function LandingNavbar({ locale }: LandingNavbarProps) {
             </div>
           </Link>
 
-          <nav className="hidden flex-1 items-center justify-center gap-2 md:flex">
+          <nav className="hidden flex-1 items-center justify-center gap-2 lg:flex">
             {navLinks.map((link) => (
               <a
                 key={link.href}
@@ -93,7 +94,7 @@ export function LandingNavbar({ locale }: LandingNavbarProps) {
             ))}
           </nav>
 
-          <div className="hidden items-center justify-end gap-5 md:flex md:w-[280px]">
+          <div className="hidden items-center justify-end gap-5 lg:flex lg:w-[280px]">
             <LocaleToggle />
 
             <Link
@@ -106,46 +107,90 @@ export function LandingNavbar({ locale }: LandingNavbarProps) {
 
           <button
             type="button"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-200 transition-colors hover:border-white/20 hover:bg-white/5 hover:text-white md:hidden"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-200 transition-colors hover:border-white/20 hover:bg-white/5 hover:text-white lg:hidden"
             onClick={() => setIsMenuOpen((current) => !current)}
             aria-expanded={isMenuOpen}
             aria-label={t('openMenu')}
           >
-            {isMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            <AnimatePresence mode="wait" initial={false}>
+              {isMenuOpen ? (
+                <motion.div
+                  key="close"
+                  initial={{ opacity: 0, rotate: -90 }}
+                  animate={{ opacity: 1, rotate: 0 }}
+                  exit={{ opacity: 0, rotate: 90 }}
+                  transition={{ duration: 0.15 }}
+                >
+                  <X className="h-5 w-5" />
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="menu"
+                  initial={{ opacity: 0, rotate: 90 }}
+                  animate={{ opacity: 1, rotate: 0 }}
+                  exit={{ opacity: 0, rotate: -90 }}
+                  transition={{ duration: 0.15 }}
+                >
+                  <Menu className="h-5 w-5" />
+                </motion.div>
+              )}
+            </AnimatePresence>
           </button>
         </div>
       </div>
 
-      {isMenuOpen && (
-        <div className="border-t border-white/8 bg-[#101417]/95 px-6 py-5 backdrop-blur-md md:hidden">
-          <div className="mx-auto max-w-[1440px] space-y-5">
-            <nav className="grid gap-1">
-              {navLinks.map((link) => (
-                <a
-                  key={link.href}
-                  href={link.href}
+      <AnimatePresence>
+        {isMenuOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ type: 'spring', bounce: 0, duration: 0.4 }}
+            className="overflow-hidden border-t border-white/8 bg-[#101417]/95 px-6 backdrop-blur-md lg:hidden"
+          >
+            <div className="mx-auto max-w-[1440px] space-y-5 py-5">
+              <nav className="grid gap-1">
+                {navLinks.map((link, i) => (
+                  <motion.a
+                    key={link.href}
+                    href={link.href}
+                    onClick={closeMenu}
+                    initial={{ x: -20, opacity: 0 }}
+                    animate={{ x: 0, opacity: 1 }}
+                    transition={{ delay: 0.1 + i * 0.05 }}
+                    className="rounded-lg px-3 py-3 text-base text-[#E0E5EB] transition-colors hover:bg-white/[0.03]"
+                  >
+                    {link.label[locale]}
+                  </motion.a>
+                ))}
+              </nav>
+
+              <motion.div
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: 0.25 }}
+                className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-4"
+              >
+                <LocaleToggle />
+              </motion.div>
+
+              <motion.div
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: 0.3 }}
+              >
+                <Link
+                  href="/login"
                   onClick={closeMenu}
-                  className="rounded-lg px-3 py-3 text-base text-[#E0E5EB] transition-colors hover:bg-white/[0.03]"
+                  className="inline-flex w-full items-center justify-center rounded-xl bg-[#E0E5EB] px-5 py-3 text-sm font-bold text-[#101417] transition-transform active:scale-[0.98]"
                 >
-                  {link.label[locale]}
-                </a>
-              ))}
-            </nav>
-
-            <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-4">
-              <LocaleToggle />
+                  {t('login')}
+                </Link>
+              </motion.div>
             </div>
-
-            <Link
-              href="/login"
-              onClick={closeMenu}
-              className="inline-flex w-full items-center justify-center rounded-xl bg-[#E0E5EB] px-5 py-3 text-sm font-bold text-[#101417]"
-            >
-              {t('login')}
-            </Link>
-          </div>
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </header>
   )
 }

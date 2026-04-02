@@ -20,13 +20,24 @@ type LibraryImage = ImageObj & {
   saved_at?: string;
 };
 
+function resolvePlatformParam(
+  value: string | null
+): "instagram" | "linkedin" | "x" {
+  if (value === "linkedin" || value === "x") {
+    return value;
+  }
+
+  return "instagram";
+}
+
 function VisualEditorContent() {
   const supabase = createClient();
   const searchParams = useSearchParams();
   const initialKeywords = searchParams?.get('keywords') || '';
+  const initialPlatform = resolvePlatformParam(searchParams?.get('platform'));
 
   const [mode, setMode] = useState<"unsplash" | "generate">("unsplash");
-  const [platform, setPlatform] = useState<"instagram" | "linkedin" | "x">("instagram");
+  const [platform, setPlatform] = useState<"instagram" | "linkedin" | "x">(initialPlatform);
   
   // Unsplash State
   const [keywords, setKeywords] = useState(initialKeywords);

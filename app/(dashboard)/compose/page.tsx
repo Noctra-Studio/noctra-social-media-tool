@@ -121,6 +121,11 @@ import {
 } from "@/lib/social-content";
 
 import { parseMarkdownContent } from "@/lib/importers/markdown";
+import {
+  convertInstagramSingleToCarouselPreview,
+  evaluateInstagramSaturation,
+} from "@/lib/instagram-saturation";
+import { writeVisualEditorDraft } from "@/lib/visual-editor-draft";
 
 import {
   type CarouselEditorSavePayload,
@@ -167,6 +172,7 @@ import {
   type ImageSource,
 } from "@/lib/post-records";
 import { uploadPostImage } from "@/lib/post-image-upload";
+import type { EditorialScoreData } from "@/lib/content-score";
 
 
 
@@ -278,8 +284,27 @@ type ExportStats = {
   lastExportedAt: string | null;
 };
 
+type InstagramCarouselPreviewState = {
+  backgrounds: SlideBackgroundSelection[];
+  slides: InstagramCarouselSlide[];
+  sourceKey: string;
+  suggestedSlides: number;
+};
+
+type AdaptPlatformStatus = "pending" | "in_progress" | "complete" | "error";
+
 function getSuggestedIdeaKey(suggestedIdea: SuggestedIdea) {
   return `${suggestedIdea.title}-${suggestedIdea.angle}`;
+}
+
+function getInstagramSinglePreviewKey(result: GeneratedContent) {
+  return JSON.stringify({
+    body: readString(result.content.body || result.content.caption),
+    caption: readString(result.content.caption),
+    headline: readString(result.content.headline),
+    postId: result.post_id ?? null,
+    raw: result.raw,
+  });
 }
 
 function isPlatform(value: string | null): value is Platform {
@@ -411,6 +436,7 @@ export default function ComposePage() {
   const supabase = useMemo(() => createClient(), []);
   const ideaTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const outputSectionRef = useRef<HTMLElement | null>(null);
+  const completedGenerationPlatformRef = useRef<Platform | null>(null);
   const [mode, setMode] = useState<ComposeMode | null>(null);
   const [activePlatform, setActivePlatform] = useState<Platform>("instagram");
   const [selectedFormats, setSelectedFormats] = useState<
@@ -428,9 +454,23 @@ export default function ComposePage() {
   const [generatedResults, setGeneratedResults] = useState<
     Partial<Record<Platform, GeneratedContent>>
   >({});
+  const [instagramCarouselPreviewState, setInstagramCarouselPreviewState] =
+    useState<InstagramCarouselPreviewState | null>(null);
+  const [
+    instagramCarouselSuggestionDismissed,
+    setInstagramCarouselSuggestionDismissed,
+  ] = useState(false);
   const [loadingAngles, setLoadingAngles] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [adapting, setAdapting] = useState(false);
+  const [adaptPlatformStatuses, setAdaptPlatformStatuses] = useState<
+    Record<Platform, AdaptPlatformStatus>
+  >({
+    instagram: "pending",
+    linkedin: "pending",
+    x: "pending",
+  });
+  const [showAdaptSuccessPulse, setShowAdaptSuccessPulse] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [loadingIdea, setLoadingIdea] = useState(false);
   const [suggestingIdeas, setSuggestingIdeas] = useState(false);
@@ -478,6 +518,20 @@ export default function ComposePage() {
   const [quickActionOutput, setQuickActionOutput] =
     useState<QuickActionOutput | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [enhancingWritingPlatform, setEnhancingWritingPlatform] =
+    useState<Platform | null>(null);
+  const [enhancementUndoState, setEnhancementUndoState] = useState<
+    Partial<Record<Platform, { previous: GeneratedContent }>>
+  >({});
+  const [enhancementHighlightState, setEnhancementHighlightState] = useState<
+    Partial<Record<Platform, boolean>>
+  >({});
+  const [editorialScoresByPlatform, setEditorialScoresByPlatform] = useState<
+    Partial<Record<Platform, EditorialScoreData>>
+  >({});
+  const [enhancementScoreBaselines, setEnhancementScoreBaselines] = useState<
+    Partial<Record<Platform, EditorialScoreData | null>>
+  >({});
   const [isCarouselEditorOpen, setIsCarouselEditorOpen] = useState(false);
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
   const [carouselEditorActiveIndex, setCarouselEditorActiveIndex] = useState(0);
@@ -536,6 +590,12 @@ export default function ComposePage() {
 
   const instagramExportRef = useRef<ExportRendererHandle>(null);
   const linkedInPdfRef = useRef<LinkedInPdfGeneratorHandle>(null);
+  const enhancementUndoTimeoutRef = useRef<Partial<Record<Platform, number>>>(
+    {},
+  );
+  const enhancementHighlightTimeoutRef = useRef<
+    Partial<Record<Platform, number>>
+  >({});
 
   const assistanceVisible =
     assistanceLevel !== "expert" &&
@@ -642,6 +702,42 @@ export default function ComposePage() {
     }
   };
 
+  const instagramSingleSaturation = useMemo(() => {
+    const instagramResult = generatedResults.instagram;
+
+    if (!instagramResult) {
+      return null;
+    }
+
+    const format = inferPostFormat(
+      "instagram",
+      instagramResult.content,
+      instagramResult.format,
+    );
+
+    if (format !== "single") {
+      return null;
+    }
+
+    const body = readString(
+      instagramResult.content.body || instagramResult.content.caption,
+    );
+
+    if (!body.trim()) {
+      return null;
+    }
+
+    return {
+      evaluation: evaluateInstagramSaturation(body),
+      slide: createInstagramSingleSlide(instagramResult.content),
+      sourceKey: getInstagramSinglePreviewKey(instagramResult),
+    };
+  }, [generatedResults.instagram]);
+
+  const isInstagramPreviewCarouselActive =
+    instagramCarouselPreviewState?.sourceKey ===
+    instagramSingleSaturation?.sourceKey;
+
   const getInstagramEditorPayload = () => {
     const instagramResult = generatedResults.instagram;
 
@@ -717,6 +813,15 @@ export default function ComposePage() {
       isActive = false;
     };
   }, [supabase]);
+
+  useEffect(() => {
+    if (
+      instagramCarouselPreviewState &&
+      instagramCarouselPreviewState.sourceKey !== instagramSingleSaturation?.sourceKey
+    ) {
+      setInstagramCarouselPreviewState(null);
+    }
+  }, [instagramCarouselPreviewState, instagramSingleSaturation?.sourceKey]);
 
   useEffect(() => {
     let isActive = true;
@@ -970,6 +1075,54 @@ export default function ComposePage() {
   }, [toastMessage]);
 
   useEffect(() => {
+    return () => {
+      Object.values(enhancementUndoTimeoutRef.current).forEach((timeoutId) => {
+        if (timeoutId) {
+          window.clearTimeout(timeoutId);
+        }
+      });
+      Object.values(enhancementHighlightTimeoutRef.current).forEach(
+        (timeoutId) => {
+          if (timeoutId) {
+            window.clearTimeout(timeoutId);
+          }
+        },
+      );
+    };
+  }, []);
+
+  useEffect(() => {
+    const completedPlatform = completedGenerationPlatformRef.current;
+    const outputSection = outputSectionRef.current;
+
+    if (
+      !completedPlatform ||
+      !generatedResults[completedPlatform] ||
+      !outputSection
+    ) {
+      return;
+    }
+
+    completedGenerationPlatformRef.current = null;
+
+    const timeoutId = window.setTimeout(() => {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          outputSection.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          });
+        });
+      });
+      setToastMessage("Tu contenido está listo ↑");
+    }, 120);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [generatedResults]);
+
+  useEffect(() => {
     const postIds = Object.values(generatedResults)
       .map((result) => result?.post_id)
       .filter((value): value is string => Boolean(value))
@@ -1161,8 +1314,224 @@ export default function ComposePage() {
     }
   };
 
+  const clearEnhancementUndo = (platform: Platform) => {
+    const undoTimeoutId = enhancementUndoTimeoutRef.current[platform];
+
+    if (undoTimeoutId) {
+      window.clearTimeout(undoTimeoutId);
+      delete enhancementUndoTimeoutRef.current[platform];
+    }
+
+    setEnhancementUndoState((current) => {
+      const next = { ...current };
+      delete next[platform];
+      return next;
+    });
+    setEnhancementScoreBaselines((current) => {
+      const next = { ...current };
+      delete next[platform];
+      return next;
+    });
+  };
+
+  const triggerEnhancementHighlight = (platform: Platform) => {
+    const existingTimeout = enhancementHighlightTimeoutRef.current[platform];
+
+    if (existingTimeout) {
+      window.clearTimeout(existingTimeout);
+    }
+
+    setEnhancementHighlightState((current) => ({
+      ...current,
+      [platform]: true,
+    }));
+
+    enhancementHighlightTimeoutRef.current[platform] = window.setTimeout(() => {
+      setEnhancementHighlightState((current) => {
+        const next = { ...current };
+        delete next[platform];
+        return next;
+      });
+      delete enhancementHighlightTimeoutRef.current[platform];
+    }, 1800);
+  };
+
+  const getResultPillarLabel = (result: GeneratedContent) => {
+    const pillarId = result.pillar_id || selectedPillarId;
+    return (
+      brandPillars.find((pillar) => pillar.id === pillarId)?.name ||
+      activePillar?.name ||
+      ""
+    );
+  };
+
+  const handleEnhanceWriting = async (platform: Platform) => {
+    const result = generatedResults[platform];
+
+    if (!result || enhancingWritingPlatform === platform) {
+      return;
+    }
+
+    const baselineScore = editorialScoresByPlatform[platform] ?? null;
+    const previousResult = JSON.parse(
+      JSON.stringify(result),
+    ) as GeneratedContent;
+    const format = inferPostFormat(platform, result.content, result.format);
+
+    setEnhancingWritingPlatform(platform);
+    setEnhancementScoreBaselines((current) => ({
+      ...current,
+      [platform]: baselineScore,
+    }));
+
+    try {
+      const response = await fetch("/api/content/enhance-writing", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          angle: result.angle,
+          content: result.content,
+          format,
+          pillar: getResultPillarLabel(result),
+          platform,
+        }),
+      });
+
+      const data = (await response.json()) as {
+        content?: Record<string, unknown>;
+        error?: string;
+      };
+
+      if (!response.ok || !data.content) {
+        throw new Error(
+          data.error || "No se pudo mejorar el contenido. Intenta de nuevo.",
+        );
+      }
+
+      const hasChanged =
+        JSON.stringify(data.content) !== JSON.stringify(result.content);
+
+      await applyGeneratedResultUpdate(platform, (current) => ({
+        ...current,
+        content: data.content ?? current.content,
+      }));
+
+      if (!hasChanged) {
+        clearEnhancementUndo(platform);
+        return;
+      }
+
+      clearEnhancementUndo(platform);
+      setEnhancementUndoState((current) => ({
+        ...current,
+        [platform]: { previous: previousResult },
+      }));
+      enhancementUndoTimeoutRef.current[platform] = window.setTimeout(() => {
+        clearEnhancementUndo(platform);
+      }, 10000);
+      triggerEnhancementHighlight(platform);
+    } catch (error) {
+      console.error("Failed to enhance writing", error);
+      clearEnhancementUndo(platform);
+      setToastMessage("No se pudo mejorar el contenido. Intenta de nuevo.");
+    } finally {
+      setEnhancingWritingPlatform((current) =>
+        current === platform ? null : current,
+      );
+    }
+  };
+
+  const handleRevertEnhancedWriting = async (platform: Platform) => {
+    const undoEntry = enhancementUndoState[platform];
+
+    if (!undoEntry) {
+      return;
+    }
+
+    clearEnhancementUndo(platform);
+
+    await applyGeneratedResultUpdate(platform, () => undoEntry.previous);
+    setToastMessage("Se revirtió la mejora.");
+  };
+
   const openVisualSearch = (query: string) => {
     setImagePickerTarget({ kind: "single-post", platform: activePlatform });
+  };
+
+  const openLiveEditor = () => {
+    const params = new URLSearchParams();
+    params.set("platform", activePlatform);
+
+    const result = generatedResults[activePlatform];
+
+    if (activePlatform === "instagram" && result) {
+      const format = inferPostFormat("instagram", result.content, result.format);
+      const slides =
+        format === "carousel"
+          ? readInstagramSlides(result.content.slides)
+          : [createInstagramSingleSlide(result.content)];
+      const firstSlide = slides[0];
+
+      if (firstSlide) {
+        const firstBackground =
+          getCarouselEditorMeta(result).slideBackgrounds.find(
+            (background) => background.slide_number === firstSlide.slide_number,
+          ) ?? {
+            bg_type: firstSlide.bg_type,
+            gradient_style: firstSlide.gradient_style ?? undefined,
+            image_url: undefined,
+            photographer: undefined,
+            slide_number: firstSlide.slide_number,
+            solid_color: firstSlide.color_suggestion || "#101417",
+          };
+
+        const query =
+          readString(firstSlide.visual_direction) ||
+          idea.trim() ||
+          readString(result.angle);
+
+        writeVisualEditorDraft({
+          angle: readString(result.angle),
+          background:
+            firstBackground.bg_type === "image" && firstBackground.image_url
+              ? {
+                  type: "image",
+                  imageThumb: firstBackground.image_url,
+                  imageUrl: firstBackground.image_url,
+                  photographer: firstBackground.photographer,
+                }
+              : firstBackground.bg_type === "gradient"
+                ? {
+                    type: "gradient",
+                    gradientStyle:
+                      (readOptionalString(firstBackground.gradient_style) as
+                        | InstagramCarouselSlide["gradient_style"]
+                        | null) ?? undefined,
+                  }
+                : {
+                    type: "solid",
+                    solidColor:
+                      firstBackground.solid_color ||
+                      firstSlide.color_suggestion ||
+                      "#101417",
+                  },
+          platform: "instagram",
+          query,
+          slide: firstSlide,
+          totalSlides: slides.length,
+        });
+
+        if (query) {
+          params.set("keywords", query);
+        }
+      }
+    } else if (idea.trim()) {
+      params.set("keywords", idea.trim());
+    }
+
+    router.push(`/visual${params.toString() ? `?${params.toString()}` : ""}`);
   };
 
   const handleImageConfirm = (image: SelectedImage, config: OverlayConfig) => {
@@ -1444,10 +1813,18 @@ export default function ComposePage() {
   };
 
   const scrollToOutput = () => {
+    const outputSection = outputSectionRef.current;
+
+    if (!outputSection) {
+      return;
+    }
+
     window.requestAnimationFrame(() => {
-      outputSectionRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
+      window.requestAnimationFrame(() => {
+        outputSection.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
       });
     });
   };
@@ -1546,6 +1923,9 @@ export default function ComposePage() {
     setGenerateButtonState("loading");
     setErrorMessage(null);
     setQuickActionOutput(null);
+    if (activePlatform === "instagram") {
+      setInstagramCarouselPreviewState(null);
+    }
     clearSavedPostIds([activePlatform]);
 
     try {
@@ -1626,8 +2006,8 @@ export default function ComposePage() {
         ),
       }));
       incrementAssistanceUsage();
+      completedGenerationPlatformRef.current = activePlatform;
       setGenerateButtonState("success");
-      scrollToOutput();
 
       // Trigger Stage 1: Visual Brief Generation
       void requestVisualBrief(data);
@@ -1679,58 +2059,117 @@ export default function ComposePage() {
     }
   };
 
+  const handleGenerateAction = () => {
+    if (generateButtonState === "success" && generatedResults[activePlatform]) {
+      scrollToOutput();
+      return;
+    }
+
+    void generateContent();
+  };
+
   const adaptToOtherPlatforms = async () => {
     if (!currentResult) {
       return;
     }
 
+    const targetPlatforms = platforms.filter(
+      (platform) => platform !== activePlatform,
+    );
+
     setAdapting(true);
     setErrorMessage(null);
     setQuickActionOutput(null);
+    setShowAdaptSuccessPulse(false);
+    setAdaptPlatformStatuses({
+      instagram:
+        activePlatform === "instagram" ? "complete" : "pending",
+      linkedin:
+        activePlatform === "linkedin" ? "complete" : "pending",
+      x: activePlatform === "x" ? "complete" : "pending",
+    });
 
     try {
-      const targetPlatforms = platforms.filter(
-        (platform) => platform !== activePlatform,
-      );
       clearSavedPostIds(targetPlatforms);
-      const response = await fetch("/api/content/adapt", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          source_platform: activePlatform,
-          source_post: JSON.stringify(currentResult.content, null, 2),
-          target_platforms: targetPlatforms,
+
+      const sourcePost = JSON.stringify(currentResult.content, null, 2);
+      const settled = await Promise.allSettled(
+        targetPlatforms.map(async (platform) => {
+          setAdaptPlatformStatuses((current) => ({
+            ...current,
+            [platform]: "in_progress",
+          }));
+
+          const response = await fetch("/api/content/adapt", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              source_platform: activePlatform,
+              source_post: sourcePost,
+              target_platforms: [platform],
+            }),
+          });
+
+          const data = (await response.json()) as {
+            adaptations?: Array<{
+              content: Record<string, unknown>;
+              platform: Platform;
+            }>;
+            error?: string;
+          };
+
+          if (!response.ok) {
+            throw new Error(data.error || `No fue posible adaptar a ${formatPlatformLabel(platform)}`);
+          }
+
+          const adaptation = data.adaptations?.find(
+            (item) => item.platform === platform,
+          );
+
+          if (!adaptation) {
+            throw new Error(`No llegó adaptación para ${formatPlatformLabel(platform)}`);
+          }
+
+          setGeneratedResults((current) => ({
+            ...current,
+            [platform]: {
+              angle: selectedAngle || "Adaptación",
+              content: adaptation.content,
+              platform,
+              pillar_id: selectedPillarId,
+              raw: idea,
+            },
+          }));
+
+          setAdaptPlatformStatuses((current) => ({
+            ...current,
+            [platform]: "complete",
+          }));
+
+          return platform;
         }),
+      );
+
+      const failedPlatforms: string[] = [];
+      settled.forEach((result, index) => {
+        if (result.status === "rejected") {
+          const platform = targetPlatforms[index];
+          failedPlatforms.push(formatPlatformLabel(platform));
+          setAdaptPlatformStatuses((current) => ({
+            ...current,
+            [platform]: "error",
+          }));
+        }
       });
 
-      const data = (await response.json()) as {
-        adaptations?: Array<{
-          content: Record<string, unknown>;
-          platform: Platform;
-        }>;
-        error?: string;
-      };
-
-      if (!response.ok) {
-        throw new Error(data.error || "No fue posible adaptar contenido");
+      if (failedPlatforms.length > 0) {
+        throw new Error(
+          `No fue posible adaptar: ${failedPlatforms.join(", ")}`,
+        );
       }
 
-      setGeneratedResults((current) => {
-        const nextResults = { ...current };
-
-        data.adaptations?.forEach((adaptation) => {
-          nextResults[adaptation.platform] = {
-            angle: selectedAngle || "Adaptación",
-            content: adaptation.content,
-            platform: adaptation.platform,
-            pillar_id: selectedPillarId,
-            raw: idea,
-          };
-        });
-
-        return nextResults;
-      });
       scrollToOutput();
+      setShowAdaptSuccessPulse(true);
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -1741,6 +2180,18 @@ export default function ComposePage() {
       setAdapting(false);
     }
   };
+
+  useEffect(() => {
+    if (!showAdaptSuccessPulse) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setShowAdaptSuccessPulse(false);
+    }, 1200);
+
+    return () => window.clearTimeout(timer);
+  }, [showAdaptSuccessPulse]);
 
   const saveAsDraft = async (platform: Platform) => {
     const result = generatedResults[platform];
@@ -2823,6 +3274,83 @@ export default function ComposePage() {
     }));
   };
 
+  const handleDismissInstagramCarouselSuggestion = () => {
+    setInstagramCarouselSuggestionDismissed(true);
+    setInstagramCarouselPreviewState(null);
+  };
+
+  const handlePreviewInstagramCarousel = () => {
+    const instagramResult = generatedResults.instagram;
+
+    if (
+      !instagramResult ||
+      !instagramSingleSaturation?.evaluation.isSaturated ||
+      !instagramSingleSaturation.sourceKey
+    ) {
+      return;
+    }
+
+    const suggestedSlides = instagramSingleSaturation.evaluation.suggestedSlides;
+    const baseSlide = createInstagramSingleSlide(instagramResult.content);
+    const previewSlides = convertInstagramSingleToCarouselPreview({
+      baseSlide,
+      body: baseSlide.body,
+      caption: readString(instagramResult.content.caption),
+      headline: readString(instagramResult.content.headline),
+      slideCount: suggestedSlides,
+    });
+    const firstBackground = getCarouselEditorMeta(instagramResult).slideBackgrounds.find(
+      (background) => background.slide_number === 1,
+    );
+    const previewBackgrounds = firstBackground
+      ? previewSlides.map((slide) => ({
+          ...firstBackground,
+          slide_number: slide.slide_number,
+        }))
+      : [];
+
+    setInstagramCarouselPreviewState({
+      backgrounds: previewBackgrounds,
+      slides: previewSlides,
+      sourceKey: instagramSingleSaturation.sourceKey,
+      suggestedSlides,
+    });
+  };
+
+  const handleCancelInstagramCarouselPreview = () => {
+    setInstagramCarouselPreviewState(null);
+  };
+
+  const handleConfirmInstagramCarouselPreview = async () => {
+    const previewState = instagramCarouselPreviewState;
+
+    if (!previewState) {
+      return;
+    }
+
+    setInstagramCarouselPreviewState(null);
+    setSelectedFormats((current) => ({ ...current, instagram: "carousel" }));
+
+    await applyGeneratedResultUpdate("instagram", (current) => ({
+      ...current,
+      format: "carousel",
+      content: {
+        ...current.content,
+        caption: readString(current.content.caption),
+        hashtags: readStringArray(current.content.hashtags),
+        slides: previewState.slides,
+      },
+      export_metadata: {
+        ...(isRecord(current.export_metadata) ? current.export_metadata : {}),
+        edited_carousel_slides: [],
+        slide_backgrounds: previewState.backgrounds,
+        slide_count: previewState.slides.length,
+      },
+    }));
+
+    setToastMessage("Carrusel listo para revisar.");
+  };
+
   const replaceLeadingLine = (value: string, newHook: string) => {
     const lines = value.split(/\r?\n/);
 
@@ -3093,11 +3621,38 @@ export default function ComposePage() {
     </div>
   );
 
+  const renderAdaptPlatformStatus = (platform: Platform) => {
+    const status = adaptPlatformStatuses[platform];
+
+    return (
+      <div
+        key={platform}
+        className="inline-flex items-center gap-2 rounded-full border border-white/8 bg-white/[0.03] px-3 py-1.5 text-xs text-[#B5BDCA]"
+      >
+        <span className="flex h-4 w-4 items-center justify-center">
+          {status === "in_progress" ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-[#E0E5EB]" />
+          ) : status === "complete" ? (
+            <Check className="h-3.5 w-3.5 text-[#22c55e]" />
+          ) : status === "error" ? (
+            <X className="h-3.5 w-3.5 text-[#ef4444]" />
+          ) : (
+            <span className="h-2.5 w-2.5 rounded-full border border-[#4E576A]" />
+          )}
+        </span>
+        <span>{formatPlatformLabel(platform)}</span>
+      </div>
+    );
+  };
+
   const renderFormatSelector = () => {
     const options = platformFormatOptions[
       activePlatform
     ] as SocialFormatOption[];
-    const activeFormat = selectedFormats[activePlatform];
+    const activeFormat =
+      activePlatform === "instagram" && isInstagramPreviewCarouselActive
+        ? "carousel"
+        : selectedFormats[activePlatform];
 
     return (
       <div className="space-y-3">
@@ -3109,7 +3664,17 @@ export default function ComposePage() {
             <button
               key={option.value}
               type="button"
-              onClick={() => setFormatForPlatform(activePlatform, option.value)}
+              onClick={() => {
+                if (activePlatform === "instagram" && isInstagramPreviewCarouselActive) {
+                  if (option.value === "single") {
+                    setInstagramCarouselPreviewState(null);
+                  }
+
+                  return;
+                }
+
+                setFormatForPlatform(activePlatform, option.value);
+              }}
               className={`rounded-full px-4 py-2 text-sm transition-colors ${
                 activeFormat === option.value
                   ? "bg-white text-black"
@@ -3273,18 +3838,27 @@ export default function ComposePage() {
     const content = result.content;
     const hashtags = ensureHashtags(readStringArray(content.hashtags));
 
-    if (platform === "instagram" && format === "carousel") {
-      const slides = readInstagramSlides(content.slides);
-      const { editedSlides, slideBackgrounds } = getCarouselEditorMeta(result);
-      const slideBackgroundMap = new Map(
-        slideBackgrounds.map((background) => [
-          background.slide_number,
-          background,
-        ])
-      );
+    if (platform === "instagram") {
+      const instagramSingleSourceKey =
+        format === "single" ? getInstagramSinglePreviewKey(result) : null;
+      const previewState =
+        format === "single" &&
+        instagramCarouselPreviewState?.sourceKey === instagramSingleSourceKey
+          ? instagramCarouselPreviewState
+          : null;
 
-      return (
-        <div className="space-y-5">
+      if (format === "carousel") {
+        const slides = readInstagramSlides(content.slides);
+        const { editedSlides, slideBackgrounds } = getCarouselEditorMeta(result);
+        const slideBackgroundMap = new Map(
+          slideBackgrounds.map((background) => [
+            background.slide_number,
+            background,
+          ]),
+        );
+
+        return (
+          <div className="space-y-5">
             <InstagramCarouselPreview
               angle={readString(result.angle)}
               editedSlides={editedSlides}
@@ -3315,8 +3889,8 @@ export default function ComposePage() {
                   const r = prev[platform];
                   if (!r || !r.content) return prev;
                   const currentSlides = (r.content as any).slides || [];
-                  const updatedSlides = currentSlides.map((s: any) => 
-                    s.slide_number === slideNumber ? { ...s, ...updates } : s
+                  const updatedSlides = currentSlides.map((s: any) =>
+                    s.slide_number === slideNumber ? { ...s, ...updates } : s,
                   );
                   return {
                     ...prev,
@@ -3333,7 +3907,13 @@ export default function ComposePage() {
               onReorderSlides={(newOrder) => {
                 setGeneratedResults((prev) => {
                   const r = prev.instagram;
-                  if (!r || !r.content || !Array.isArray((r.content as any).slides)) return prev;
+                  if (
+                    !r ||
+                    !r.content ||
+                    !Array.isArray((r.content as any).slides)
+                  ) {
+                    return prev;
+                  }
                   const oldSlides = [...(r.content as any).slides];
                   const newSlides = newOrder.map((originalPos, newIdx) => {
                     const s = { ...oldSlides[originalPos - 1] };
@@ -3372,7 +3952,9 @@ export default function ComposePage() {
             />
             <div className="grid gap-3 md:grid-cols-2">
               {slides.map((slide) => {
-                const imageBackground = slideBackgroundMap.get(slide.slide_number);
+                const imageBackground = slideBackgroundMap.get(
+                  slide.slide_number,
+                );
 
                 return (
                   <ContentImageSlot
@@ -3380,8 +3962,10 @@ export default function ComposePage() {
                     aspectRatio="square"
                     hint="Cada slide puede llevar su propia imagen."
                     imageSource={
-                      (imageBackground?.image_source as ImageSource | null | undefined) ??
-                      null
+                      (imageBackground?.image_source as
+                        | ImageSource
+                        | null
+                        | undefined) ?? null
                     }
                     imageUrl={imageBackground?.image_url ?? null}
                     label={`Imagen slide ${slide.slide_number}`}
@@ -3399,9 +3983,11 @@ export default function ComposePage() {
                           ...(isRecord(current.export_metadata)
                             ? current.export_metadata
                             : {}),
-                          slide_backgrounds: getCarouselEditorMeta(current).slideBackgrounds.filter(
+                          slide_backgrounds: getCarouselEditorMeta(
+                            current,
+                          ).slideBackgrounds.filter(
                             (background) =>
-                              background.slide_number !== slide.slide_number
+                              background.slide_number !== slide.slide_number,
                           ),
                         },
                       }));
@@ -3413,7 +3999,7 @@ export default function ComposePage() {
                           platform: "instagram",
                           slideNumber: slide.slide_number,
                         },
-                        file
+                        file,
                       );
                     }}
                   />
@@ -3422,10 +4008,10 @@ export default function ComposePage() {
             </div>
             <div className="rounded-[24px] border border-white/10 bg-[#101417] p-4 text-sm leading-7 text-[#E0E5EB]">
               <p className="whitespace-pre-wrap">{readString(content.caption)}</p>
-              
-              <div className="mt-6 pt-6 border-t border-white/5">
-                <TagsEditor 
-                  tags={hashtags} 
+
+              <div className="mt-6 border-t border-white/5 pt-6">
+                <TagsEditor
+                  tags={hashtags}
                   onChange={(tags) => handleTagsChange(platform, tags)}
                   onSuggest={() => handleSuggestTags(platform)}
                   isSuggesting={isSuggestingTags}
@@ -3436,109 +4022,257 @@ export default function ComposePage() {
         );
       }
 
-      if (platform === "instagram") {
-        const slide = createInstagramSingleSlide(content);
-
-        const backgrounds = (result.export_metadata as any)?.slide_backgrounds || [];
-        const background = backgrounds.find((b: any) => b.slide_number === 1) || {
-          slide_number: 1,
-          bg_type: slide.bg_type,
-          solid_color: slide.color_suggestion || '#101417',
-        };
-
-        const onUpdateSlide = (updates: Partial<InstagramCarouselSlide>) => {
-          setGeneratedResults((prev) => {
-            const r = prev[platform];
-            if (!r) return prev;
-            return {
-              ...prev,
-              [platform]: {
-                ...r,
-                content: {
-                  ...r.content,
-                  ...updates,
-                }
-              }
-            };
-          });
-        };
-
+      if (previewState) {
         return (
-          <div className="space-y-6">
-            <div data-platform-preview={platform}>
-              <InstagramPostPreview
-                slide={slide}
-                background={background as any}
-                onUpdateSlide={onUpdateSlide}
-                onBackgroundChange={(newBg) => {
-                  setGeneratedResults((prev) => {
-                    const r = prev[platform];
-                    if (!r) return prev;
-                    const currentBackgrounds = (r.export_metadata as any)?.slide_backgrounds || [];
-                    const otherBackgrounds = currentBackgrounds.filter((b: any) => b.slide_number !== 1);
-                    return {
-                      ...prev,
-                      [platform]: {
-                        ...r,
-                        export_metadata: {
-                          ...r.export_metadata,
-                          slide_backgrounds: [newBg, ...otherBackgrounds],
-                        },
-                      },
-                    };
-                  });
-                }}
-                onOpenDetailEditor={() => {
-                  // For single post, we might want to open the same editor but only one slide
-                  openCarouselEditor(0);
-                }}
-              />
-            </div>
-            <div className="rounded-[24px] border border-white/10 bg-[#101417] p-5 space-y-6">
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <p className="text-[10px] uppercase tracking-[0.2em] text-[#4E576A]">Titular Social</p>
-                  <textarea
-                    value={readString(content.headline)}
-                    onChange={(e) => onUpdateSlide?.({ headline: e.target.value })}
-                    placeholder="Escribe un titular llamativo..."
-                    className="w-full resize-none bg-transparent text-sm font-bold leading-relaxed text-[#E0E5EB] focus:outline-none min-h-[40px]"
-                  />
+          <div className="space-y-5">
+            <div className="rounded-[24px] border border-[#D3C2F1]/20 bg-[#1A1622] p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-sm font-medium text-[#E0E5EB]">
+                    Vista previa lista. ¿Guardar como carrusel?
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-[#8D95A6]">
+                    Se prepararon {previewState.suggestedSlides} slides sin
+                    modificar todavía tu post original.
+                  </p>
                 </div>
-                <div className="h-px bg-white/5" />
-                <div className="space-y-1.5">
-                  <p className="text-[10px] uppercase tracking-[0.2em] text-[#4E576A]">Cuerpo del Post</p>
-                  <textarea
-                    value={readString(content.body || content.caption)}
-                    onChange={(e) => onUpdateSlide?.({ body: e.target.value })}
-                    placeholder="Escribe el contenido principal..."
-                    className="w-full resize-none bg-transparent text-sm leading-relaxed text-[#E0E5EB] focus:outline-none min-h-[80px]"
-                  />
-                </div>
-                <div className="h-px bg-white/5" />
-              <div className="space-y-1.5">
-                  <p className="text-[10px] uppercase tracking-[0.2em] text-[#4E576A]">Caption (Pie de foto)</p>
-                  <textarea
-                    value={readString(content.caption)}
-                    onChange={(e) => handleCaptionEdit(e.target.value)}
-                    placeholder="Escribe el caption final..."
-                    className="w-full resize-none bg-transparent text-sm leading-relaxed text-zinc-400 focus:outline-none min-h-[60px]"
-                  />
-                </div>
-
-                <div className="mt-4 pt-4 border-t border-white/5">
-                  <TagsEditor 
-                    tags={hashtags} 
-                    onChange={(tags) => handleTagsChange(platform, tags)}
-                    onSuggest={() => handleSuggestTags(platform)}
-                    isSuggesting={isSuggestingTags}
-                  />
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleConfirmInstagramCarouselPreview()}
+                    className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-black transition-colors hover:bg-[#E0E5EB]"
+                  >
+                    Confirmar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCancelInstagramCarouselPreview}
+                    className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5"
+                  >
+                    Cancelar
+                  </button>
                 </div>
               </div>
             </div>
+
+            <InstagramCarouselPreview
+              angle={readString(result.angle)}
+              editedSlides={[]}
+              initialBackgrounds={previewState.backgrounds}
+              onOpenDetailEditor={() => {}}
+              slides={previewState.slides}
+              caption={readString(content.caption)}
+              onUpdateSlide={(slideNumber, updates) => {
+                setInstagramCarouselPreviewState((current) => {
+                  if (!current) {
+                    return current;
+                  }
+
+                  return {
+                    ...current,
+                    slides: current.slides.map((slide) =>
+                      slide.slide_number === slideNumber
+                        ? { ...slide, ...updates }
+                        : slide,
+                    ),
+                  };
+                });
+              }}
+              onReorderSlides={(newOrder) => {
+                setInstagramCarouselPreviewState((current) => {
+                  if (!current) {
+                    return current;
+                  }
+
+                  const oldSlides = [...current.slides];
+                  const newSlides = newOrder.map((originalPos, newIdx) => ({
+                    ...oldSlides[originalPos - 1],
+                    slide_number: newIdx + 1,
+                  }));
+
+                  return {
+                    ...current,
+                    backgrounds: current.backgrounds.map((background) => {
+                      const newIndex = newOrder.findIndex(
+                        (originalPos) =>
+                          originalPos === background.slide_number,
+                      );
+
+                      return newIndex >= 0
+                        ? { ...background, slide_number: newIndex + 1 }
+                        : background;
+                    }),
+                    slides: newSlides,
+                  };
+                });
+              }}
+              onBackgroundChange={(backgrounds) => {
+                setInstagramCarouselPreviewState((current) =>
+                  current ? { ...current, backgrounds } : current,
+                );
+              }}
+            />
           </div>
         );
       }
+
+      const slide = createInstagramSingleSlide(content);
+      const saturationSuggestion =
+        instagramSingleSaturation?.sourceKey === instagramSingleSourceKey
+          ? instagramSingleSaturation.evaluation
+          : null;
+      const showSaturationBanner = Boolean(
+        saturationSuggestion?.isSaturated &&
+          !instagramCarouselSuggestionDismissed,
+      );
+      const backgrounds = (result.export_metadata as any)?.slide_backgrounds || [];
+      const background = backgrounds.find((b: any) => b.slide_number === 1) || {
+        slide_number: 1,
+        bg_type: slide.bg_type,
+        solid_color: slide.color_suggestion || "#101417",
+      };
+
+      const onUpdateSlide = (updates: Partial<InstagramCarouselSlide>) => {
+        setGeneratedResults((prev) => {
+          const r = prev[platform];
+          if (!r) return prev;
+          return {
+            ...prev,
+            [platform]: {
+              ...r,
+              content: {
+                ...r.content,
+                ...updates,
+              },
+            },
+          };
+        });
+      };
+
+      return (
+        <div className="space-y-6">
+          {showSaturationBanner && saturationSuggestion && (
+            <div className="rounded-[24px] border border-[#D3C2F1]/20 bg-[#1A1622] p-4">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-2">
+                  <div className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#D3C2F1]/20 bg-[#462D6E]/15 text-[#D3C2F1]">
+                    <Layers3 className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-[#E0E5EB]">
+                      Este contenido funciona mejor como carrusel. Te sugerimos{" "}
+                      {saturationSuggestion.suggestedSlides} slides.
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-[#8D95A6]">
+                      {saturationSuggestion.reason}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={handlePreviewInstagramCarousel}
+                    className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-black transition-colors hover:bg-[#E0E5EB]"
+                  >
+                    Convertir a carrusel (
+                    {saturationSuggestion.suggestedSlides} slides)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDismissInstagramCarouselSuggestion}
+                    className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5"
+                  >
+                    Mantener como post único
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div data-platform-preview={platform}>
+            <InstagramPostPreview
+              slide={slide}
+              background={background as any}
+              onUpdateSlide={onUpdateSlide}
+              onBackgroundChange={(newBg) => {
+                setGeneratedResults((prev) => {
+                  const r = prev[platform];
+                  if (!r) return prev;
+                  const currentBackgrounds =
+                    (r.export_metadata as any)?.slide_backgrounds || [];
+                  const otherBackgrounds = currentBackgrounds.filter(
+                    (b: any) => b.slide_number !== 1,
+                  );
+                  return {
+                    ...prev,
+                    [platform]: {
+                      ...r,
+                      export_metadata: {
+                        ...r.export_metadata,
+                        slide_backgrounds: [newBg, ...otherBackgrounds],
+                      },
+                    },
+                  };
+                });
+              }}
+            />
+          </div>
+          <div className="rounded-[24px] border border-white/10 bg-[#101417] p-5 space-y-6">
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-[#4E576A]">
+                  Titular Social
+                </p>
+                <textarea
+                  value={readString(content.headline)}
+                  onChange={(e) => onUpdateSlide?.({ headline: e.target.value })}
+                  placeholder="Escribe un titular llamativo..."
+                  className="min-h-[40px] w-full resize-none bg-transparent text-sm font-bold leading-relaxed text-[#E0E5EB] focus:outline-none"
+                />
+                {!readString(content.headline).trim() ? (
+                  <p className="text-xs leading-5 text-[#6F7786]">
+                    La IA no rellena este campo autom&aacute;ticamente
+                  </p>
+                ) : null}
+              </div>
+              <div className="h-px bg-white/5" />
+              <div className="space-y-1.5">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-[#4E576A]">
+                  Cuerpo del Post
+                </p>
+                <textarea
+                  value={readString(content.body || content.caption)}
+                  onChange={(e) => onUpdateSlide?.({ body: e.target.value })}
+                  placeholder="Escribe el contenido principal..."
+                  className="min-h-[80px] w-full resize-none bg-transparent text-sm leading-relaxed text-[#E0E5EB] focus:outline-none"
+                />
+              </div>
+              <div className="h-px bg-white/5" />
+              <div className="space-y-1.5">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-[#4E576A]">
+                  Caption (Pie de foto)
+                </p>
+                <textarea
+                  value={readString(content.caption)}
+                  onChange={(e) => handleCaptionEdit(e.target.value)}
+                  placeholder="Escribe el caption final..."
+                  className="min-h-[60px] w-full resize-none bg-transparent text-sm leading-relaxed text-zinc-400 focus:outline-none"
+                />
+              </div>
+
+              <div className="mt-4 border-t border-white/5 pt-4">
+                <TagsEditor
+                  tags={hashtags}
+                  onChange={(tags) => handleTagsChange(platform, tags)}
+                  onSuggest={() => handleSuggestTags(platform)}
+                  isSuggesting={isSuggestingTags}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
 
       if (platform === "x" && format === "tweet") {
         const tweet = readString(content.tweet) || readString(content.caption);
@@ -3995,6 +4729,16 @@ export default function ComposePage() {
     }
 
     const isCopied = copiedResultPlatform === platform;
+    const isEnhancingWriting = enhancingWritingPlatform === platform;
+    const canUndoEnhancement = Boolean(enhancementUndoState[platform]);
+    const shouldHighlightEnhancedContent = Boolean(
+      enhancementHighlightState[platform],
+    );
+    const scoreBaseline = enhancementScoreBaselines[platform] ?? null;
+    const displayFormat =
+      platform === "instagram" && isInstagramPreviewCarouselActive
+        ? "carousel"
+        : inferPostFormat(platform, result.content, result.format);
 
     return (
       <div className="space-y-4">
@@ -4012,10 +4756,7 @@ export default function ComposePage() {
                   {result.angle}
                 </p>
                 <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] text-[#C9D0DB]">
-                  {getFormatLabel(
-                    platform,
-                    inferPostFormat(platform, result.content, result.format),
-                  )}
+                  {getFormatLabel(platform, displayFormat)}
                 </span>
                 {currentQuickGeneratedOutput?.stanceUsed && (
                   <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] text-[#C9D0DB]">
@@ -4076,9 +4817,96 @@ export default function ComposePage() {
               )}
               Agendar
             </button>
+            <button
+              type="button"
+              onClick={() => void handleEnhanceWriting(platform)}
+              disabled={isEnhancingWriting}
+              className="inline-flex items-center gap-2 rounded-full border border-[#6C4CE4]/30 bg-[#6C4CE4]/10 px-4 py-2 text-sm text-[#EAE2FF] transition-colors hover:border-[#6C4CE4]/45 hover:bg-[#6C4CE4]/16 disabled:opacity-60">
+              {isEnhancingWriting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Mejorando...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4 text-[#CDB9FF]" />
+                  ✦ Mejorar escritura
+                </>
+              )}
+            </button>
           </div>
 
-          <div className="mt-5">{renderPostContentBody(platform, result)}</div>
+          {canUndoEnhancement ? (
+            <div className="mt-3 flex flex-wrap items-center gap-3 rounded-[18px] border border-[#6C4CE4]/20 bg-[#6C4CE4]/8 px-4 py-3">
+              <p className="text-sm text-[#D9CCFF]">
+                La versi&oacute;n anterior sigue disponible por unos segundos.
+              </p>
+              <button
+                type="button"
+                onClick={() => void handleRevertEnhancedWriting(platform)}
+                className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-1.5 text-xs font-medium text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/5">
+                Revertir cambio
+              </button>
+            </div>
+          ) : null}
+
+          {platform === "instagram" ? (
+            <div className="mt-4 rounded-[24px] border border-[#6C4CE4]/18 bg-[linear-gradient(135deg,rgba(108,76,228,0.14),rgba(16,20,23,0.9))] p-4">
+              <button
+                type="button"
+                onClick={() => openCarouselEditor(0)}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-medium text-[#F5F7FB] transition-all hover:border-white/20 hover:bg-white/10">
+                <Wand2 className="h-4 w-4 text-[#CDB9FF]" />
+                Personalizar diseño completo
+              </button>
+              <p className="mt-2 text-center text-[12px] leading-5 text-[#AAB3C5]">
+                Abre el Live Editor para ajustar tipografía, fondos y composición sin salir del contexto.
+              </p>
+            </div>
+          ) : null}
+
+          <motion.div
+            className="relative mt-5"
+            animate={
+              shouldHighlightEnhancedContent
+                ? {
+                    backgroundColor: [
+                      "rgba(108,76,228,0.12)",
+                      "rgba(108,76,228,0.03)",
+                      "rgba(108,76,228,0)",
+                    ],
+                    boxShadow: [
+                      "0 0 0 rgba(108,76,228,0)",
+                      "0 0 0 1px rgba(108,76,228,0.24)",
+                      "0 0 0 rgba(108,76,228,0)",
+                    ],
+                  }
+                : undefined
+            }
+            transition={{ duration: 1.2, ease: "easeOut" }}>
+            {isEnhancingWriting ? (
+              <motion.div
+                className="pointer-events-none absolute inset-0 z-10 rounded-[28px]"
+                style={{
+                  backgroundImage:
+                    "linear-gradient(110deg, rgba(108,76,228,0.02) 18%, rgba(205,185,255,0.12) 48%, rgba(108,76,228,0.02) 78%)",
+                  backgroundSize: "200% 100%",
+                }}
+                animate={{
+                  backgroundPosition: ["0% 50%", "100% 50%"],
+                  opacity: [0.3, 0.65, 0.3],
+                }}
+                transition={{
+                  duration: 1.35,
+                  ease: "easeInOut",
+                  repeat: Number.POSITIVE_INFINITY,
+                }}
+              />
+            ) : null}
+            <div className="relative z-0">
+              {renderPostContentBody(platform, result)}
+            </div>
+          </motion.div>
 
           {!generating ? (
             <div className="mt-5">
@@ -4108,6 +4936,28 @@ export default function ComposePage() {
                 format={inferPostFormat(platform, result.content, result.format)}
                 content={result.content}
                 angle={result.angle}
+                comparisonBaseline={scoreBaseline}
+                onScoreDataChange={(scoreData) => {
+                  setEditorialScoresByPlatform((current) => {
+                    if (!scoreData && !current[platform]) {
+                      return current;
+                    }
+
+                    if (scoreData && current[platform] === scoreData) {
+                      return current;
+                    }
+
+                    const next = { ...current };
+
+                    if (scoreData) {
+                      next[platform] = scoreData;
+                    } else {
+                      delete next[platform];
+                    }
+
+                    return next;
+                  });
+                }}
                 postId={result.post_id ?? undefined}
                 onRebalance={(newContent) => {
                   updateGeneratedResult(platform, (current) => ({
@@ -4126,18 +4976,31 @@ export default function ComposePage() {
           )}
 
           <div className="mt-6 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => void adaptToOtherPlatforms()}
-              disabled={adapting}
-              className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] disabled:opacity-60">
-              {adapting ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCcw className="h-4 w-4" />
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => void adaptToOtherPlatforms()}
+                disabled={adapting}
+                className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] disabled:opacity-60">
+                {adapting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Adaptando plataformas...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCcw className="h-4 w-4" />
+                    Adaptar a otras plataformas
+                  </>
+                )}
+              </button>
+
+              {(adapting || showAdaptSuccessPulse) && (
+                <div className="flex flex-wrap gap-2">
+                  {platforms.map((platform) => renderAdaptPlatformStatus(platform))}
+                </div>
               )}
-              Adaptar a otras plataformas
-            </button>
+            </div>
           </div>
         </div>
 
@@ -4200,15 +5063,24 @@ export default function ComposePage() {
                 casi resuelta.
               </p>
             </div>
-            {mode && (
+            <div className="flex shrink-0 flex-wrap items-center gap-3 self-start">
               <button
                 type="button"
-                onClick={() => setMode(null)}
-                className="inline-flex shrink-0 items-center gap-2 self-start rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-all duration-300 hover:border-white/30 hover:bg-white/5">
-                <RefreshCcw className="h-4 w-4" />
-                Cambiar modo
+                onClick={openLiveEditor}
+                className="inline-flex items-center gap-2 rounded-full border border-[#6C4CE4]/25 bg-[#6C4CE4]/10 px-4 py-2 text-sm text-[#EAE2FF] transition-all duration-300 hover:border-[#6C4CE4]/45 hover:bg-[#6C4CE4]/16">
+                <Wand2 className="h-4 w-4 text-[#CDB9FF]" />
+                Live Editor
               </button>
-            )}
+              {mode && (
+                <button
+                  type="button"
+                  onClick={() => setMode(null)}
+                  className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-[#E0E5EB] transition-all duration-300 hover:border-white/30 hover:bg-white/5">
+                  <RefreshCcw className="h-4 w-4" />
+                  Cambiar modo
+                </button>
+              )}
+            </div>
           </div>
 
           {currentModeCard && (
@@ -4274,31 +5146,49 @@ export default function ComposePage() {
                   key: "plan" as const,
                   icon: Calendar,
                   label: "Planear contenido",
+                  subtitle: "Organiza tu semana de publicaciones",
+                  tooltip:
+                    "Crea un plan de publicación semanal basado en tus pilares",
                 },
                 {
                   key: "repurpose" as const,
                   icon: RefreshCw,
                   label: "Repurpose",
+                  subtitle: "Reutiliza ideas para otra plataforma",
+                  tooltip:
+                    "Convierte un post existente en contenido para otra plataforma",
                 },
                 {
                   key: "viral" as const,
                   icon: TrendingUp,
                   label: "Qué está viral",
+                  subtitle: "Detecta tendencias con potencial inmediato",
+                  tooltip:
+                    "Analiza tendencias actuales y sugiere ángulos relevantes",
                 },
                 {
                   key: "caseStudy" as const,
                   icon: Briefcase,
                   label: "Caso de estudio",
+                  subtitle: "Convierte resultados en prueba social",
+                  tooltip:
+                    "Transforma un resultado de cliente en contenido de autoridad",
                 },
                 {
                   key: "thoughtLeadership" as const,
                   icon: Lightbulb,
                   label: "Thought leadership",
+                  subtitle: "Expresa una postura experta relevante",
+                  tooltip:
+                    "Genera una opinión experta sobre tu industria",
                 },
                 {
                   key: "faq" as const,
                   icon: MessageCircle,
                   label: "FAQ de clientes",
+                  subtitle: "Responde dudas comunes con claridad",
+                  tooltip:
+                    "Convierte preguntas frecuentes en posts educativos",
                 },
               ].map((chip) => {
                 const Icon = chip.icon;
@@ -4311,18 +5201,24 @@ export default function ComposePage() {
                     type="button"
                     onClick={() => handleQuickActionChipClick(chip.key)}
                     disabled={isRunning}
-                    className={`flex min-w-[160px] shrink-0 items-center gap-2 rounded-[10px] border px-4 py-3 text-left transition-all md:min-w-0 ${
+                    title={chip.tooltip}
+                    className={`flex min-w-[160px] shrink-0 items-start gap-3 rounded-[10px] border px-4 py-3 text-left transition-all md:min-w-0 ${
                       isOpen || isRunning
                         ? "border-[#E0E5EB] bg-[#1A1F28] opacity-70"
                         : "border-[#2A3040] bg-[#212631] hover:border-[#4E576A] hover:bg-[#1A1F28]"
                     }`}>
                     {isRunning ? (
-                      <span className="h-4 w-4 rounded-full border-2 border-[#4E576A] border-t-[#E0E5EB] animate-spin" />
+                      <span className="mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 border-[#4E576A] border-t-[#E0E5EB] animate-spin" />
                     ) : (
-                      <Icon className="h-4 w-4 text-[#E0E5EB]" />
+                      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-[#E0E5EB]" />
                     )}
-                    <span className="text-[13px] font-medium text-[#E0E5EB]">
-                      {isRunning ? "Generando..." : chip.label}
+                    <span className="flex min-w-0 flex-col">
+                      <span className="text-[13px] font-medium text-[#E0E5EB]">
+                        {isRunning ? "Generando..." : chip.label}
+                      </span>
+                      <span className="mt-1 text-[11px] leading-[1.35] text-[#8E97A8]">
+                        {chip.subtitle}
+                      </span>
                     </span>
                   </button>
                 );
@@ -4967,12 +5863,12 @@ export default function ComposePage() {
                           />
                           <AIButton
                             key={`generate-idea-${generateButtonState}`}
-                            onClick={() => void generateContent()}
+                            onClick={handleGenerateAction}
                             disabled={!canGenerate}
                             state={generateButtonState}
                             idleLabel={generationActionLabel}
                             loadingPhases={GENERATION_LOADING_PHASES}
-                            successLabel="Contenido listo"
+                            successLabel="Ver resultado →"
                             errorLabel="Reintentar generación"
                             icon={Sparkles}
                           />
@@ -5079,12 +5975,12 @@ export default function ComposePage() {
                           }>
                           <AIButton
                             key={`generate-direct-${generateButtonState}`}
-                            onClick={() => void generateContent()}
+                            onClick={handleGenerateAction}
                             disabled={!canGenerate}
                             state={generateButtonState}
                             idleLabel={generationActionLabel}
                             loadingPhases={GENERATION_LOADING_PHASES}
-                            successLabel="Contenido listo"
+                            successLabel="Ver resultado →"
                             errorLabel="Reintentar generación"
                             icon={Sparkles}
                             className={
@@ -5303,7 +6199,22 @@ export default function ComposePage() {
 
           {visibleGeneratedPlatforms.length > 0 && (
             <>
-              <div className="flex flex-wrap gap-2">
+              <motion.div
+                className="flex flex-wrap gap-2"
+                initial={false}
+                animate={
+                  showAdaptSuccessPulse
+                    ? {
+                        opacity: [0.82, 1],
+                        scale: [0.985, 1.01, 1],
+                      }
+                    : {
+                        opacity: 1,
+                        scale: 1,
+                      }
+                }
+                transition={{ duration: 0.45, ease: "easeOut" }}
+              >
                 {visibleGeneratedPlatforms.map((platform) => (
                   <button
                     key={platform}
@@ -5317,7 +6228,7 @@ export default function ComposePage() {
                     {formatPlatformLabel(platform)}
                   </button>
                 ))}
-              </div>
+              </motion.div>
 
               {renderGeneratedContent(activePlatform)}
             </>

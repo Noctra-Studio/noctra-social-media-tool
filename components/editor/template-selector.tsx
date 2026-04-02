@@ -287,6 +287,10 @@ export function TemplateSelector({
             </div>
           </label>
         </div>
+
+        <p className="text-center text-[12px] leading-5 text-[#667089]">
+          También puedes acceder al editor desde Plantillas en el menú principal.
+        </p>
       </div>
     </div>
   );

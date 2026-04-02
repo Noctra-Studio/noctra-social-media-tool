@@ -3121,35 +3121,54 @@ export function FabricEditor({
     return () => clearTimeout(timer)
   }, [editorState.slides, calculateCoherence])
 
-  const handleApplyThemeToAll = useCallback(async () => {
-    if (!editorState) return
+  const applyThemeSelection = useCallback(async (themeId: string) => {
+    const currentState = editorStateRef.current
+    const selectedTheme =
+      themeId === 'custom'
+        ? editingCustomTheme
+        : [...PRESET_THEMES, ...customThemes].find((theme) => theme.id === themeId) ?? PRESET_THEMES[0]
+
+    setCurrentThemeId(themeId)
+
+    if (!currentState || !selectedTheme) {
+      return
+    }
+
     setIsSavingAll(true)
 
     try {
-      const updatedSlides = await applyThemeToAllSlides(editorState.slides, activeTheme)
-      
+      if (typeof window !== 'undefined' && previewTimeoutRef.current !== null) {
+        window.clearTimeout(previewTimeoutRef.current)
+        previewTimeoutRef.current = null
+      }
+
+      const updatedSlides = await applyThemeToAllSlides(currentState.slides, selectedTheme)
       const newState = {
-        ...editorState,
+        ...currentState,
         slides: updatedSlides,
         isDirty: true
       }
-      
+
       setEditorState(newState)
       editorStateRef.current = newState
       setShowThemeConfirm(false)
+      setLayerVersion((version) => version + 1)
 
-      const currentSlide = updatedSlides[editorState.activeSlideIndex]
-      if (currentSlide?.fabricJSON && canvasRef.current) {
-        await canvasRef.current.loadFromJSON(currentSlide.fabricJSON)
-        await applySlideBackground(canvasRef.current, currentSlide.background)
-        canvasRef.current.renderAll()
+      const currentSlide = updatedSlides[currentState.activeSlideIndex]
+      if (currentSlide) {
+        setCanvasPreviewDataURL(currentSlide.previewDataURL ?? null)
+        await loadSlideToCanvas(currentSlide, updatedSlides.length)
       }
     } catch (error) {
       console.error('Error applying theme:', error)
     } finally {
       setIsSavingAll(false)
     }
-  }, [activeTheme, editorState])
+  }, [customThemes, editingCustomTheme, loadSlideToCanvas])
+
+  const handleApplyThemeToAll = useCallback(async () => {
+    await applyThemeSelection(currentThemeId)
+  }, [applyThemeSelection, currentThemeId])
 
   const handleGlobalFontChange = useCallback(async (font: string) => {
     if (!editorState) return
@@ -3996,7 +4015,9 @@ export function FabricEditor({
               ) : leftTab === 'tema' ? (
                 <ThemePanel
                   currentThemeId={currentThemeId}
-                  onSelectTheme={setCurrentThemeId}
+                  onSelectTheme={(themeId) => {
+                    void applyThemeSelection(themeId)
+                  }}
                   activeTheme={activeTheme}
                   customThemes={customThemes}
                   onApplyAll={() => setShowThemeConfirm(true)}

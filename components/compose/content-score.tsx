@@ -15,8 +15,10 @@ import { getCaptionText, type PostFormat } from '@/lib/social-content'
 
 type ContentScoreProps = {
   angle: string
+  comparisonBaseline?: EditorialScoreData | null
   content: Record<string, unknown>
   format: PostFormat
+  onScoreDataChange?: (scoreData: EditorialScoreData | null) => void
   onRebalance?: (newContent: Record<string, unknown>) => void
   platform: Platform
   postId?: string
@@ -63,8 +65,10 @@ function getBarColor(key: EditorialFunctionKey, scoreData: EditorialScoreData) {
 
 export function ContentScore({
   angle,
+  comparisonBaseline,
   content,
   format,
+  onScoreDataChange,
   onRebalance,
   platform,
   postId,
@@ -114,7 +118,9 @@ export function ContentScore({
           throw new Error(data.error || 'No fue posible evaluar el contenido.')
         }
 
-        setScoreData(normalizeEditorialScoreData(data))
+        const normalizedScore = normalizeEditorialScoreData(data)
+
+        setScoreData(normalizedScore)
       } catch (fetchError) {
         if ((fetchError as Error).name === 'AbortError') {
           return
@@ -137,6 +143,10 @@ export function ContentScore({
       window.clearTimeout(timeoutId)
     }
   }, [angle, captionText, content, format, platform, postId])
+
+  useEffect(() => {
+    onScoreDataChange?.(scoreData)
+  }, [onScoreDataChange, scoreData])
 
   const handleRebalance = async () => {
     if (!scoreData?.rebalance_tip || rebalancing) {
@@ -194,6 +204,12 @@ export function ContentScore({
     return null
   }
 
+  const decreasedDimensions = comparisonBaseline && scoreData
+    ? editorialFunctionKeys.filter(
+        (key) => (scoreData?.[key]?.score ?? 0) < (comparisonBaseline[key]?.score ?? 0)
+      )
+    : []
+
   return (
     <div className="rounded-[24px] border border-white/10 bg-[#101417] p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -227,9 +243,26 @@ export function ContentScore({
             <div key={key} className="space-y-2">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-sm text-[#E0E5EB]">{editorialFunctionLabels[key]}</span>
-                <span className="text-xs font-medium text-[#B5BDCA]">
-                  {dimension?.score ?? 0}%
-                </span>
+                <div className="flex items-center gap-2">
+                  {comparisonBaseline && dimension ? (
+                    (() => {
+                      const delta = dimension.score - (comparisonBaseline[key]?.score ?? 0)
+
+                      if (delta <= 0) {
+                        return null
+                      }
+
+                      return (
+                        <span className="text-[11px] font-semibold text-[#4ADE80]">
+                          +{delta}%
+                        </span>
+                      )
+                    })()
+                  ) : null}
+                  <span className="text-xs font-medium text-[#B5BDCA]">
+                    {dimension?.score ?? 0}%
+                  </span>
+                </div>
               </div>
 
               <div className="h-2 overflow-hidden rounded-full bg-white/5">
@@ -255,6 +288,12 @@ export function ContentScore({
       {scoreData?.weak ? (
         <div className="mt-4 inline-flex rounded-full border border-[#FCD34D]/20 bg-[#FCD34D]/10 px-3 py-1.5 text-xs font-medium text-[#FCD34D]">
           ↓ {editorialWeakLabels[scoreData.weak]} necesita refuerzo
+        </div>
+      ) : null}
+
+      {decreasedDimensions.length > 0 ? (
+        <div className="mt-4 rounded-[18px] border border-[#FCD34D]/20 bg-[#FCD34D]/10 px-3 py-2 text-xs font-medium text-[#FCD34D]">
+          Revisa: {decreasedDimensions.map((key) => editorialFunctionLabels[key]).join(', ')} bajó. Considera revertir.
         </div>
       ) : null}
 

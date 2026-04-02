@@ -1,7 +1,7 @@
 import type { InstagramCarouselSlide } from '@/lib/social-content'
 
 type GradientStyle = NonNullable<InstagramCarouselSlide['gradient_style']>
-type SolidColor = '#101417' | '#212631'
+type SolidColor = string
 
 export type VisualEditorDraftBackground = {
   type: 'image' | 'gradient' | 'solid'

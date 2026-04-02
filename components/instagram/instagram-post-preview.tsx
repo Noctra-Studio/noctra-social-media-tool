@@ -2,7 +2,7 @@
 
 import Image from 'next/image'
 import { useEffect, useLayoutEffect, useState, useRef, type ChangeEvent, type FormEvent } from 'react'
-import { Bookmark, Heart, MessageCircle, Send, MoreHorizontal, Pencil, Search, Upload, Image as ImageIcon } from 'lucide-react'
+import { Bookmark, Heart, MessageCircle, Send, MoreHorizontal, Search, Upload, Image as ImageIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { InstagramCarouselSlide, SlideBackgroundSelection } from '@/lib/social-content'
 import {
@@ -52,7 +52,6 @@ interface InstagramPostPreviewProps {
   slide: InstagramCarouselSlide
   background?: SlideBackgroundSelection
   onBackgroundChange?: (background: SlideBackgroundSelection) => void
-  onOpenDetailEditor?: () => void
   onUpdateSlide?: (updates: Partial<InstagramCarouselSlide>) => void
   isVerified?: boolean
   audioName?: string
@@ -70,7 +69,6 @@ export function InstagramPostPreview({
   slide,
   background,
   onBackgroundChange,
-  onOpenDetailEditor,
   onUpdateSlide,
   isVerified = true,
   audioName = "A.R. Rahman, Alma Ferovic, Arjun Chandy · Tu...",
@@ -254,14 +252,6 @@ export function InstagramPostPreview({
       </div>
 
       <div className="mx-auto w-full max-w-[399px] flex flex-col gap-4">
-        <button
-          onClick={onOpenDetailEditor}
-          className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 py-3 text-sm font-medium text-white transition-all hover:bg-white/10"
-        >
-          <Pencil className="h-4 w-4" />
-          Personalizar diseño completo
-        </button>
-
         <div className="rounded-2xl border border-white/10 bg-[#161b24] p-4 shadow-lg">
           <div className="mb-4 flex items-center justify-between">
             <span className="text-[11px] font-bold uppercase tracking-wider text-[#4E576A]">Fondo</span>

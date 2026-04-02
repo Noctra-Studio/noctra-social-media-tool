@@ -47,6 +47,45 @@ type GeneratedPayload = {
   format: PostFormat
 }
 
+function clampHeadlineWords(value: string, maxWords = 10) {
+  return value
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, maxWords)
+    .join(' ')
+    .trim()
+}
+
+function deriveInstagramHeadline(...sources: string[]) {
+  for (const source of sources) {
+    const normalized = source.trim()
+
+    if (!normalized) {
+      continue
+    }
+
+    const firstLine = normalized
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find(Boolean)
+
+    if (!firstLine) {
+      continue
+    }
+
+    const firstSentence = firstLine.split(/(?<=[.!?])\s+/)[0]?.trim() || firstLine
+    const cleaned = firstSentence.replace(/[#*_`"]/g, '').trim()
+    const headline = clampHeadlineWords(cleaned)
+
+    if (headline) {
+      return headline
+    }
+  }
+
+  return ''
+}
+
 function getInstagramSinglePrompt(idea: string, angle: string, brandVoice: string, strategyContext: string) {
   return {
     system: withUserInputLanguageRule(`You are the lead content strategist for Noctra Studio, a boutique digital agency in Queretaro, Mexico.
@@ -63,6 +102,8 @@ Idea: ${idea}
 Angle: ${angle}
 
 Rules:
+- Return a "headline" for the visual/social title. Max 10 words. Punchy, specific, no hashtags.
+- Return a "body" for the on-image/post body copy. Max 45 words, 1-3 short sentences.
 - Caption max 150 words.
 - 5-8 hashtags, relevant and non-generic.
 - Strong first line.
@@ -71,6 +112,8 @@ Rules:
 
 Return ONLY valid JSON:
 {
+  "headline": "string",
+  "body": "string",
   "caption": "string",
   "hashtags": ["#tag"],
   "visual_direction": "string"
@@ -183,6 +226,25 @@ function buildPlatformPrompt(params: {
 
 function normalizeGeneratedPayload(platform: Platform, requestedFormat: PostFormat, content: Record<string, unknown>) {
   const inferredFormat = inferPostFormat(platform, content, requestedFormat)
+
+  if (platform === 'instagram' && inferredFormat === 'single') {
+    const caption = readString(content.caption)
+    const body = readString(content.body) || caption
+    const visualDirection = readString(content.visual_direction)
+    const headline = deriveInstagramHeadline(readString(content.headline), body, caption)
+
+    return {
+      content: {
+        body,
+        caption,
+        hashtags: readStringArray(content.hashtags),
+        headline,
+        ...(visualDirection ? { visual_direction: visualDirection } : {}),
+      },
+      exportMetadata: {},
+      format: inferredFormat,
+    } satisfies GeneratedPayload
+  }
 
   if (platform === 'x' && inferredFormat === 'tweet') {
     const tweet = readString(content.tweet) || readString(content.caption)

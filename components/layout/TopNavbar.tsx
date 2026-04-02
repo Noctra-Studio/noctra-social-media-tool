@@ -8,6 +8,7 @@ import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
 import { BookOpen, CalendarDays, Home, Layout, Lightbulb, Menu, SquarePen, X } from 'lucide-react'
 import { LocaleToggle } from '@/components/landing/locale-toggle'
 import { createClient } from '@/lib/supabase/client'
+import { motion, AnimatePresence } from 'framer-motion'
 
 type TopNavbarProps = {
   userAvatarUrl: string
@@ -92,7 +93,7 @@ export function TopNavbar({ userAvatarUrl, userEmail, userName }: TopNavbarProps
           <Link
             href="/compose"
             onClick={closeMenus}
-            className="group flex min-w-0 items-center gap-3 md:w-[220px]"
+            className="group flex min-w-0 items-center gap-3 lg:w-[220px]"
           >
             <Image
               src="/brand/favicon-light.svg"
@@ -114,7 +115,7 @@ export function TopNavbar({ userAvatarUrl, userEmail, userName }: TopNavbarProps
             </div>
           </Link>
 
-          <nav className="hidden flex-1 items-center justify-center gap-2 md:flex">
+          <nav className="hidden flex-1 items-center justify-center gap-2 lg:flex">
             {navigation.map(({ href, label }) => {
               const active = isNavigationActive(pathname, href)
 
@@ -140,7 +141,7 @@ export function TopNavbar({ userAvatarUrl, userEmail, userName }: TopNavbarProps
             })}
           </nav>
 
-          <div className="hidden items-center justify-end md:flex md:w-[220px]">
+          <div className="hidden items-center justify-end lg:flex lg:w-[220px]">
             <div className="relative" ref={profileMenuRef}>
               <button
                 type="button"
@@ -163,11 +164,164 @@ export function TopNavbar({ userAvatarUrl, userEmail, userName }: TopNavbarProps
                 )}
               </button>
 
-              {isProfileMenuOpen && (
-                <div className="absolute right-0 top-full z-50 mt-3 min-w-[220px] rounded-xl border border-[#2A3040] bg-[#212631] p-2 shadow-xl">
+              <AnimatePresence>
+                {isProfileMenuOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    className="absolute right-0 top-full z-50 mt-3 min-w-[220px] rounded-xl border border-[#2A3040] bg-[#212631] p-2 shadow-xl"
+                  >
+                    <div className="flex items-center gap-3 rounded-lg px-3 py-2">
+                      <div
+                        className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-[#4E576A] bg-[#212631] text-xs font-medium text-white"
+                        style={{ fontFamily: 'var(--font-brand-display, Satoshi, sans-serif)' }}
+                      >
+                        {hasAvatar ? (
+                          <Image
+                            src={userAvatarUrl}
+                            alt={displayName}
+                            fill
+                            className="object-cover"
+                            unoptimized
+                          />
+                        ) : (
+                          initials
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm text-[#E0E5EB]">{displayName}</p>
+                        <p className="truncate text-xs text-[#8D95A6]">{userEmail}</p>
+                        <div className="mt-2">
+                          <LocaleToggle compact />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="my-2 h-px bg-[#2A3040]" />
+
+                    <div className="grid gap-1">
+                      {settingsLinks.map((link) => (
+                        <Link
+                          key={link.href}
+                          href={link.href}
+                          onClick={() => setIsProfileMenuOpen(false)}
+                          className="block rounded-lg px-4 py-2.5 text-sm font-normal text-[#E0E5EB] transition-colors hover:bg-[#101417]"
+                        >
+                          {link.label}
+                        </Link>
+                      ))}
+                    </div>
+
+                    <div className="my-2 h-px bg-[#2A3040]" />
+
+                    <Link
+                      href="/tutorial"
+                      onClick={closeMenus}
+                      className="flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm font-normal text-[#E0E5EB] transition-colors hover:bg-[#101417]"
+                    >
+                      <BookOpen className="h-4 w-4 text-[#8D95A6]" />
+                      <span>{t('tutorial')}</span>
+                    </Link>
+
+                    <div className="my-2 h-px bg-[#2A3040]" />
+
+                    <button
+                      type="button"
+                      onClick={() => void handleSignOut()}
+                      disabled={isSigningOut}
+                      className="w-full rounded-lg px-4 py-2.5 text-left text-sm font-normal text-[#EF4444] transition-colors hover:bg-[#101417] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isSigningOut ? t('loggingOut') : t('logout')}
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 lg:hidden">
+            <button
+              type="button"
+              onClick={() => setIsMobileMenuOpen((current) => !current)}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-200 transition-colors hover:border-white/20 hover:bg-white/5 hover:text-white"
+              aria-expanded={isMobileMenuOpen}
+              aria-controls="mobile-navigation"
+              aria-label={isMobileMenuOpen ? t('closeMenu') : t('openMenu')}
+            >
+              <AnimatePresence mode="wait" initial={false}>
+                {isMobileMenuOpen ? (
+                  <motion.div
+                    key="close"
+                    initial={{ opacity: 0, rotate: -90 }}
+                    animate={{ opacity: 1, rotate: 0 }}
+                    exit={{ opacity: 0, rotate: 90 }}
+                    transition={{ duration: 0.15 }}
+                  >
+                    <X className="h-5 w-5" />
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="menu"
+                    initial={{ opacity: 0, rotate: 90 }}
+                    animate={{ opacity: 1, rotate: 0 }}
+                    exit={{ opacity: 0, rotate: -90 }}
+                    transition={{ duration: 0.15 }}
+                  >
+                    <Menu className="h-5 w-5" />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </button>
+          </div>
+        </div>
+
+        <AnimatePresence>
+          {isMobileMenuOpen && (
+            <motion.div
+              id="mobile-navigation"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ type: 'spring', bounce: 0, duration: 0.4 }}
+              className="overflow-hidden border-t border-white/10 bg-[#12161d] lg:hidden"
+            >
+              <div className="space-y-2 p-4">
+                {navigation.map(({ href, icon: Icon, label }, i) => {
+                  const active = isNavigationActive(pathname, href)
+
+                  return (
+                    <motion.div
+                      key={href}
+                      initial={{ x: -20, opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      transition={{ delay: 0.1 + i * 0.05 }}
+                    >
+                      <Link
+                        href={href}
+                        onClick={closeMenus}
+                        className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-colors ${
+                          active
+                            ? 'bg-white text-black'
+                            : 'text-zinc-300 hover:bg-white/[0.06] hover:text-white'
+                        }`}
+                      >
+                        <Icon className="h-4 w-4" />
+                        {label}
+                      </Link>
+                    </motion.div>
+                  )
+                })}
+
+                <motion.div
+                  initial={{ y: 20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.35 }}
+                  className="mt-4 rounded-xl border border-[#2A3040] bg-[#212631] p-2 shadow-xl"
+                >
                   <div className="flex items-center gap-3 rounded-lg px-3 py-2">
                     <div
-                      className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-[#4E576A] bg-[#212631] text-xs font-medium text-white"
+                      className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border-2 border-[#4E576A] bg-[#212631] text-xs font-medium text-white"
                       style={{ fontFamily: 'var(--font-brand-display, Satoshi, sans-serif)' }}
                     >
                       {hasAvatar ? (
@@ -198,7 +352,7 @@ export function TopNavbar({ userAvatarUrl, userEmail, userName }: TopNavbarProps
                       <Link
                         key={link.href}
                         href={link.href}
-                        onClick={() => setIsProfileMenuOpen(false)}
+                        onClick={closeMenus}
                         className="block rounded-lg px-4 py-2.5 text-sm font-normal text-[#E0E5EB] transition-colors hover:bg-[#101417]"
                       >
                         {link.label}
@@ -213,7 +367,7 @@ export function TopNavbar({ userAvatarUrl, userEmail, userName }: TopNavbarProps
                     onClick={closeMenus}
                     className="flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm font-normal text-[#E0E5EB] transition-colors hover:bg-[#101417]"
                   >
-                    <BookOpen className="h-4 w-4 text-[#8D95A6]" />
+                    < BookOpen className="h-4 w-4 text-[#8D95A6]" />
                     <span>{t('tutorial')}</span>
                   </Link>
 
@@ -227,116 +381,11 @@ export function TopNavbar({ userAvatarUrl, userEmail, userName }: TopNavbarProps
                   >
                     {isSigningOut ? t('loggingOut') : t('logout')}
                   </button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 md:hidden">
-            <button
-              type="button"
-              onClick={() => setIsMobileMenuOpen((current) => !current)}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-200 transition-colors hover:border-white/20 hover:bg-white/5 hover:text-white"
-              aria-expanded={isMobileMenuOpen}
-              aria-controls="mobile-navigation"
-              aria-label={isMobileMenuOpen ? t('closeMenu') : t('openMenu')}
-            >
-              {isMobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-            </button>
-          </div>
-        </div>
-
-        {isMobileMenuOpen && (
-          <div
-            id="mobile-navigation"
-            className="border-t border-white/10 bg-[#12161d] px-4 py-4 md:hidden"
-          >
-            <div className="space-y-2">
-              {navigation.map(({ href, icon: Icon, label }) => {
-                const active = isNavigationActive(pathname, href)
-
-                return (
-                  <Link
-                    key={href}
-                    href={href}
-                    onClick={closeMenus}
-                    className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-colors ${
-                      active ? 'bg-white text-black' : 'text-zinc-300 hover:bg-white/[0.06] hover:text-white'
-                    }`}
-                  >
-                    <Icon className="h-4 w-4" />
-                    {label}
-                  </Link>
-                )
-              })}
-            </div>
-
-            <div className="mt-4 rounded-xl border border-[#2A3040] bg-[#212631] p-2 shadow-xl">
-              <div className="flex items-center gap-3 rounded-lg px-3 py-2">
-                <div
-                  className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border-2 border-[#4E576A] bg-[#212631] text-xs font-medium text-white"
-                  style={{ fontFamily: 'var(--font-brand-display, Satoshi, sans-serif)' }}
-                >
-                  {hasAvatar ? (
-                    <Image
-                      src={userAvatarUrl}
-                      alt={displayName}
-                      fill
-                      className="object-cover"
-                      unoptimized
-                    />
-                  ) : (
-                    initials
-                  )}
-                </div>
-                <div className="min-w-0">
-                  <p className="truncate text-sm text-[#E0E5EB]">{displayName}</p>
-                  <p className="truncate text-xs text-[#8D95A6]">{userEmail}</p>
-                  <div className="mt-2">
-                    <LocaleToggle compact />
-                  </div>
-                </div>
+                </motion.div>
               </div>
-
-              <div className="my-2 h-px bg-[#2A3040]" />
-
-              <div className="grid gap-1">
-                {settingsLinks.map((link) => (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    onClick={closeMenus}
-                    className="block rounded-lg px-4 py-2.5 text-sm font-normal text-[#E0E5EB] transition-colors hover:bg-[#101417]"
-                  >
-                    {link.label}
-                  </Link>
-                ))}
-              </div>
-
-              <div className="my-2 h-px bg-[#2A3040]" />
-
-              <Link
-                href="/tutorial"
-                onClick={closeMenus}
-                className="flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm font-normal text-[#E0E5EB] transition-colors hover:bg-[#101417]"
-              >
-                <BookOpen className="h-4 w-4 text-[#8D95A6]" />
-                <span>{t('tutorial')}</span>
-              </Link>
-
-              <div className="my-2 h-px bg-[#2A3040]" />
-
-              <button
-                type="button"
-                onClick={() => void handleSignOut()}
-                disabled={isSigningOut}
-                className="w-full rounded-lg px-4 py-2.5 text-left text-sm font-normal text-[#EF4444] transition-colors hover:bg-[#101417] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isSigningOut ? t('loggingOut') : t('logout')}
-              </button>
-            </div>
-          </div>
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </header>
   )

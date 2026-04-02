@@ -63,7 +63,6 @@ export function ThemePanel({
             <button
               key={theme.id}
               onClick={() => onSelectTheme(theme.id)}
-              onDoubleClick={onApplyAll}
               className={cn(
                 "group relative h-[48px] w-full overflow-hidden rounded-lg border-2 transition-all",
                 currentThemeId === theme.id ? "border-[#E0E5EB] scale-[1.02]" : "border-transparent hover:border-white/10"
