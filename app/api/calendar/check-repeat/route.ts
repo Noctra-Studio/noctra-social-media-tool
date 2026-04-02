@@ -39,9 +39,9 @@ export async function POST(req: Request) {
       model: "claude-haiku-4-5-20251001",
       max_tokens: 300,
       temperature: 0.1,
-      system: "You detect if a new post idea repeats a topic already covered recently. Respond ONLY with JSON: { \"is_repeat\": boolean, \"similar_post_id\"?: string, \"similarity_reason\"?: string }",
+      system: "Eres un estratega editorial experto. Tu tarea es detectar si una nueva idea de post repite un ángulo o gancho ya cubierto recientemente. Responde EXCLUSIVAMENTE con un JSON: { \"is_repeat\": boolean, \"similar_post_id\"?: string, \"similarity_reason\"?: string }. \n\nREGLAS CRÍTICAS:\n1. El 'similarity_reason' debe ser una breve explicación conversacional en ESPAÑOL resaltando el ángulo que se repite (ej. 'Este post usa el mismo ejemplo de ChatGPT que el del martes').\n2. PROHIBIDO incluir IDs técnicos, UUIDs o terminología de base de datos en la razón.\n3. Si no hay repetición clara, is_repeat es false.",
       messages: [
-        { role: "user", content: `New idea: ${idea}\n\nRecent posts: \n${postsSummary}` }
+        { role: "user", content: `Nueva idea: ${idea}\n\nPosts recientes: \n${postsSummary}` }
       ]
     });
 

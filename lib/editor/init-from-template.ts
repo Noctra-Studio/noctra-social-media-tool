@@ -70,9 +70,7 @@ export function initSlideFromTemplate(
           text = slideData.stat_or_example || '00'
           break
         case 'eyebrow':
-          text = slideData.visual_direction
-            ? slideData.visual_direction.toUpperCase()
-            : (props.text as string) || ''
+          text = (props.text as string) || ''
           break
         case 'counter':
           text = slideNumber.toString().padStart(2, '0')

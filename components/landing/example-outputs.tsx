@@ -3,6 +3,7 @@
 import { ArrowRight } from 'lucide-react'
 import { landingContent, type LandingLocale } from '@/components/landing/content'
 import { SectionLabel, SectionReveal } from '@/components/landing/section-reveal'
+import { ExampleGallery } from './example-gallery'
 import type { Platform } from '@/lib/product'
 
 type ExampleOutputsProps = {
@@ -78,6 +79,8 @@ export function ExampleOutputs({ locale, onShowPlatformDemo }: ExampleOutputsPro
             ))}
           </div>
         </div>
+        {/* Real Output Gallery */}
+        <ExampleGallery locale={locale} />
       </div>
     </SectionReveal>
   )

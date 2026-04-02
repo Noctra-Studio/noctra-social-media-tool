@@ -8,6 +8,7 @@ import { ExampleOutputs } from '@/components/landing/example-outputs'
 import { LandingFooter } from '@/components/landing/footer'
 import { Faq } from '@/components/landing/faq'
 import { Features } from '@/components/landing/features'
+import { EditorShowcase } from '@/components/landing/editor-showcase'
 import { ForWho } from '@/components/landing/for-who'
 import { Hero } from '@/components/landing/hero'
 import { HowItWorks } from '@/components/landing/how-it-works'
@@ -47,6 +48,7 @@ export function LandingPage() {
         />
         <HowItWorks locale={locale} />
         <Features locale={locale} />
+        <EditorShowcase locale={locale} />
         <ForWho locale={locale} />
         <Comparison locale={locale} />
         <ExampleOutputs locale={locale} onShowPlatformDemo={handleShowPlatformDemo} />

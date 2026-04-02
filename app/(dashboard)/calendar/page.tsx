@@ -234,7 +234,7 @@ export default function CalendarPage() {
       };
 
       if (data.is_repeat) {
-        setRepeatWarning(`⚠️ Este tema es similar a un post reciente. ${data.similarity_reason || ''}`);
+        setRepeatWarning(data.similarity_reason || 'Detectamos un ángulo similar en tus posts recientes.');
       } else {
         setRepeatWarning(null);
       }
@@ -411,9 +411,25 @@ export default function CalendarPage() {
       </div>
 
       {repeatWarning && (
-        <div className="flex items-center gap-3 rounded-2xl border border-yellow-500/40 bg-yellow-500/10 p-3 text-yellow-200">
-          <AlertTriangle size={18} />
-          <span className="text-sm font-medium">{repeatWarning}</span>
+        <div className="animate-in fade-in slide-in-from-top-4 relative overflow-hidden rounded-2xl border border-amber-500/20 bg-[#171B22]/40 p-4 transition-all backdrop-blur-xl">
+          <div className="absolute inset-0 bg-amber-500/[0.03]" />
+          <div className="relative flex items-start gap-4">
+            <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-500/10 text-amber-300">
+              <AlertTriangle size={16} />
+            </div>
+            <div className="flex-1 space-y-1">
+              <h4 className="text-sm font-bold text-amber-200">Sugerencia editorial</h4>
+              <p className="text-sm leading-relaxed text-amber-200/70">
+                {repeatWarning}
+              </p>
+            </div>
+            <button 
+              onClick={() => setRepeatWarning(null)}
+              className="rounded-lg bg-white/5 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-amber-200 hover:bg-white/10"
+            >
+              Cerrar
+            </button>
+          </div>
         </div>
       )}
 

@@ -100,6 +100,7 @@ import { ImagePanel } from '@/components/editor/image-panel'
 import { FilterPanel } from '@/components/editor/canvas/filter-panel'
 import { FeedPreview } from '@/components/instagram/feed-preview'
 import { CritiquePanel } from '@/components/editor/critique-panel'
+import { ConfirmationModal } from './confirmation-modal'
 import '@/lib/editor/text-effects'
 import { cn } from '@/lib/utils'
 import type { Platform } from '@/lib/product'
@@ -399,14 +400,6 @@ function getScenePoint(event: unknown) {
   }
 
   return { x: 120, y: 120 }
-}
-
-function safeConfirm(message: string) {
-  if (typeof window === 'undefined') {
-    return true
-  }
-
-  return window.confirm(message)
 }
 
 function createTextbox(options: ConstructorParameters<typeof Textbox>[1]) {
@@ -3016,24 +3009,58 @@ export function FabricEditor({
     void loadSlideToCanvas(nextSlides[current.activeSlideIndex + 1], nextSlides.length)
   }, [loadSlideToCanvas, persistCurrentCanvas])
 
+  const [confirmation, setConfirmation] = useState<{
+    isOpen: boolean
+    title: string
+    message: string
+    confirmLabel?: string
+    onConfirm: () => void
+    variant?: 'danger' | 'warning' | 'info'
+  }>({ isOpen: false, title: '', message: '', onConfirm: () => {} })
+
   const handleDeleteSlide = useCallback(() => {
     const current = editorStateRef.current
 
-    if (!current || current.slides.length <= 1 || !safeConfirm('¿Eliminar este slide?')) {
+    if (!current || current.slides.length <= 1) {
       return
     }
 
-    const nextSlides = normalizeSlideNumbers(current.slides.filter((_, index) => index !== current.activeSlideIndex))
-    const nextIndex = Math.max(0, current.activeSlideIndex - 1)
+    setConfirmation({
+      isOpen: true,
+      title: '¿Eliminar este slide?',
+      message: 'Esta acción no se puede deshacer y perderás todo el contenido de este slide.',
+      confirmLabel: 'Eliminar',
+      variant: 'danger',
+      onConfirm: () => {
+        const nextSlides = normalizeSlideNumbers(current.slides.filter((_, index) => index !== current.activeSlideIndex))
+        const nextIndex = Math.max(0, current.activeSlideIndex - 1)
 
-    setEditorState({
-      activeSlideIndex: nextIndex,
-      isDirty: true,
-      slides: nextSlides,
+        setEditorState({
+          activeSlideIndex: nextIndex,
+          isDirty: true,
+          slides: nextSlides,
+        })
+
+        void loadSlideToCanvas(nextSlides[nextIndex], nextSlides.length)
+      }
     })
-
-    void loadSlideToCanvas(nextSlides[nextIndex], nextSlides.length)
   }, [loadSlideToCanvas])
+
+  const handleAttemptClose = useCallback(() => {
+    if (editorState.isDirty) {
+      setConfirmation({
+        isOpen: true,
+        title: 'Cambios sin guardar',
+        message: 'Tienes cambios que no han sido guardados. ¿Estás seguro de que quieres salir? Se perderán los cambios recientes.',
+        confirmLabel: 'Salir de todos modos',
+        variant: 'warning',
+        onConfirm: () => onClose()
+      })
+      return
+    }
+
+    onClose()
+  }, [editorState.isDirty, onClose])
 
   const calculateCoherence = useCallback(() => {
     if (editorState.slides.length <= 1) {
@@ -3303,13 +3330,7 @@ export function FabricEditor({
     setIsSavingAll(false)
   }, [activeFilterCSS, activeFilterId, loadSlideToCanvas, onSave, persistCurrentCanvas])
 
-  const handleAttemptClose = useCallback(() => {
-    if (editorState.isDirty && !safeConfirm('Tienes cambios sin guardar. ¿Cerrar de todos modos?')) {
-      return
-    }
 
-    onClose()
-  }, [editorState.isDirty, onClose])
 
   const handleDragEnd = useCallback(
     async (event: DragEndEvent) => {
@@ -4152,26 +4173,24 @@ export function FabricEditor({
                 <div
                   className="pointer-events-none absolute border-r border-b border-white/8 bg-[#0D1014]"
                   style={{
-                    left: canvasLeft - 20,
-                    top: canvasTop - 20,
+                    left: 0,
+                    top: 0,
                     width: 20,
                     height: 20,
-                    zIndex: 31,
+                    zIndex: 41,
                   }}
                 />
                 <CanvasRuler
                   canvasSize={CANVAS_SIZE}
                   orientation="horizontal"
                   scale={canvasScale}
-                  canvasLeft={canvasLeft}
-                  canvasTop={canvasTop}
+                  offset={canvasLeft}
                 />
                 <CanvasRuler
                   canvasSize={CANVAS_SIZE}
                   orientation="vertical"
                   scale={canvasScale}
-                  canvasLeft={canvasLeft}
-                  canvasTop={canvasTop}
+                  offset={canvasTop}
                 />
               </div>
             )}
@@ -4373,6 +4392,16 @@ export function FabricEditor({
         handle="noctra_studio"
         postText={caption}
         caption={previewCaption}
+      />
+
+      <ConfirmationModal
+        isOpen={confirmation.isOpen}
+        title={confirmation.title}
+        message={confirmation.message}
+        confirmLabel={confirmation.confirmLabel}
+        variant={confirmation.variant}
+        onConfirm={confirmation.onConfirm}
+        onClose={() => setConfirmation({ ...confirmation, isOpen: false })}
       />
     </div>
   )

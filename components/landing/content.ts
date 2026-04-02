@@ -140,6 +140,16 @@ export const landingContent = {
         id: 'authority',
       },
     ] satisfies ExampleOutput[],
+    gallery: {
+      heading: {
+        en: 'Studio-grade output.',
+        es: 'Resultados de grado estudio.',
+      },
+      subheading: {
+        en: 'A sample of how the engine transforms your ideas into high-performance assets for every platform.',
+        es: 'Una muestra de cómo el motor transforma tus ideas en activos de alto rendimiento para cada plataforma.',
+      },
+    },
   },
   navbar: {
     links: [
@@ -433,6 +443,26 @@ export const landingContent = {
         },
       },
     ] satisfies Feature[],
+  },
+  editorShowcase: {
+    heading: {
+      en: 'Absolute control over every pixel.',
+      es: 'Control absoluto sobre cada píxel.',
+    },
+    label: {
+      en: 'PRO DESIGN ENGINE',
+      es: 'MOTOR DE DISEÑO PRO',
+    },
+    subheading: {
+      en: "Noctra Social isn't a black box. Our studio-grade editor gives you total creative freedom to adjust typography, layers, and themes with professional precision.",
+      es: "Noctra Social no es una caja negra. Nuestro editor de grado estudio te da total libertad creativa para ajustar tipografía, capas y temas con precisión profesional.",
+    },
+    features: [
+      { en: 'Fluid Type Scale', es: 'Escala Tipográfica Fluida' },
+      { en: 'Layer Management', es: 'Gestión de Capas' },
+      { en: 'Custom Branding', es: 'Branding Personalizado' },
+      { en: 'UHD Export', es: 'Exportación UHD' },
+    ],
   },
   comparison: {
     heading: {
