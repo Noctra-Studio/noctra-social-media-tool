@@ -57,6 +57,20 @@ type ExampleOutput = {
   id: string
 }
 
+type PricingPlan = {
+  title: LocalizedText
+  monthly: {
+    regular: number
+    founder: number
+  }
+  annual: {
+    regular: number
+    founder: number
+  }
+  features: LocalizedText[]
+  popular?: boolean
+}
+
 export const landingContent = {
   exampleOutputs: {
     heading: {
@@ -527,35 +541,85 @@ export const landingContent = {
     },
   },
   pricing: {
-    badge: {
-      en: 'Priority Access',
-      es: 'Acceso Prioritario',
-    },
-    button: {
-      en: 'Join the priority list',
-      es: 'Unirme a la lista prioritaria',
-    },
     heading: {
-      en: 'Internal Release — Founding Members.',
-      es: 'Release Interno — Miembros Fundadores.',
+      en: 'Clear pricing for building content with a system',
+      es: 'Precios claros para construir contenido con sistema',
+    },
+    subheading: {
+      en: 'Choose a plan, lock your founder price, and scale at your pace.',
+      es: 'Elige un plan, bloquea tu precio fundador y escala a tu ritmo.',
+    },
+    founderBadge: {
+      en: 'Founder pricing',
+      es: 'Precio fundador',
+    },
+    founderNote: {
+      en: 'Keep this price as long as your subscription remains active.',
+      es: 'Mantén este precio mientras tu suscripción siga activa.',
+    },
+    urgencyNote: {
+      en: 'Available for early adopters',
+      es: 'Disponible para early adopters',
+    },
+    currencyNote: {
+      en: 'USD prices are based on a reference exchange rate.',
+      es: 'Precios en USD basados en tipo de cambio de referencia.',
     },
     label: {
       en: 'PRICING',
       es: 'PRECIOS',
     },
     note: {
-      en: 'Noctra Social is currently in an exclusive release phase. We only invite founding members that fit our high-performance profile.',
-      es: 'Noctra Social está actualmente en fase de release exclusiva. Solo invitamos a miembros fundadores que se ajusten a nuestro perfil.',
+      en: 'Choose a plan, lock your founder price, and scale at your pace.',
+      es: 'Elige un plan, bloquea tu precio fundador y escala a tu ritmo.',
     },
-    responseTime: {
-      en: 'Internal review in under 48 hours.',
-      es: 'Revisión interna en menos de 48 horas.',
+    billing: {
+      monthly: { en: 'Monthly', es: 'Mensual' },
+      annual: { en: 'Annual', es: 'Anual' },
     },
-    subtitle: {
-      en: 'AI-native Content Authority System',
-      es: 'Sistema de Autoridad de Contenido nativo en IA',
+    cta: {
+      en: 'Join the priority list',
+      es: 'Unirme a la lista prioritaria',
     },
-    title: 'Noctra Social',
+    plans: [
+      {
+        title: { en: 'Founder', es: 'Fundador' },
+        monthly: { regular: 349, founder: 249 },
+        annual: { regular: 3348, founder: 2388 },
+        features: [
+          { en: '1 brand', es: '1 marca' },
+          { en: '3 platforms', es: '3 plataformas' },
+          { en: '60 generations / mo', es: '60 generaciones / mes' },
+          { en: 'Brand voice', es: 'Brand voice' },
+          { en: 'Content pillars', es: 'Pilares de contenido' },
+        ],
+      },
+      {
+        title: { en: 'Studio', es: 'Estudio' },
+        monthly: { regular: 749, founder: 599 },
+        annual: { regular: 7188, founder: 5988 },
+        popular: true,
+        features: [
+          { en: 'Up to 3 brands', es: 'Hasta 3 marcas' },
+          { en: '180 generations / mo', es: '180 generaciones / mes' },
+          { en: 'Editorial calendar', es: 'Calendario editorial' },
+          { en: 'Idea bank', es: 'Banco de ideas' },
+          { en: 'Priority support', es: 'Soporte prioritario' },
+        ],
+      },
+      {
+        title: { en: 'Agency', es: 'Agencia' },
+        monthly: { regular: 1490, founder: 1190 },
+        annual: { regular: 14280, founder: 11880 },
+        features: [
+          { en: 'Up to 10 brands', es: 'Hasta 10 marcas' },
+          { en: '500 generations / mo', es: '500 generaciones / mes' },
+          { en: 'Multi-brand workflow', es: 'Multi-brand workflow' },
+          { en: 'Custom branding', es: 'Branding personalizado' },
+          { en: 'Concierge onboarding', es: 'Onboarding prioritario' },
+        ],
+      },
+    ] satisfies PricingPlan[],
   },
   faq: {
     heading: {
