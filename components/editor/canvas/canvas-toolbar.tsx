@@ -26,7 +26,7 @@ export type CanvasToolbarProps = {
   onToggleLock: () => void;
   isLocked: boolean;
   onPreview: () => void;
-  onExport: () => void;
+  onExport?: () => void;
   onUndo: () => void;
   onRedo: () => void;
   canUndo: boolean;
@@ -156,15 +156,17 @@ export function CanvasToolbar({
           <span className="whitespace-nowrap">Vista previa</span>
         </button>
 
-        <button
-          type="button"
-          onClick={onExport}
-          className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-2 text-sm font-semibold text-neutral-950 transition-opacity hover:opacity-90"
-          title="Exportar"
-        >
-          <Download className="h-4 w-4" />
-          <span className="whitespace-nowrap">Exportar</span>
-        </button>
+        {onExport && (
+          <button
+            type="button"
+            onClick={onExport}
+            className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-2 text-sm font-semibold text-neutral-950 transition-opacity hover:opacity-90"
+            title="Exportar"
+          >
+            <Download className="h-4 w-4" />
+            <span className="whitespace-nowrap">Exportar</span>
+          </button>
+        )}
       </div>
     </div>
   );

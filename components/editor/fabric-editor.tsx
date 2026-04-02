@@ -87,6 +87,7 @@ import {
   Eye,
   Square,
   History as HistoryIcon,
+  Monitor,
 } from 'lucide-react'
 import { AlignmentToolbar } from './alignment-toolbar'
 import { CanvasRuler } from './canvas-ruler'
@@ -915,6 +916,9 @@ export function FabricEditor({
   const [viewportHeight, setViewportHeight] = useState(
     typeof window === 'undefined' ? 900 : window.innerHeight
   )
+  const [isDesktopSize, setIsDesktopSize] = useState(
+    typeof window === 'undefined' ? true : window.innerWidth >= 1280
+  )
   const [isBootstrapping, setIsBootstrapping] = useState(true)
   const [isSavingAll, setIsSavingAll] = useState(false)
   const [isExportModalOpen, setIsExportModalOpen] = useState(false)
@@ -928,6 +932,14 @@ export function FabricEditor({
   const [activeFilterCSS, setActiveFilterCSS] = useState(initialActiveFilterCSS)
   const [canvasPreviewDataURL, setCanvasPreviewDataURL] = useState<string | null>(null)
   const previewTimeoutRef = useRef<number | null>(null)
+
+  // Illustrator-style workspace states
+  const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 })
+  const [isPanning, setIsPanning] = useState(false)
+  const panStartRef = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null)
+  const workAreaRef = useRef<HTMLDivElement>(null)
+  const [spaceHeld, setSpaceHeld] = useState(false)
+  const [canvasScale, setCanvasScale] = useState(getScaleForCanvas(viewportWidth, viewportHeight))
 
   const handleExportSuccess = useCallback(async (pId: string, platform: string, format: string) => {
     try {
@@ -969,9 +981,6 @@ export function FabricEditor({
   const history = activeSlide ? historiesRef.current[activeSlide.id] : undefined
   const canUndo = Boolean(history && history.cursor > 0)
   const canRedo = Boolean(history && history.cursor < history.states.length - 1)
-  const showDesktopProperties = viewportWidth >= 1200
-  const showMobileOnlyMessage = viewportWidth < 768
-  const canvasScale = getScaleForCanvas(viewportWidth, viewportHeight)
   const previewFormat = platform === 'instagram' ? 'carousel_slide' : 'single_image'
   const exportFormatKey = previewFormat
   const isActiveObjectLocked = Boolean(selectedObject?.get('isLocked'))
@@ -1650,6 +1659,7 @@ export function FabricEditor({
     const handleResize = () => {
       setViewportWidth(window.innerWidth)
       setViewportHeight(window.innerHeight)
+      setIsDesktopSize(window.innerWidth >= 1280)
     }
 
     handleResize()
@@ -2090,6 +2100,12 @@ export function FabricEditor({
             target.getAttribute('contenteditable') === 'true')
       )
 
+      if (event.code === 'Space' && !isInputTarget) {
+        event.preventDefault()
+        setSpaceHeld(true)
+        return
+      }
+
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
         event.preventDefault()
 
@@ -2262,9 +2278,19 @@ export function FabricEditor({
       }
     }
 
-    window.addEventListener('keydown', handleKeyDown)
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.code === 'Space') {
+        setSpaceHeld(false)
+      }
+    }
 
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('keyup', handleKeyUp)
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keyup', handleKeyUp)
+    }
   }, [handleRedo, handleUndo, setCanvasToolMode, updateSelectedObject])
 
   const updateSelectedObjectProperty = useCallback(
@@ -3014,11 +3040,38 @@ export function FabricEditor({
 
   const propertiesPanel = renderRightPanel()
 
+  if (!isDesktopSize) {
+    return (
+      <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-6 bg-[#0A0C0F] p-8 text-center">
+        <div className="rounded-full border border-white/10 bg-white/5 p-4">
+          <Monitor className="h-8 w-8 text-[#4E576A]" />
+        </div>
+        <div className="space-y-2">
+          <p className="text-lg font-medium text-[#E0E5EB]">
+            Editor disponible solo en desktop
+          </p>
+          <p className="text-sm text-[#8D95A6] max-w-xs">
+            Necesitas una pantalla de al menos 1280px para usar el editor de carrusel completo.
+          </p>
+        </div>
+        <button
+          onClick={onClose}
+          className="rounded-full border border-white/10 px-6 py-2.5 text-sm text-[#E0E5EB] transition-colors hover:bg-white/5"
+        >
+          Volver
+        </button>
+      </div>
+    )
+  }
+
   return (
     <div className="fixed inset-0 z-[60] bg-[#0A0C0F] text-[#E0E5EB]">
       <div className="flex h-full flex-col">
-        <header className="flex h-[52px] items-center justify-between border-b border-white/8 bg-[#0F1317] px-4">
-          <div className="flex items-center gap-2">
+        {/* HEADER REORGANIZADO — 4 ZONAS */}
+        <header className="flex h-[52px] flex-shrink-0 items-center justify-between border-b border-white/8 bg-[#0F1317] px-4 gap-4">
+          
+          {/* ZONA 1 — Herramientas de dibujo (izquierda fija) */}
+          <div className="flex flex-shrink-0 items-center gap-1">
             {[
               { icon: MousePointer2, key: 'select', label: 'V' },
               { icon: Type, key: 'text', label: 'T' },
@@ -3040,7 +3093,151 @@ export function FabricEditor({
             ))}
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* ZONA 2 — Acciones contextuales y tipografía (centro izquierda) */}
+          <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+            {isTextbox(activeObject) && (
+              <div className="flex items-center gap-1 rounded-xl border border-white/8 bg-[#14171C] px-2 py-1 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const shadow = activeObject.shadow as Shadow | null
+                    if (shadow) {
+                      activeObject.set('shadow', null)
+                    } else {
+                      activeObject.set('shadow', new Shadow({ color: 'rgba(0,0,0,0.5)', blur: 8, offsetX: 4, offsetY: 4 }))
+                    }
+                    canvasRef.current?.renderAll()
+                    commitCanvasMutation()
+                  }}
+                  className={cn(
+                    "flex h-7 w-7 items-center justify-center rounded-lg transition-colors",
+                    activeObject.shadow ? "bg-[#E0E5EB] text-[#101417]" : "text-[#4E576A] hover:bg-white/5 hover:text-[#8D95A6]"
+                  )}
+                  title="Sombra"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (activeObject.stroke && activeObject.stroke !== 'transparent') {
+                      activeObject.set({ stroke: 'transparent', strokeWidth: 0 })
+                    } else {
+                      activeObject.set({ stroke: '#462D6E', strokeWidth: 2 })
+                    }
+                    canvasRef.current?.renderAll()
+                    commitCanvasMutation()
+                  }}
+                  className={cn(
+                    "flex h-7 w-7 items-center justify-center rounded-lg transition-colors",
+                    (activeObject.stroke && activeObject.stroke !== 'transparent') ? "bg-[#E0E5EB] text-[#101417]" : "text-[#4E576A] hover:bg-white/5 hover:text-[#8D95A6]"
+                  )}
+                  title="Contorno"
+                >
+                  <Type className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const data = (activeObject as any).data || {}
+                    if (!data.originalText) data.originalText = activeObject.text
+                    const isUpper = data.textTransform === 'upper'
+                    const nextText = isUpper ? data.originalText : data.originalText.toUpperCase()
+                    activeObject.set({ text: nextText, data: { ...data, textTransform: isUpper ? 'original' : 'upper' } })
+                    canvasRef.current?.renderAll()
+                    commitCanvasMutation()
+                  }}
+                  className={cn(
+                    "flex h-7 w-7 items-center justify-center rounded-lg transition-colors",
+                    (activeObject as any).data?.textTransform === 'upper' ? "bg-[#E0E5EB] text-[#101417]" : "text-[#4E576A] hover:bg-white/5 hover:text-[#8D95A6]"
+                  )}
+                  title="Mayúsculas"
+                >
+                  <CaseSensitive className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const current = activeObject.charSpacing ?? 0
+                    const next = current === 0 ? 150 : 0
+                    updateTextboxProperty({ charSpacing: next })
+                  }}
+                  className={cn(
+                    "flex h-7 w-7 items-center justify-center rounded-lg transition-colors",
+                    (activeObject.charSpacing ?? 0) > 0 ? "bg-[#E0E5EB] text-[#101417]" : "text-[#4E576A] hover:bg-white/5 hover:text-[#8D95A6]"
+                  )}
+                  title="Espaciado"
+                >
+                  <AlignJustify className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+
+            {/* Tipografía Global controls */}
+            <div className="flex items-center gap-1 rounded-xl border border-white/8 bg-[#14171C] px-2 py-1 flex-shrink-0">
+              <Tooltip content="Unificar Fuente">
+                <button 
+                  onClick={() => handleGlobalFontChange(activeTheme.fontHeading)}
+                  className="flex h-7 items-center gap-2 rounded-lg px-2 text-[10px] font-bold text-[#E0E5EB] transition-colors hover:bg-white/5"
+                >
+                  <TypeIcon className="h-3 w-3" />
+                  Fuente
+                </button>
+              </Tooltip>
+              <div className="h-3 w-[1px] bg-white/10" />
+              <Tooltip content="Unificar Acento">
+                <button 
+                  onClick={() => handleGlobalAccentChange(activeTheme.accent)}
+                  className="flex h-7 items-center gap-2 rounded-lg px-2 text-[10px] font-bold text-[#E0E5EB] transition-colors hover:bg-white/5"
+                >
+                  <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: activeTheme.accent }} />
+                  Acento
+                </button>
+              </Tooltip>
+              <div className="h-3 w-[1px] bg-white/10" />
+              <button 
+                onClick={() => handleGlobalScaleChange(false)} 
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-[#8D95A6] hover:bg-white/5 hover:text-[#E0E5EB]"
+              >
+                <Baseline className="h-3 w-3" />
+              </button>
+              <button 
+                onClick={() => handleGlobalScaleChange(true)} 
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-[#8D95A6] hover:bg-white/5 hover:text-[#E0E5EB]"
+              >
+                <Baseline className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* ZONA 3 — Acciones del documento (centro derecha) */}
+          <div className="flex flex-shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={async () => {
+                const canvas = canvasRef.current
+                if (!canvas) return
+                const logo = await createLogoObject(getLogoVariantForBackground(activeBackground ?? { type: 'solid', solidColor: '#101417' }))
+                canvas.add(logo)
+                canvas.setActiveObject(logo)
+                canvas.requestRenderAll()
+                commitCanvasMutation()
+              }}
+              className={`${TOOL_BUTTON_CLASS} border-white/8`}
+              title="Añadir Logo Noctra"
+            >
+              <NoctraLogoBadge />
+            </button>
+            
+            <button
+              type="button"
+              onClick={() => setLeftTab('imagen')}
+              className={`${TOOL_BUTTON_CLASS} border-white/8`}
+              title="Fondo Unsplash"
+            >
+              <ImageIcon className="h-4 w-4" />
+            </button>
+
             <button
               type="button"
               onClick={() => handleAnalyzeDesign()}
@@ -3048,159 +3245,46 @@ export function FabricEditor({
               className={`${TOOL_BUTTON_CLASS} ${
                 activeRightPanel === 'critique' ? 'border-[#462D6E] bg-[#462D6E]/20 text-white' : 'border-white/8'
               }`}
-              title={critiqueCooldown > 0 ? `Analizar (${critiqueCooldown}s)` : 'Revisar con IA'}
+              title="Criticar con IA"
             >
               <Sparkles className={cn("h-4 w-4", isAnalyzingDesign && "animate-pulse")} />
-              <span className="ml-2 text-xs font-bold hidden md:inline">Revisar con IA</span>
             </button>
 
             <button
               type="button"
-              onClick={() => {
-                void openPreview()
-              }}
-              className={`${TOOL_BUTTON_CLASS} ${isPreviewOpen ? 'border-[#4E576A] bg-[#212631] text-[#E0E5EB]' : 'border-white/8'}`}
-              title="Vista previa inmersiva"
+              onClick={() => void openPreview()}
+              className={`${TOOL_BUTTON_CLASS} border-white/8`}
+              title="Vista previa"
             >
               <Eye className="h-4 w-4" />
             </button>
-          </div>
 
-          <div className="flex items-center gap-3">
-            {isTextbox(activeObject) && (
-              <>
-                <div className="flex items-center gap-1.5 rounded-xl border border-white/8 bg-[#14171C] px-2 py-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const shadow = activeObject.shadow as Shadow | null
-                      if (shadow) {
-                        activeObject.set('shadow', null)
-                      } else {
-                        activeObject.set('shadow', new Shadow({ color: 'rgba(0,0,0,0.5)', blur: 8, offsetX: 4, offsetY: 4 }))
-                      }
-                      canvasRef.current?.renderAll()
-                      commitCanvasMutation()
-                    }}
-                    className={cn(
-                      "flex h-7 w-7 items-center justify-center rounded-lg transition-colors",
-                      activeObject.shadow ? "bg-[#E0E5EB] text-[#101417]" : "text-[#4E576A] hover:bg-white/5 hover:text-[#8D95A6]"
-                    )}
-                    title="Sombra"
-                  >
-                    <Sparkles className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (activeObject.stroke && activeObject.stroke !== 'transparent') {
-                        activeObject.set({ stroke: 'transparent', strokeWidth: 0 })
-                      } else {
-                        activeObject.set({ stroke: '#462D6E', strokeWidth: 2 })
-                      }
-                      canvasRef.current?.renderAll()
-                      commitCanvasMutation()
-                    }}
-                    className={cn(
-                      "flex h-7 w-7 items-center justify-center rounded-lg transition-colors",
-                      (activeObject.stroke && activeObject.stroke !== 'transparent') ? "bg-[#E0E5EB] text-[#101417]" : "text-[#4E576A] hover:bg-white/5 hover:text-[#8D95A6]"
-                    )}
-                    title="Contorno"
-                  >
-                    <Type className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const data = (activeObject as any).data || {}
-                      if (!data.originalText) data.originalText = activeObject.text
-                      const isUpper = data.textTransform === 'upper'
-                      const nextText = isUpper ? data.originalText : data.originalText.toUpperCase()
-                      activeObject.set({ text: nextText, data: { ...data, textTransform: isUpper ? 'original' : 'upper' } })
-                      canvasRef.current?.renderAll()
-                      commitCanvasMutation()
-                    }}
-                    className={cn(
-                      "flex h-7 w-7 items-center justify-center rounded-lg transition-colors",
-                      (activeObject as any).data?.textTransform === 'upper' ? "bg-[#E0E5EB] text-[#101417]" : "text-[#4E576A] hover:bg-white/5 hover:text-[#8D95A6]"
-                    )}
-                    title="Mayúsculas"
-                  >
-                    <CaseSensitive className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const current = activeObject.charSpacing ?? 0
-                      const next = current === 0 ? 150 : 0
-                      updateTextboxProperty({ charSpacing: next })
-                    }}
-                    className={cn(
-                      "flex h-7 w-7 items-center justify-center rounded-lg transition-colors",
-                      (activeObject.charSpacing ?? 0) > 0 ? "bg-[#E0E5EB] text-[#101417]" : "text-[#4E576A] hover:bg-white/5 hover:text-[#8D95A6]"
-                    )}
-                    title="Espaciado"
-                  >
-                    <AlignJustify className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-                <div className="mx-1 h-6 w-px bg-white/8" />
-              </>
-            )}
+            <div className="mx-1 h-6 w-px bg-white/8" />
 
-            <button
-              type="button"
-              onClick={async () => {
-                const canvas = canvasRef.current
-                if (!canvas) {
-                  return
-                }
-
-                const logo = await createLogoObject(getLogoVariantForBackground(activeBackground ?? { type: 'solid', solidColor: '#101417' }))
-                canvas.add(logo)
-                canvas.setActiveObject(logo)
-                canvas.requestRenderAll()
-                commitCanvasMutation()
-              }}
-              className="flex flex-col items-center justify-center rounded-xl border border-white/8 px-3 py-1.5 text-[#8D95A6] transition-colors hover:border-[#4E576A] hover:text-[#E0E5EB]"
-              title="Logo"
-            >
-              <NoctraLogoBadge />
-              <span className="text-[10px]">Logo</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setLeftTab('imagen')}
-              className="flex flex-col items-center justify-center rounded-xl border border-white/8 px-3 py-1.5 text-[#8D95A6] transition-colors hover:border-[#4E576A] hover:text-[#E0E5EB]"
-            >
-              <ImageIcon className="h-4 w-4" />
-              <span className="text-[10px]">Fondo Unsplash</span>
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => void handleUndo()}
-              disabled={!history || history.cursor <= 0}
-              className={`${TOOL_BUTTON_CLASS} ${!history || history.cursor <= 0 ? 'cursor-not-allowed opacity-40' : 'border-white/8'}`}
+              disabled={!canUndo}
+              className={`${TOOL_BUTTON_CLASS} ${!canUndo ? 'opacity-40 cursor-not-allowed' : 'border-white/8'}`}
             >
               <Undo2 className="h-4 w-4" />
             </button>
             <button
               type="button"
               onClick={() => void handleRedo()}
-              disabled={!history || history.cursor >= history.states.length - 1}
-              className={`${TOOL_BUTTON_CLASS} ${!history || history.cursor >= history.states.length - 1 ? 'cursor-not-allowed opacity-40' : 'border-white/8'}`}
+              disabled={!canRedo}
+              className={`${TOOL_BUTTON_CLASS} ${!canRedo ? 'opacity-40 cursor-not-allowed' : 'border-white/8'}`}
             >
               <Redo2 className="h-4 w-4" />
             </button>
-            <div className="mx-1 h-6 w-px bg-white/8" />
+          </div>
+
+          {/* ZONA 4 — Guardar / Exportar / Cerrar (derecha fija) */}
+          <div className="flex flex-shrink-0 items-center gap-2">
             <button
               type="button"
               onClick={handleSaveSlide}
-              className="rounded-xl border border-[#4E576A] px-3 py-2 text-sm text-[#E0E5EB] transition-colors hover:bg-[#212631]"
+              className="rounded-xl border border-[#4E576A] px-3 py-1.5 text-[11px] text-[#E0E5EB] transition-colors hover:bg-[#212631]"
             >
               Guardar slide
             </button>
@@ -3208,21 +3292,23 @@ export function FabricEditor({
               type="button"
               onClick={() => void handleSaveAll()}
               disabled={isSavingAll}
-              className="rounded-xl bg-[#E0E5EB] px-3 py-2 text-sm font-medium text-[#101417] transition-opacity hover:opacity-90 disabled:opacity-60"
+              className="rounded-xl bg-[#E0E5EB] px-3 py-1.5 text-[11px] font-bold text-[#101417] transition-opacity hover:opacity-90 disabled:opacity-60"
             >
-              Guardar todo
+              {isSavingAll ? '...' : 'Guardar todo'}
             </button>
+
             <div className="mx-1 h-6 w-px bg-white/8" />
+
             <div className="flex items-center gap-1">
               <button
                 type="button"
                 onClick={() => {
                   handleAutoSaveVersion('Exportación')
-                  setIsExportModalOpen(true)
+                  setIsExportDialogOpen(true)
                 }}
-                className="flex items-center gap-2 rounded-xl bg-[#462D6E] px-4 py-2 text-sm font-bold text-white transition-all hover:bg-[#5A3B8E] active:scale-95"
+                className="flex items-center gap-2 rounded-xl bg-[#462D6E] px-3 py-1.5 text-[11px] font-bold text-white transition-all hover:bg-[#5A3B8E]"
               >
-                <Download className="h-4 w-4" />
+                <Download className="h-3.5 w-3.5" />
                 Exportar
               </button>
               <button
@@ -3231,263 +3317,178 @@ export function FabricEditor({
                   const currentSlide = editorState.slides[editorState.activeSlideIndex]
                   if (currentSlide) {
                     handleAutoSaveVersion('Exportación Rápida')
-                    await quickExportCurrentSlide(
-                      currentSlide,
-                      `noctra-slide-${editorState.activeSlideIndex + 1}`,
-                      activeFilterCSS
-                    )
+                    await quickExportCurrentSlide(currentSlide, `noctra-slide-${editorState.activeSlideIndex + 1}`, activeFilterCSS)
                     if (postId) handleExportSuccess(postId, 'quick_png', 'png')
                   }
                 }}
-                className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-[#E0E5EB] transition-colors hover:bg-white/10"
-                title="Exportación rápida (PNG 2x)"
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-[#8D95A6] hover:text-[#E0E5EB]"
               >
-                <Download className="h-4 w-4" />
+                <Zap className="h-3.5 w-3.5" />
               </button>
-              {exportStats.count > 0 && (
-                <div className="ml-2 flex items-center gap-1.5 rounded-full bg-white/5 px-2.5 py-1 text-[10px] text-[#4E576A]">
-                  <CheckCircle2 className="h-3 w-3 text-green-500" />
-                  <span>Exportado {exportStats.count} {exportStats.count === 1 ? 'vez' : 'veces'}</span>
-                </div>
-              )}
             </div>
+
+            <div className="mx-1 h-6 w-px bg-white/8" />
+            
             <button
               type="button"
               onClick={() => setRulerEnabled(!rulerEnabled)}
               className={`${TOOL_BUTTON_CLASS} ${rulerEnabled ? 'border-[#4E576A] bg-[#212631] text-[#E0E5EB]' : 'border-white/8'}`}
-              title="Reglas (R)"
             >
               <Ruler className="h-4 w-4" />
             </button>
-            <div className="flex items-center gap-1.5 rounded-xl border border-white/8 bg-[#14171C] px-2 py-1">
-              <button
-                type="button"
-                onClick={() => setGridEnabled(!gridEnabled)}
-                className={cn(
-                  "flex h-7 w-7 items-center justify-center rounded-lg transition-colors",
-                  gridEnabled ? "bg-[#E0E5EB] text-[#101417]" : "text-[#4E576A] hover:bg-white/5 hover:text-[#8D95A6]"
-                )}
-                title="Cuadrícula (G)"
-              >
-                <Grid className="h-3.5 w-3.5" />
-              </button>
-              {gridEnabled && (
-                <select 
-                  value={gridSize}
-                  onChange={(e) => setGridSize(Number(e.target.value))}
-                  className="bg-transparent text-[10px] text-[#8D95A6] outline-none"
-                >
-                  {[8, 16, 32, 40].map(s => (
-                    <option key={s} value={s}>{s}px</option>
-                  ))}
-                </select>
-              )}
-            </div>
+            <button
+              type="button"
+              onClick={() => setGridEnabled(!gridEnabled)}
+              className={`${TOOL_BUTTON_CLASS} ${gridEnabled ? 'border-[#4E576A] bg-[#212631] text-[#E0E5EB]' : 'border-white/8'}`}
+            >
+              <Grid className="h-4 w-4" />
+            </button>
+
             <div className="mx-1 h-6 w-px bg-white/8" />
+
             <button
               type="button"
               onClick={handleAttemptClose}
-              className="ml-2 flex h-9 w-9 items-center justify-center rounded-full text-[#8D95A6] transition-colors hover:bg-white/5 hover:text-[#E0E5EB]"
-              aria-label="Cerrar editor"
+              className="flex h-8 w-8 items-center justify-center rounded-full text-[#8D95A6] hover:bg-white/5 hover:text-[#E0E5EB]"
             >
               <X className="h-5 w-5" />
             </button>
           </div>
         </header>
 
-        <div className="grid min-h-0 flex-1 grid-cols-[180px_minmax(0,1fr)_240px] gap-4 p-4 max-xl:grid-cols-[180px_minmax(0,1fr)] max-md:grid-cols-1">
-          {!showMobileOnlyMessage ? (
-            <aside className={`${PANEL_CLASS} flex min-h-0 flex-col p-4 max-md:hidden`}>
-              <div className="flex items-center gap-4 border-b border-white/8 pb-4">
+        {/* LAYOUT PRINCIPAL CON SIDEBARS FIJOS */}
+        <div className="grid min-h-0 flex-1 gap-3 p-3" style={{ gridTemplateColumns: '220px minmax(0,1fr) 260px' }}>
+          
+          {/* SIDEBAR IZQUIERDO */}
+          <aside className={`${PANEL_CLASS} flex min-h-0 flex-col overflow-hidden`} style={{ maxHeight: 'calc(100vh - 64px)' }}>
+            <div className="flex-shrink-0 px-4 pt-4">
+              <div className="flex items-center gap-3 border-b border-white/8 pb-3 overflow-x-auto no-scrollbar">
+                {(['slides', 'tema', 'imagen', 'assets', 'filtros'] as LeftTab[]).map(tab => (
+                  <button
+                    key={tab}
+                    onClick={() => setLeftTab(tab)}
+                    className={cn(
+                      "text-[10px] font-bold uppercase tracking-[0.15em] transition-colors whitespace-nowrap",
+                      leftTab === tab ? "text-[#E0E5EB]" : "text-[#4E576A] hover:text-[#8D95A6]"
+                    )}>
+                    {tab}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-2 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/10">
+              {leftTab === 'slides' ? (
+                <div className="space-y-4 py-2">
+                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(event) => void handleDragEnd(event)}>
+                    <SortableContext items={editorState.slides.map((slide) => slide.id)} strategy={verticalListSortingStrategy}>
+                      <div className="space-y-4">
+                        {editorState.slides.map((slide, index) => (
+                          <SortableSlideThumb
+                            key={slide.id}
+                            isSelected={index === editorState.activeSlideIndex}
+                            onSelect={() => void switchToSlide(index)}
+                            onSetTab={setLeftTab}
+                            slide={slide}
+                            totalSlides={editorState.slides.length}
+                          />
+                        ))}
+                      </div>
+                    </SortableContext>
+                  </DndContext>
+                </div>
+              ) : leftTab === 'tema' ? (
+                <ThemePanel
+                  currentThemeId={currentThemeId}
+                  onSelectTheme={setCurrentThemeId}
+                  activeTheme={activeTheme}
+                  customThemes={customThemes}
+                  onApplyAll={() => setShowThemeConfirm(true)}
+                  editingCustomTheme={editingCustomTheme}
+                  setEditingCustomTheme={setEditingCustomTheme}
+                  onSaveCustomTheme={(t) => setCustomThemes(saveCustomTheme(t))}
+                  coherenceScore={coherenceScore}
+                />
+              ) : leftTab === 'imagen' ? (
+                <ImagePanel
+                  canvas={canvasRef.current}
+                  caption={caption}
+                  angle={angle}
+                  platform={platform}
+                  slideType={editorState.slides[editorState.activeSlideIndex]?.type}
+                  postId={postId}
+                  slideIndex={editorState.activeSlideIndex}
+                  onCommit={commitCanvasMutation}
+                />
+              ) : leftTab === 'filtros' ? (
+                <FilterPanel
+                  activeFilterId={activeFilterId}
+                  onFilterChange={handleFilterChange}
+                  canvasPreviewDataURL={canvasPreviewDataURL}
+                />
+              ) : (
+                <AssetPanel
+                  canvas={canvasRef.current}
+                  activeTheme={activeTheme}
+                  onCommit={commitCanvasMutation}
+                />
+              )}
+            </div>
+
+            {leftTab === 'slides' && (
+              <div className="flex-shrink-0 border-t border-white/8 px-4 pb-4 pt-3 bg-[#10151A]/50 backdrop-blur-sm">
+                <div className="mb-3">
+                  <div className="mb-1.5 flex items-center justify-between text-[9px] uppercase font-bold tracking-wider text-[#4E576A]">
+                    <span>Coherencia</span>
+                    <span className={coherenceScore >= 80 ? "text-green-500" : "text-yellow-500"}>{coherenceScore}%</span>
+                  </div>
+                  <div className="h-1 w-full overflow-hidden rounded-full bg-white/5">
+                    <div className="h-full bg-[#462D6E] transition-all" style={{ width: `${coherenceScore}%` }} />
+                  </div>
+                </div>
                 <button
-                  onClick={() => setLeftTab('slides')}
-                  className={cn(
-                    "text-[11px] font-medium uppercase tracking-[0.22em] transition-colors",
-                    leftTab === 'slides' ? "text-[#E0E5EB]" : "text-[#4E576A] hover:text-[#8D95A6]"
-                  )}>
-                  Slides
-                </button>
-                <button
-                  onClick={() => setLeftTab('tema')}
-                  className={cn(
-                    "text-[11px] font-medium uppercase tracking-[0.22em] transition-colors",
-                    leftTab === 'tema' ? "text-[#E0E5EB]" : "text-[#4E576A] hover:text-[#8D95A6]"
-                  )}>
-                  Tema
-                </button>
-                <button
-                  onClick={() => setLeftTab('imagen')}
-                  className={cn(
-                    "text-[11px] font-medium uppercase tracking-[0.22em] transition-colors",
-                    leftTab === 'imagen' ? "text-[#E0E5EB]" : "text-[#4E576A] hover:text-[#8D95A6]"
-                  )}>
-                  Imagen
-                </button>
-                <button
-                  onClick={() => setLeftTab('assets')}
-                  className={cn(
-                    "text-[11px] font-medium uppercase tracking-[0.22em] transition-colors",
-                    leftTab === 'assets' ? "text-[#E0E5EB]" : "text-[#4E576A] hover:text-[#8D95A6]"
-                  )}>
-                  Assets
-                </button>
-                <button
-                  onClick={() => setLeftTab('filtros')}
-                  className={cn(
-                    "flex items-center gap-1 text-[11px] font-medium uppercase tracking-[0.22em] transition-colors",
-                    leftTab === 'filtros' ? "text-[#E0E5EB]" : "text-[#4E576A] hover:text-[#8D95A6]"
-                  )}>
-                  <Sliders className="h-3.5 w-3.5" />
-                  Filtros
-                </button>
-                <button
-                  onClick={() => setIsVersionPanelOpen(true)}
-                  className={cn(
-                    "flex items-center gap-1 text-[11px] font-medium uppercase tracking-[0.22em] transition-colors",
-                    isVersionPanelOpen ? "text-[#E0E5EB]" : "text-[#4E576A] hover:text-[#8D95A6]"
-                  )}>
-                  <HistoryIcon className="h-3.5 w-3.5" />
-                  Historial
+                  type="button"
+                  onClick={() => void handleAddSlide()}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-[#2A3040] py-2.5 text-[11px] font-bold text-[#8D95A6] transition-colors hover:border-[#4E576A] hover:text-[#E0E5EB] hover:bg-white/5"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  AGREGAR SLIDE
                 </button>
               </div>
+            )}
+          </aside>
 
-              {leftTab === 'slides' ? (
-                <>
-                  <div className="mt-4 flex gap-2 border-b border-white/5 pb-4">
-                    <Tooltip content="Tema del carrusel">
-                      <button onClick={() => setLeftTab('tema')} className={TOOL_BUTTON_CLASS}>
-                        <Palette className="h-4 w-4" />
-                      </button>
-                    </Tooltip>
-                    <Tooltip content="Cambiar fuente principal">
-                      <button onClick={() => {}} className={TOOL_BUTTON_CLASS}>
-                        <Baseline className="h-4 w-4" />
-                      </button>
-                    </Tooltip>
-                    <Tooltip content="Color de acento">
-                      <button onClick={() => {}} className={TOOL_BUTTON_CLASS}>
-                        <Droplets className="h-4 w-4" />
-                      </button>
-                    </Tooltip>
-                    <Tooltip content="Escalar todo">
-                      <button onClick={() => {}} className={TOOL_BUTTON_CLASS}>
-                        <ArrowUpDown className="h-4 w-4" />
-                      </button>
-                    </Tooltip>
-                  </div>
-
-                  <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
-                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(event) => void handleDragEnd(event)}>
-                      <SortableContext items={editorState.slides.map((slide) => slide.id)} strategy={verticalListSortingStrategy}>
-                        <div className="space-y-4">
-                          {editorState.slides.map((slide, index) => (
-                            <SortableSlideThumb
-                              key={slide.id}
-                              isSelected={index === editorState.activeSlideIndex}
-                              onSelect={() => void switchToSlide(index)}
-                              onSetTab={setLeftTab}
-                              slide={slide}
-                              totalSlides={editorState.slides.length}
-                            />
-                          ))}
-                        </div>
-                      </SortableContext>
-                    </DndContext>
-                  </div>
-                  
-                  <div className="mt-4 border-t border-white/8 pt-4">
-                    <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-wider text-[#4E576A]">
-                      <span>Coherencia visual</span>
-                      <span className={cn(
-                        "font-bold",
-                        coherenceScore >= 80 ? "text-green-500" : coherenceScore >= 60 ? "text-yellow-500" : "text-red-500"
-                      )}>
-                        {coherenceScore}%
-                      </span>
-                    </div>
-                    <div className="h-1 w-full overflow-hidden rounded-full bg-white/5">
-                      <div 
-                        className={cn(
-                          "h-full transition-all duration-500",
-                          coherenceScore >= 80 ? "bg-green-500" : coherenceScore >= 60 ? "bg-yellow-500" : "bg-red-500"
-                        )}
-                        style={{ width: `${coherenceScore}%` }}
-                      />
-                    </div>
-                    <p className="mt-2 text-[9px] leading-relaxed text-[#4E576A]">
-                      {coherenceScore < 60 ? (
-                        <>
-                          <AlertCircle className="mr-1 inline h-3 w-3" />
-                          Estilos muy distintos. Un tema unificará el diseño.
-                        </>
-                      ) : coherenceScore >= 80 ? (
-                        <>
-                          <CheckCircle2 className="mr-1 inline h-3 w-3" />
-                          ✓ Carrusel visualmente coherente
-                        </>
-                      ) : (
-                        "Buen balance, intenta unificar fuentes."
-                      )}
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => void handleAddSlide()}
-                    className="mt-4 rounded-xl border border-dashed border-[#2A3040] px-3 py-3 text-sm text-[#8D95A6] transition-colors hover:border-[#4E576A] hover:text-[#E0E5EB]"
-                  >
-                    + Agregar slide
-                  </button>
-                </>
-              ) : leftTab === 'tema' ? (
-                <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
-                  <ThemePanel
-                    currentThemeId={currentThemeId}
-                    onSelectTheme={setCurrentThemeId}
-                    activeTheme={activeTheme}
-                    customThemes={customThemes}
-                    onApplyAll={() => setShowThemeConfirm(true)}
-                    editingCustomTheme={editingCustomTheme}
-                    setEditingCustomTheme={setEditingCustomTheme}
-                    onSaveCustomTheme={(t) => setCustomThemes(saveCustomTheme(t))}
-                    coherenceScore={coherenceScore}
-                  />
-                </div>
-              ) : leftTab === 'imagen' ? (
-                <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
-                  <ImagePanel
-                    canvas={canvasRef.current}
-                    caption={caption}
-                    angle={angle}
-                    platform={platform}
-                    slideType={editorState.slides[editorState.activeSlideIndex]?.type}
-                    postId={postId}
-                    slideIndex={editorState.activeSlideIndex}
-                    onCommit={commitCanvasMutation}
-                  />
-                </div>
-              ) : leftTab === 'filtros' ? (
-                <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
-                  <FilterPanel
-                    activeFilterId={activeFilterId}
-                    onFilterChange={handleFilterChange}
-                    canvasPreviewDataURL={canvasPreviewDataURL}
-                  />
-                </div>
-              ) : (
-                <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
-                  <AssetPanel
-                    canvas={canvasRef.current}
-                    activeTheme={activeTheme}
-                    onCommit={commitCanvasMutation}
-                  />
-                </div>
-              )}
-            </aside>
-          ) : null}
-
+          {/* MAIN WORKSPACE — ILLUSTRATOR STYLE */}
           <main
-            className={`${PANEL_CLASS} relative flex min-h-0 items-center justify-center overflow-hidden`}
+            ref={workAreaRef}
+            className={`${PANEL_CLASS} relative min-h-0 overflow-hidden cursor-default select-none ${spaceHeld ? 'cursor-grab' : ''} ${isPanning ? '!cursor-grabbing' : ''}`}
+            style={{ touchAction: 'none' }}
+            onPointerDown={(e) => {
+              const isSpacePan = spaceHeld && e.button === 0
+              const isMiddlePan = e.button === 1
+              if (!isSpacePan && !isMiddlePan) return
+              e.preventDefault()
+              setIsPanning(true)
+              panStartRef.current = { x: e.clientX, y: e.clientY, ox: canvasOffset.x, oy: canvasOffset.y }
+              if (workAreaRef.current) workAreaRef.current.setPointerCapture(e.pointerId)
+            }}
+            onPointerMove={(e) => {
+              if (!isPanning || !panStartRef.current) return
+              const dx = e.clientX - panStartRef.current.x
+              const dy = e.clientY - panStartRef.current.y
+              setCanvasOffset({ x: panStartRef.current.ox + dx, y: panStartRef.current.oy + dy })
+            }}
+            onPointerUp={(e) => {
+              setIsPanning(false)
+              panStartRef.current = null
+              if (workAreaRef.current) workAreaRef.current.releasePointerCapture(e.pointerId)
+            }}
+            onWheel={(e) => {
+              if (!e.ctrlKey && !e.metaKey) return
+              e.preventDefault()
+              const delta = e.deltaY > 0 ? -0.05 : 0.05
+              setCanvasScale(prev => Math.max(0.2, Math.min(1.5, prev + delta)))
+            }}
             onDragOver={(event) => event.preventDefault()}
             onDrop={(event) => { void handleCanvasDrop(event) }}
           >
@@ -3499,60 +3500,16 @@ export function FabricEditor({
               onSendBackward={handleSendBackwardSelection}
               onToggleLock={handleToggleLockSelection}
               isLocked={isActiveObjectLocked}
-              onPreview={() => {
-                void openPreview()
-              }}
-              onExport={() => setIsExportDialogOpen(true)}
-              onUndo={() => {
-                void handleUndo()
-              }}
-              onRedo={() => {
-                void handleRedo()
-              }}
+              onPreview={() => void openPreview()}
+              onUndo={() => void handleUndo()}
+              onRedo={() => void handleRedo()}
               canUndo={canUndo}
               canRedo={canRedo}
             />
 
-            {/* Quick Actions Bar */}
-            <div className="absolute top-24 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-[22px] border border-white/8 bg-[#101417]/90 p-1 backdrop-blur-md shadow-2xl">
-              <Tooltip content="Unificar Fuente">
-                <button 
-                  onClick={() => handleGlobalFontChange(activeTheme.fontHeading)}
-                  className="flex h-10 items-center gap-2 rounded-2xl px-4 text-[11px] font-bold text-[#E0E5EB] transition-colors hover:bg-white/5"
-                >
-                  <Type className="h-3.5 w-3.5" />
-                  Tipografía
-                </button>
-              </Tooltip>
-              <div className="h-4 w-[1px] bg-white/10" />
-              <Tooltip content="Unificar Acento">
-                <button 
-                  onClick={() => handleGlobalAccentChange(activeTheme.accent)}
-                  className="flex h-10 items-center gap-2 rounded-2xl px-4 text-[11px] font-bold text-[#E0E5EB] transition-colors hover:bg-white/5"
-                >
-                  <div className="h-3 w-3 rounded-full" style={{ backgroundColor: activeTheme.accent }} />
-                  Acento
-                </button>
-              </Tooltip>
-              <div className="h-4 w-[1px] bg-white/10" />
-              <div className="flex items-center gap-1 px-2">
-                <button onClick={() => handleAutoScale()} className="flex h-8 w-8 items-center justify-center rounded-xl text-[#8D95A6] hover:bg-white/5 hover:text-[#E0E5EB]" title="Escala Automática (S)">
-                  <Baseline className="h-4 w-4 text-[#A855F7]" />
-                </button>
-                <div className="mx-1 h-3 w-[1px] bg-white/10" />
-                <button onClick={() => handleGlobalScaleChange(false)} className="flex h-8 w-8 items-center justify-center rounded-xl text-[#8D95A6] hover:bg-white/5 hover:text-[#E0E5EB]">
-                  <Baseline className="h-3.5 w-3.5" />
-                </button>
-                <span className="text-[10px] font-mono text-[#4E576A]">TAMAÑO</span>
-                <button onClick={() => handleGlobalScaleChange(true)} className="flex h-8 w-8 items-center justify-center rounded-xl text-[#8D95A6] hover:bg-white/5 hover:text-[#E0E5EB]">
-                  <Baseline className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Top Contextual Bar */}
+            {/* Contextual Bar (Floating when active) */}
             {selectedObject && (
-              <div className="absolute top-36 left-1/2 z-50 -translate-x-1/2">
+              <div className="absolute top-8 left-1/2 z-50 -translate-x-1/2">
                 <ContextualBar
                   canvas={canvasRef.current}
                   selectedObject={selectedObject}
@@ -3561,25 +3518,27 @@ export function FabricEditor({
               </div>
             )}
 
+            {/* Background Texture */}
             <div
               className="absolute inset-0 opacity-[0.03]"
               style={{
                 backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.75) 1px, transparent 1px)',
-                backgroundSize: '22px 22px',
+                backgroundSize: '24px 24px',
               }}
             />
-            {showMobileOnlyMessage ? (
-              <div className="absolute top-4 left-4 right-4 z-10 rounded-2xl border border-white/10 bg-[#101417]/90 px-4 py-3 text-sm text-[#B5BDCA]">
-                El editor completo está disponible en desktop. Aquí puedes revisar el canvas y guardar cambios básicos.
-              </div>
-            ) : null}
+
+            {/* THE CANVAS CONTAINER */}
             <div
-              className="relative rounded-[28px] bg-[#101417]"
+              className="absolute rounded-[2px] bg-[#101417]"
               style={{
                 boxShadow: '0 0 0 1px rgba(255,255,255,0.06), 0 8px 40px rgba(0,0,0,0.6)',
                 height: CANVAS_SIZE * canvasScale,
-                transformOrigin: 'center',
                 width: CANVAS_SIZE * canvasScale,
+                left: '50%',
+                top: '50%',
+                transform: `translate(calc(-50% + ${canvasOffset.x}px), calc(-50% + ${canvasOffset.y}px))`,
+                transition: isPanning ? 'none' : 'transform 0.1s ease-out',
+                position: 'absolute'
               }}
             >
               {gridEnabled && (
@@ -3597,44 +3556,31 @@ export function FabricEditor({
                   <CanvasRuler scale={canvasScale} canvasSize={CANVAS_SIZE} orientation="vertical" />
                 </>
               )}
-              <canvas
-                ref={canvasElementRef}
-                style={{
-                  height: CANVAS_SIZE * canvasScale,
-                  width: CANVAS_SIZE * canvasScale,
-                }}
-              />
+              <canvas ref={canvasElementRef} style={{ width: CANVAS_SIZE * canvasScale, height: CANVAS_SIZE * canvasScale }} />
             </div>
 
-            {!showMobileOnlyMessage ? (
-              <div className="absolute bottom-4 left-4 flex items-center gap-2 rounded-2xl border border-white/8 bg-[#101417]/90 px-3 py-2 md:hidden">
-                <button type="button" onClick={() => void switchToSlide(Math.max(editorState.activeSlideIndex - 1, 0))} className="text-[#E0E5EB]">
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <span className="text-xs text-[#8D95A6]">
-                  {editorState.activeSlideIndex + 1} / {editorState.slides.length}
-                </span>
-                <button type="button" onClick={() => void switchToSlide(Math.min(editorState.activeSlideIndex + 1, editorState.slides.length - 1))} className="text-[#E0E5EB]">
-                  <ChevronRight className="h-4 w-4" />
-                </button>
+            {/* WORKSPACE CONTROLS */}
+            <div className="absolute bottom-4 right-4 z-20 flex gap-2">
+              <div className="flex items-center gap-2 rounded-full border border-white/10 bg-[#101417]/90 px-3 py-1.5 backdrop-blur-sm">
+                <span className="text-[10px] font-mono text-[#4E576A] uppercase tracking-widest">{Math.round(canvasScale * 100)}%</span>
               </div>
-            ) : null}
+              <button
+                onClick={() => { setCanvasOffset({ x: 0, y: 0 }); setCanvasScale(getScaleForCanvas(viewportWidth, viewportHeight)); }}
+                className="rounded-full border border-white/10 bg-[#101417]/90 px-3 py-1.5 text-[10px] text-[#4E576A] backdrop-blur-sm transition-colors hover:border-white/20 hover:text-[#E0E5EB] uppercase font-bold tracking-wider"
+                title="Centrar canvas"
+              >
+                ⌖ Centrar
+              </button>
+            </div>
           </main>
 
-          {showDesktopProperties ? (
-            <aside className={`${PANEL_CLASS} min-h-0 overflow-y-auto p-4`}>
-              {propertiesPanel}
-            </aside>
-          ) : null}
-        </div>
-
-        {!showDesktopProperties ? (
-          <div className="border-t border-white/8 bg-[#0F1317] p-3">
-            <div className="mx-auto max-h-[40vh] overflow-y-auto max-w-2xl">
+          {/* SIDEBAR DERECHO (PROPERTIES) */}
+          <aside className={`${PANEL_CLASS} min-h-0 flex flex-col overflow-hidden`} style={{ maxHeight: 'calc(100vh - 64px)' }}>
+            <div className="min-h-0 flex-1 overflow-y-auto p-4 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/10">
               {propertiesPanel}
             </div>
-          </div>
-        ) : null}
+          </aside>
+        </div>
       </div>
 
       {/* Version Panel Overlay */}
