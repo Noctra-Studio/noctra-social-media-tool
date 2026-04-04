@@ -31,7 +31,7 @@ export function Faq({ locale }: { locale: LandingLocale }) {
                 <button
                   type="button"
                   onClick={() => setOpenIndex(isOpen ? -1 : index)}
-                  className="flex w-full items-center justify-between gap-6 py-5 text-left"
+                  className="flex min-h-[44px] w-full items-center justify-between gap-6 py-5 text-left"
                 >
                   <span
                     className="text-lg text-[#E0E5EB]"

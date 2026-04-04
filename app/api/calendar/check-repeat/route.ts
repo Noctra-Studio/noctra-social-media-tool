@@ -1,39 +1,45 @@
-import { getUser } from '@/lib/auth/get-user';
-import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
-import { anthropic } from '@/lib/anthropic';
+import { NextResponse } from 'next/server'
+import { anthropic } from '@/lib/anthropic'
+import { requireRouteUser } from '@/lib/auth/require-route-user'
+import { createClient } from '@/lib/supabase/server'
 
 export async function POST(req: Request) {
   try {
-    let user;
-    try {
-      user = await getUser();
-    } catch {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const { response, user } = await requireRouteUser()
+
+    if (response) {
+      return response
     }
-    const { idea } = await req.json();
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const supabase = await createClient()
+    const { idea } = await req.json()
 
     if (!idea) {
-      return NextResponse.json({ error: 'Missing idea' }, { status: 400 });
+      return NextResponse.json({ error: 'Missing idea' }, { status: 400 })
     }
 
     // Fetch last 30 posts
     const { data: recentPosts, error } = await supabase
       .from('posts')
       .select('id, angle, content, platform, scheduled_at')
+      .eq('user_id', user.id)
       .neq('status', 'draft')
       .order('scheduled_at', { ascending: false })
-      .limit(30);
+      .limit(30)
 
-    if (error) throw error;
+    if (error) throw error
 
     if (!recentPosts || recentPosts.length === 0) {
-      return NextResponse.json({ is_repeat: false });
+      return NextResponse.json({ is_repeat: false })
     }
 
     const postsSummary = recentPosts.map(p => 
       `ID: ${p.id} | Platform: ${p.platform} | Angle: ${p.angle} | Content Extract: ${JSON.stringify(p.content).substring(0, 100)}`
-    ).join('\n');
+    ).join('\n')
 
     const msg = await anthropic.messages.create({
       model: "claude-haiku-4-5-20251001",
@@ -43,18 +49,18 @@ export async function POST(req: Request) {
       messages: [
         { role: "user", content: `Nueva idea: ${idea}\n\nPosts recientes: \n${postsSummary}` }
       ]
-    });
+    })
 
-    const textContent = msg.content[0].type === 'text' ? msg.content[0].text : '';
-    const cleanJson = textContent.replace(/```json/g, '').replace(/```/g, '').trim();
+    const textContent = msg.content[0].type === 'text' ? msg.content[0].text : ''
+    const cleanJson = textContent.replace(/```json/g, '').replace(/```/g, '').trim()
     
-    const parsed = JSON.parse(cleanJson);
+    const parsed = JSON.parse(cleanJson)
 
-    return NextResponse.json(parsed);
+    return NextResponse.json(parsed)
 
   } catch (error: unknown) {
-    console.error('Error checking repeat:', error);
+    console.error('Error checking repeat:', error)
     // On failure we just assume it's not a repeat to not block the user
-    return NextResponse.json({ is_repeat: false });
+    return NextResponse.json({ is_repeat: false })
   }
 }

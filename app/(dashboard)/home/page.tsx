@@ -1,5 +1,5 @@
 import { BrandAuthorityPanel } from '@/components/home/BrandAuthorityPanel'
-import { HomeFeedClient } from '@/components/home/home-feed-client'
+import { HomeFeedClient, type DashboardPostRow } from '@/components/home/home-feed-client'
 import { getUser } from '@/lib/auth/get-user'
 import { createClient } from '@/lib/supabase/server'
 
@@ -15,7 +15,7 @@ export default async function HomePage() {
     supabase
       .from('posts')
       .select(
-        'id, angle, content, created_at, export_metadata, format, image_url, platform, published_at, scheduled_at, status'
+        'id, angle, content, created_at, external_post_id, export_metadata, format, image_url, platform, published_at, scheduled_at, status'
       )
       .eq('user_id', user.id)
       .order('created_at', { ascending: false }),
@@ -37,7 +37,7 @@ export default async function HomePage() {
       <div className="mb-8">
         <BrandAuthorityPanel />
       </div>
-      <HomeFeedClient firstName={firstName} posts={(posts as any[]) ?? []} />
+      <HomeFeedClient firstName={firstName} posts={(posts as DashboardPostRow[]) ?? []} />
     </div>
   )
 }

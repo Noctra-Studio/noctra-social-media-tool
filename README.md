@@ -21,9 +21,9 @@ Herramienta interna de Noctra Studio para la generación y gestión de contenido
 
 | Capa          | Tecnología                                    |
 | ------------- | --------------------------------------------- |
-| Framework     | Next.js 15 (App Router)                       |
+| Framework     | Next.js 16 (App Router)                       |
 | Lenguaje      | TypeScript (strict)                           |
-| Estilos       | TailwindCSS                                   |
+| Estilos       | Tailwind CSS v4                               |
 | Animaciones   | Framer Motion                                 |
 | Base de datos | Supabase (PostgreSQL)                         |
 | Auth          | Supabase Auth (Email/Password)                |
@@ -39,12 +39,8 @@ Herramienta interna de Noctra Studio para la generación y gestión de contenido
 ```
 social.noctra.studio/
 ├── app/
-│   ├── page.tsx                  # Home — dashboard contextual
-│   ├── compose/page.tsx          # Editor de posts (3 modos)
-│   ├── calendar/page.tsx         # Calendario editorial
-│   ├── ideas/page.tsx            # Banco de ideas
-│   ├── settings/page.tsx         # Configuración y voz de marca
-│   ├── login/page.tsx            # Auth
+│   ├── (landing)/                # Landing pública + login
+│   ├── (dashboard)/              # Área protegida
 │   └── api/
 │       ├── content/
 │       │   ├── generate/         # Generación de texto (Anthropic)
@@ -67,17 +63,18 @@ social.noctra.studio/
 ├── lib/
 │   ├── anthropic.ts              # Cliente Anthropic
 │   ├── gemini.ts                 # Cliente Gemini
-│   ├── unsplash.ts               # Cliente Unsplash
 │   ├── supabase/
 │   │   ├── server.ts             # Cliente server-side (cookies)
 │   │   ├── client.ts             # Cliente browser-side
-│   │   └── middleware.ts         # Refresh de sesión
+│   │   ├── auth-proxy.ts         # Refresh de sesión / protección
+│   │   └── config.ts             # Config pública y validación
 │   └── ai/
 │       ├── build-user-context.ts # Contexto de aprendizaje por usuario
 │       └── extract-learnings.ts  # Extracción de learnings post-feedback
-├── middleware.ts                  # Protección de rutas
+├── proxy.ts                       # Protección de rutas en Next 16
 └── supabase/
-    └── schema.sql                 # Schema completo de la base de datos
+    ├── migrations/                # Fuente de verdad del schema
+    └── schema.sql                 # Snapshot documental del schema
 ```
 
 ---
@@ -100,6 +97,13 @@ GEMINI_API_KEY=AIzaSy...
 
 # Unsplash
 UNSPLASH_ACCESS_KEY=tu-access-key
+
+# Early access + emails
+RESEND_API_KEY=re_...
+NEXT_PUBLIC_APP_URL=https://social.noctra.studio
+NOCTRA_ADMIN_SECRET=un-secreto-largo-y-aleatorio
+NOCTRA_EMAIL_FROM="Noctra Social <noreply@social.noctra.studio>"
+NOCTRA_EMAIL_REPLY_TO=hello@noctra.studio
 ```
 
 ### Cómo obtener cada key
@@ -141,7 +145,17 @@ En tu proyecto Supabase:
 
 ### 2. Ejecutar el schema completo
 
-En el **SQL Editor** de tu proyecto Supabase, ejecuta los siguientes bloques en orden.
+La fuente de verdad es `supabase/migrations/`.
+
+Recomendado:
+
+1. Aplicar las migraciones en orden cronológico con Supabase CLI (`supabase db push`) o ejecutarlas una por una.
+2. Usar `supabase/schema.sql` solo como snapshot documental de referencia.
+
+Importante:
+
+- Los bloques SQL históricos de esta sección pueden quedarse desfasados respecto a las migraciones.
+- Para entornos nuevos, prioriza siempre `supabase/migrations/`.
 
 ---
 

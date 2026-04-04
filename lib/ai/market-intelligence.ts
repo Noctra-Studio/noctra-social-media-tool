@@ -25,27 +25,27 @@ export type MarketContext = {
  */
 const TOPIC_SEARCH_QUERIES: Record<string, string[]> = {
   ai_business: [
-    'Mexican tech companies selling software to USA trends 2025',
+    'Mexican tech companies selling software to USA trends 2026',
     'AI automation ROI for Mexican export businesses nearshoring',
   ],
   real_estate: [
-    'Mexico real estate investment for Americans 2025 trends',
+    'Mexico real estate investment for Americans 2026 trends',
     'selling Mexican properties to foreign investors marketing tips',
   ],
   education: [
-    'Mexican edtech expanding to USA and LATAM markets 2025',
+    'Mexican edtech expanding to USA and LATAM markets 2026',
     'international accreditation for Mexican private schools trends',
   ],
   healthcare: [
-    'medical tourism Mexico 2025 marketing strategies',
+    'medical tourism Mexico 2026 marketing strategies',
     'Mexican dental clinics attracting USA patients online presence',
   ],
   legal: [
     'Mexican law firms specialized in nearshoring marketing tips',
-    'legal services for foreign companies entering Mexico 2025',
+    'legal services for foreign companies entering Mexico 2026',
   ],
   seo_geo: [
-    'SEO for Mexican businesses targeting USA consumers 2025',
+    'SEO for Mexican businesses targeting USA consumers 2026',
     'GEO Generative Engine Optimization for international expansion',
   ],
   crm: [
@@ -53,15 +53,15 @@ const TOPIC_SEARCH_QUERIES: Record<string, string[]> = {
     'sales pipeline management for cross-border businesses Mexico',
   ],
   branding: [
-    'Mexican brand identity for international markets trends 2025',
+    'Mexican brand identity for international markets trends 2026',
     'how Mexican startups build global trust through branding',
   ],
   web_performance: [
-    'cross-border e-commerce website performance Mexico 2025',
+    'cross-border e-commerce website performance Mexico 2026',
     'landing page optimization for international conversion Noctra',
   ],
   entrepreneurship: [
-    'Mexico nearshoring boom 2025 opportunities for SMBs',
+    'Mexico nearshoring boom 2026 opportunities for SMBs',
     'Mexican companies expanding to USA tips and pain points',
   ],
 }
@@ -122,7 +122,7 @@ Busca señales que demuestren cómo la tecnología y el diseño (puente Noctra)
 ayudan a superar los pain points del mercado internacional (falta de confianza,
 procesos lentos, presencia digital pobre).
 
-Extrae solo datos concretos: estadísticas, tendencias, predicciones de 2025.
+Extrae solo datos concretos: estadísticas, tendencias, predicciones de 2026.
 Responde SOLO con JSON válido al final, sin texto adicional.`,
       messages: [
         {

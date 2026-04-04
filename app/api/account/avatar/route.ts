@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { getUser } from '@/lib/auth/get-user'
-import { supabase } from '@/lib/supabase'
+import { requireRouteUser } from '@/lib/auth/require-route-user'
+import { createClient } from '@/lib/supabase/server'
 
 const AVATAR_BUCKET = 'avatars'
 const MAX_AVATAR_SIZE = 2 * 1024 * 1024
@@ -32,33 +32,19 @@ function getFileExtension(file: File) {
   }
 }
 
-async function ensureAvatarBucket() {
-  const { data: buckets, error } = await supabase.storage.listBuckets()
-
-  if (error) {
-    throw error
-  }
-
-  const exists = buckets?.some((bucket) => bucket.name === AVATAR_BUCKET)
-
-  if (exists) {
-    return
-  }
-
-  const { error: createError } = await supabase.storage.createBucket(AVATAR_BUCKET, {
-    allowedMimeTypes: [...ALLOWED_TYPES],
-    fileSizeLimit: `${MAX_AVATAR_SIZE}`,
-    public: true,
-  })
-
-  if (createError && !createError.message.toLowerCase().includes('already exists')) {
-    throw createError
-  }
-}
-
 export async function POST(request: Request) {
   try {
-    const user = await getUser()
+    const { response, user } = await requireRouteUser()
+
+    if (response) {
+      return response
+    }
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const supabase = await createClient()
     const formData = await request.formData()
     const file = formData.get('file')
 
@@ -74,8 +60,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'La imagen debe pesar menos de 2 MB.' }, { status: 400 })
     }
 
-    await ensureAvatarBucket()
-
     const arrayBuffer = await file.arrayBuffer()
     const filePath = `${user.id}/avatar-${Date.now()}.${getFileExtension(file)}`
 
@@ -84,7 +68,7 @@ export async function POST(request: Request) {
       .upload(filePath, arrayBuffer, {
         cacheControl: '3600',
         contentType: file.type,
-        upsert: true,
+        upsert: false,
       })
 
     if (uploadError) {

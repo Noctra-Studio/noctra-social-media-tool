@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { anthropic } from '@/lib/anthropic'
 import { withUserInputLanguageRule } from '@/lib/ai/language-rule'
+import { buildTemporalContext, buildLatamGeoContext, buildNoctraIndustryContext } from '@/lib/ai/temporal-context'
 import {
   getAudiencePrompt,
   getPillarPrompt,
@@ -37,7 +38,8 @@ type ArticleResponse = {
 
 export async function POST(req: Request) {
   try {
-    const { brandVoice: savedBrandVoice, supabase, user } = await getGenerationContext()
+    const { brandVoice: savedBrandVoice, supabase, user, workspace } = await getGenerationContext()
+    if (!workspace) return NextResponse.json({ error: 'No workspace' }, { status: 401 })
     const body = (await req.json()) as ArticleBody
     const idea = body.idea?.trim()
     const angle = body.angle?.trim()
@@ -82,10 +84,28 @@ ${getAudiencePrompt(activeAudience, 'x')}
 
 Calibra el lenguaje, los ejemplos y el CTA para esta audiencia específica.`
 
+    const temporalClosingInstruction = `
+INSTRUCCIÓN FINAL — TIEMPO:
+Antes de escribir este post, confirma mentalmente:
+- ¿Estoy usando el año actual (${new Date().getFullYear()}) como presente? ✓
+- ¿Estoy usando el año pasado (${new Date().getFullYear() - 1}) solo como historia
+  o contraste, nunca como presente o futuro? ✓
+- ¿Mis proyecciones usan horizonte relativo ("próximos meses", "para ${new Date().getFullYear() + 1}")
+  y no años que ya pasaron? ✓
+Si cualquier respuesta es NO — reescribe esa parte antes de responder.
+`
+
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 2600,
-      system: withUserInputLanguageRule(`Write a long-form X Article for Noctra Studio.
+      system: withUserInputLanguageRule([
+        buildTemporalContext(),
+        buildLatamGeoContext(),
+        buildNoctraIndustryContext(),
+        `Write a long-form X Article for Noctra Studio.
+Audience: comunidad tech, emprendedores y profesionales digitales en
+México/LATAM. Más abierta a opiniones directas y datos concretos.
+El humor es válido si es seco e inteligente — no forzado.
 Brand voice:
 ${formatBrandVoice(brandVoice)}
 
@@ -93,7 +113,9 @@ ${strategyContext}
 
 Language: Spanish (LATAM).
 Use markdown formatting.
-Return only valid JSON.`),
+Return only valid JSON.`,
+        temporalClosingInstruction,
+      ].join('\n\n')),
       messages: [
         {
           role: 'user',
@@ -144,6 +166,7 @@ Return ONLY valid JSON:
     const postId = await saveGeneratedPost({
       angle,
       content,
+      createdBy: user.id,
       exportMetadata,
       format: 'article',
       idea,
@@ -151,6 +174,7 @@ Return ONLY valid JSON:
       platform: 'x' satisfies Platform,
       postId: body.post_id,
       userId: user.id,
+      workspaceId: workspace.id,
     })
 
     return NextResponse.json({

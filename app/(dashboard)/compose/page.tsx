@@ -735,8 +735,9 @@ export default function ComposePage() {
   }, [generatedResults.instagram]);
 
   const isInstagramPreviewCarouselActive =
+    Boolean(instagramCarouselPreviewState?.sourceKey) &&
     instagramCarouselPreviewState?.sourceKey ===
-    instagramSingleSaturation?.sourceKey;
+      instagramSingleSaturation?.sourceKey;
 
   const getInstagramEditorPayload = () => {
     const instagramResult = generatedResults.instagram;
@@ -3664,13 +3665,74 @@ export default function ComposePage() {
             <button
               key={option.value}
               type="button"
-              onClick={() => {
-                if (activePlatform === "instagram" && isInstagramPreviewCarouselActive) {
-                  if (option.value === "single") {
-                    setInstagramCarouselPreviewState(null);
+              onClick={async () => {
+                if (activePlatform === "instagram") {
+                  const currentFormat = inferPostFormat(
+                    "instagram",
+                    generatedResults.instagram?.content || {},
+                    generatedResults.instagram?.format
+                  );
+
+                  if (currentFormat === "single" && option.value === "carousel") {
+                    // Convert single to carousel transparently
+                    const instagramResult = generatedResults.instagram;
+                    if (instagramResult) {
+                      const suggestedSlides = instagramSingleSaturation?.evaluation.suggestedSlides || 5;
+                      const baseSlide = createInstagramSingleSlide(instagramResult.content);
+                      const previewSlides = convertInstagramSingleToCarouselPreview({
+                        baseSlide,
+                        body: baseSlide.body,
+                        caption: readString(instagramResult.content.caption),
+                        headline: readString(instagramResult.content.headline),
+                        slideCount: suggestedSlides,
+                      });
+                      const firstBackground = getCarouselEditorMeta(instagramResult).slideBackgrounds.find(
+                        (background) => background.slide_number === 1
+                      );
+                      const previewBackgrounds = firstBackground
+                        ? previewSlides.map((slide) => ({
+                            ...firstBackground,
+                            slide_number: slide.slide_number,
+                          }))
+                        : [];
+
+                      setInstagramCarouselPreviewState(null);
+                      setFormatForPlatform(activePlatform, option.value);
+                      void applyGeneratedResultUpdate("instagram", (current) => ({
+                        ...current,
+                        format: "carousel",
+                        content: {
+                          ...current.content,
+                          slides: previewSlides,
+                        },
+                        export_metadata: {
+                          ...(isRecord(current.export_metadata) ? current.export_metadata : {}),
+                          edited_carousel_slides: [],
+                          slide_backgrounds: previewBackgrounds,
+                          slide_count: previewSlides.length,
+                        },
+                      }));
+                      return;
+                    }
                   }
 
-                  return;
+                  if (currentFormat === "carousel" && option.value === "single") {
+                    setInstagramCarouselPreviewState(null);
+                    setFormatForPlatform(activePlatform, option.value);
+                    if (generatedResults.instagram) {
+                      void applyGeneratedResultUpdate("instagram", (current) => ({
+                        ...current,
+                        format: "single"
+                      }));
+                    }
+                    return;
+                  }
+                  
+                  if (isInstagramPreviewCarouselActive && option.value === "single") {
+                    setInstagramCarouselPreviewState(null);
+                    setFormatForPlatform(activePlatform, option.value);
+                    return;
+                  }
                 }
 
                 setFormatForPlatform(activePlatform, option.value);

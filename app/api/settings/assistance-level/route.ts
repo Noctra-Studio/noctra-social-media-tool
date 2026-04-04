@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
-import { getUser } from '@/lib/auth/get-user'
-import { createClient } from '@/lib/supabase/server'
 import type { AssistanceLevel } from '@/lib/product'
+import { getActiveWorkspaceContext } from '@/lib/workspace/server'
 
 function isAssistanceLevel(value: unknown): value is AssistanceLevel {
   return value === 'guided' || value === 'balanced' || value === 'expert'
@@ -9,13 +8,15 @@ function isAssistanceLevel(value: unknown): value is AssistanceLevel {
 
 export async function POST(req: Request) {
   try {
-    let user
+    let context
 
     try {
-      user = await getUser()
+      context = await getActiveWorkspaceContext()
     } catch {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    if (!context.workspace) return NextResponse.json({ error: 'No workspace' }, { status: 401 })
 
     const body = (await req.json()) as { assistance_level?: unknown }
 
@@ -23,15 +24,22 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid assistance level' }, { status: 400 })
     }
 
-    const supabase = await createClient()
-    const { error } = await supabase.from('profiles').upsert(
-      {
-        assistance_level: body.assistance_level,
-        email: user.email || '',
-        id: user.id,
-      },
-      { onConflict: 'id' }
-    )
+    const nextAssistanceLevel =
+      body.assistance_level === 'guided'
+        ? 'minimal'
+        : body.assistance_level === 'expert'
+          ? 'full'
+          : 'balanced'
+
+    const { error } = await context.supabase
+      .from('workspace_config')
+      .upsert(
+        {
+          assistance_level: nextAssistanceLevel,
+          workspace_id: context.workspace.id,
+        },
+        { onConflict: 'workspace_id' }
+      )
 
     if (error) {
       throw error

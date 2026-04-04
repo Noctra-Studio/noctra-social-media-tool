@@ -1,62 +1,14 @@
-"use client";
+"use client"
 
-import Image from 'next/image';
-import Link from 'next/link';
-import { useRef, useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
-import { getSupabasePublicConfig } from '@/lib/supabase/config';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import Image from 'next/image'
+import Link from 'next/link'
+import { useState } from 'react'
+import { ArrowLeft } from 'lucide-react'
+import { AccessRequestForm } from '@/components/auth/AccessRequestForm'
+import { LoginForm } from '@/components/auth/LoginForm'
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [errorMsg, setErrorMsg] = useState('');
-  const [loading, setLoading] = useState(false);
-  const formRef = useRef<HTMLFormElement>(null);
-  const supabaseConfig = getSupabasePublicConfig();
-  const isSupabaseReady = supabaseConfig.isConfigured;
-  const isBusy = loading;
-
-  const submitLoginForm = () => {
-    if (!isBusy) {
-      formRef.current?.requestSubmit();
-    }
-  };
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMsg('');
-
-    if (!isSupabaseReady) {
-      setErrorMsg(`${supabaseConfig.message} Ahora mismo el proyecto solo tiene .env.example.`)
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      const supabase = createClient();
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (error) {
-        setErrorMsg(error.message);
-        return;
-      }
-
-      window.location.assign('/home');
-    } catch (error) {
-      setErrorMsg(
-        error instanceof Error
-          ? error.message
-          : 'No fue posible iniciar sesión. Revisa la configuración de Supabase e inténtalo de nuevo.'
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [tab, setTab] = useState<'login' | 'request'>('login')
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 relative min-h-screen overflow-hidden bg-[#101417] text-[#E0E5EB] duration-300">
@@ -76,21 +28,32 @@ export default function LoginPage() {
           </div>
 
           <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] uppercase tracking-[0.24em] text-[#E0E5EB]">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#462D6E]" />
+            <span className="h-1.5 w-1.5 rounded-full bg-[#A7AFBD]" />
             White-label ready
           </div>
         </header>
 
-        <main className="grid flex-1 items-center gap-12 py-10 lg:grid-cols-[minmax(0,1.1fr)_420px] lg:gap-16">
-          <section className="max-w-2xl space-y-8">
-            <Image
-              src="/noctra-navbar-dark.svg"
-              alt="Noctra Studio"
-              width={230}
-              height={60}
-              priority
-              className="h-auto w-[190px] sm:w-[230px]"
-            />
+        <main className="grid flex-1 items-center gap-12 py-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(420px,520px)] lg:gap-16">
+          <section className="hidden max-w-2xl space-y-8 lg:block">
+            <div className="flex items-center gap-3">
+              <Image
+                src="/noctra-navbar-dark.svg"
+                alt="Noctra Studio"
+                width={230}
+                height={60}
+                priority
+                className="h-auto w-[190px] sm:w-[230px]"
+              />
+              <div className="flex items-center gap-3">
+                <span className="text-xl text-[#4E576A]">|</span>
+                <span
+                  className="text-xl uppercase tracking-[0.28em] text-[#E0E5EB]"
+                  style={{ fontFamily: 'var(--font-brand-display)' }}
+                >
+                  Social
+                </span>
+              </div>
+            </div>
 
             <div className="space-y-5">
               <p className="text-[11px] uppercase tracking-[0.36em] text-[#4E576A]">
@@ -142,85 +105,42 @@ export default function LoginPage() {
                     className="text-3xl font-medium text-[#E0E5EB]"
                     style={{ fontFamily: 'var(--font-brand-display)' }}
                   >
-                    Accede a tu estudio
+                    {tab === 'login' ? 'Bienvenido de vuelta' : 'Solicitar acceso'}
                   </h2>
                   <p className="text-sm leading-6 text-[#8D95A6]">
-                    Entra con tus credenciales internas para abrir el workspace
-                    operativo de Noctra.
+                    {tab === 'login'
+                      ? 'Entra con tus credenciales internas para abrir el workspace operativo de Noctra.'
+                      : 'Comparte tu contexto y revisaremos manualmente si Noctra Social es la siguiente capa correcta para tu equipo.'}
                   </p>
                 </div>
               </div>
 
-              {!isSupabaseReady && (
-                <div className="mb-5 rounded-2xl border border-[#4E576A] bg-[#212631]/70 px-4 py-3 text-sm leading-6 text-[#E0E5EB]">
-                  <p className="font-medium">Supabase aún no está configurado.</p>
-                  <p className="mt-1 text-[#A7AFBD]">{supabaseConfig.message}</p>
-                </div>
-              )}
-
-              <form ref={formRef} onSubmit={handleLogin} className="space-y-4">
-                <label className="block space-y-2">
-                  <span className="text-xs uppercase tracking-[0.22em] text-[#4E576A]">
-                    Correo
-                  </span>
-                  <input
-                    type="email"
-                    placeholder="tu@noctra.studio"
-                    required
-                    autoComplete="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    disabled={isBusy}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        submitLoginForm();
-                      }
-                    }}
-                    className="w-full rounded-2xl border border-white/10 bg-[#101417]/80 px-4 py-3.5 text-base text-[#E0E5EB] placeholder:text-[#4E576A] transition-colors focus:border-[#E0E5EB]/40 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                  />
-                </label>
-
-                <label className="block space-y-2">
-                  <span className="text-xs uppercase tracking-[0.22em] text-[#4E576A]">
-                    Contraseña
-                  </span>
-                  <input
-                    type="password"
-                    placeholder="••••••••"
-                    required
-                    autoComplete="current-password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    disabled={isBusy}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        submitLoginForm();
-                      }
-                    }}
-                    className="w-full rounded-2xl border border-white/10 bg-[#101417]/80 px-4 py-3.5 text-base text-[#E0E5EB] placeholder:text-[#4E576A] transition-colors focus:border-[#E0E5EB]/40 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                  />
-                </label>
-
-                {errorMsg && (
-                  <div
-                    role="alert"
-                    className="rounded-2xl border border-[#462D6E]/60 bg-[#462D6E]/12 px-4 py-3 text-sm leading-6 text-[#E0E5EB]"
-                  >
-                    {errorMsg}
-                  </div>
-                )}
-
+              <div className="mb-6 grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-[#0d1116]/70 p-1">
                 <button
-                  type="submit"
-                  disabled={isBusy}
-                  className="flex w-full items-center justify-center rounded-2xl bg-[#E0E5EB] px-4 py-3.5 text-sm font-medium tracking-[0.14em] text-[#101417] uppercase transition duration-200 hover:bg-white disabled:cursor-not-allowed disabled:bg-[#E0E5EB]/50"
-                  style={{ fontFamily: 'var(--font-brand-display)' }}
+                  type="button"
+                  onClick={() => setTab('login')}
+                  className={`min-h-[44px] rounded-[14px] px-4 py-2.5 text-sm transition ${
+                    tab === 'login'
+                      ? 'bg-white/10 text-white'
+                      : 'text-white/40 hover:text-white/70'
+                  }`}
                 >
-                  {isBusy ? <Loader2 className="animate-spin" size={18} /> : 'Iniciar sesión'}
+                  Iniciar sesión
                 </button>
-              </form>
+                <button
+                  type="button"
+                  onClick={() => setTab('request')}
+                  className={`min-h-[44px] rounded-[14px] px-4 py-2.5 text-sm transition ${
+                    tab === 'request'
+                      ? 'bg-white/10 text-white'
+                      : 'text-white/40 hover:text-white/70'
+                  }`}
+                >
+                  Solicitar acceso
+                </button>
+              </div>
+
+              {tab === 'login' ? <LoginForm /> : <AccessRequestForm />}
 
               <div className="mt-6 border-t border-white/8 pt-4 text-[11px] leading-5 text-[#4E576A]">
                 Brand mode: Noctra Core. La arquitectura visual y de acceso queda lista
@@ -236,5 +156,5 @@ export default function LoginPage() {
         </footer>
       </div>
     </div>
-  );
+  )
 }

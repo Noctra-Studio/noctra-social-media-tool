@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { anthropic } from '@/lib/anthropic'
 import { buildUserContext } from '@/lib/ai/build-user-context'
 import { withUserInputLanguageRule } from '@/lib/ai/language-rule'
+import { buildTemporalContext, buildLatamGeoContext, buildNoctraIndustryContext } from '@/lib/ai/temporal-context'
 import {
   getAudiencePrompt,
   getPillarPrompt,
@@ -44,7 +45,8 @@ type CarouselResponse = {
 
 export async function POST(req: Request) {
   try {
-    const { brandVoice: savedBrandVoice, supabase, user } = await getGenerationContext()
+    const { brandVoice: savedBrandVoice, supabase, user, workspace } = await getGenerationContext()
+    if (!workspace) return NextResponse.json({ error: 'No workspace' }, { status: 401 })
     const body = (await req.json()) as CarouselBody
     const idea = body.idea?.trim()
     const angle = body.angle?.trim()
@@ -131,10 +133,27 @@ ${userCtx.total_posts_generated >= 5 ? `
 ` : ''}
 `
 
+    const temporalClosingInstruction = `
+INSTRUCCIÓN FINAL — TIEMPO:
+Antes de escribir este post, confirma mentalmente:
+- ¿Estoy usando el año actual (${new Date().getFullYear()}) como presente? ✓
+- ¿Estoy usando el año pasado (${new Date().getFullYear() - 1}) solo como historia
+  o contraste, nunca como presente o futuro? ✓
+- ¿Mis proyecciones usan horizonte relativo ("próximos meses", "para ${new Date().getFullYear() + 1}")
+  y no años que ya pasaron? ✓
+Si cualquier respuesta es NO — reescribe esa parte antes de responder.
+`
+
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 2200,
-      system: withUserInputLanguageRule(`You are creating an Instagram carousel for Noctra Studio, a boutique digital agency in Queretaro, Mexico.
+      system: withUserInputLanguageRule([
+        buildTemporalContext(),
+        buildLatamGeoContext(),
+        buildNoctraIndustryContext(),
+        `You are creating an Instagram carousel for Noctra Studio, a boutique digital agency in Queretaro, Mexico.
+Audience: dueños de negocio, emprendedores y profesionales en México y LATAM.
+Consumen contenido en español. Esperan valor práctico, no teoría de mercado.
 Brand voice:
 ${formatBrandVoice(brandVoice)}
 
@@ -143,7 +162,9 @@ ${strategyContext}
 ${learningInjection}
 
 Language: Spanish (LATAM).
-Return only valid JSON.`),
+Return only valid JSON.`,
+        temporalClosingInstruction,
+      ].join('\n\n')),
       messages: [
         {
           role: 'user',
@@ -223,6 +244,7 @@ Return ONLY valid JSON:
     const postId = await saveGeneratedPost({
       angle,
       content,
+      createdBy: user.id,
       exportMetadata,
       format: 'carousel',
       idea,
@@ -230,6 +252,7 @@ Return ONLY valid JSON:
       platform: 'instagram' satisfies Platform,
       postId: body.post_id,
       userId: user.id,
+      workspaceId: workspace.id,
     })
 
     return NextResponse.json({

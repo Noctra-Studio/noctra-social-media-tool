@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { anthropic } from '@/lib/anthropic';
 import { withUserInputLanguageRule } from '@/lib/ai/language-rule';
+import { buildTemporalContext, buildLatamGeoContext, buildNoctraIndustryContext } from '@/lib/ai/temporal-context';
 import { platforms, type Platform } from '@/lib/product';
 import {
   asPlatform,
@@ -27,7 +28,8 @@ type PostRow = {
 
 export async function POST(req: Request) {
   try {
-    const { brandVoice, supabase, user } = await getQuickActionContext();
+    const { brandVoice, supabase, user, workspace } = await getQuickActionContext();
+    if (!workspace) return NextResponse.json({ error: 'No workspace' }, { status: 401 })
     const body = (await req.json()) as {
       post_id?: unknown;
       source_platform?: unknown;
@@ -63,10 +65,25 @@ export async function POST(req: Request) {
     const originalCaption = formatPostContentForPrompt(sourcePost.content);
     const targetPlatforms = platforms.filter((platform) => platform !== sourcePlatform);
 
+    const temporalClosingInstruction = `
+INSTRUCCIÓN FINAL — TIEMPO:
+Antes de escribir este post, confirma mentalmente:
+- ¿Estoy usando el año actual (${new Date().getFullYear()}) como presente? ✓
+- ¿Estoy usando el año pasado (${new Date().getFullYear() - 1}) solo como historia
+  o contraste, nunca como presente o futuro? ✓
+- ¿Mis proyecciones usan horizonte relativo ("próximos meses", "para ${new Date().getFullYear() + 1}")
+  y no años que ya pasaron? ✓
+Si cualquier respuesta es NO — reescribe esa parte antes de responder.
+`
+
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 2200,
-      system: withUserInputLanguageRule(`You are adapting a social media post for Noctra Studio across platforms.
+      system: withUserInputLanguageRule([
+        buildTemporalContext(),
+        buildLatamGeoContext(),
+        buildNoctraIndustryContext(),
+        `You are adapting a social media post for Noctra Studio across platforms.
 Brand voice:
 ${formatBrandVoice(brandVoice)}
 
@@ -80,7 +97,9 @@ LinkedIn: 150-250 words, thought leadership angle, short paragraphs, max 5 hasht
 X: if > 270 chars create a thread (array of tweets), each tweet max 270 chars, punchy and direct.
 
 Return ONLY valid JSON:
-{ "adaptations": [{ "platform": "linkedin", "content": { "caption": "...", "hashtags": ["#uno"] } }] }`),
+{ "adaptations": [{ "platform": "linkedin", "content": { "caption": "...", "hashtags": ["#uno"] } }] }`,
+        temporalClosingInstruction,
+      ].join('\n\n')),
       messages: [{ role: 'user', content: `Adapt the post for ${targetPlatforms.join(', ')}.` }],
     });
 
@@ -107,6 +126,7 @@ Return ONLY valid JSON:
     const savedPosts = await saveDraftPosts(
       supabase,
       user.id,
+      workspace.id,
       normalizedAdaptations.map((adaptation) => ({
         angle: sourcePost.angle || 'Repurpose',
         content: adaptation.content,

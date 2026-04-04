@@ -14,9 +14,7 @@ const USD_MXN_RATE = 17.9
 
 export function PricingCard({ locale, plan, billingCycle, currency }: PricingCardProps) {
   const { pricing } = landingContent
-  
-  const rawRegular = plan[billingCycle].regular
-  const rawFounder = plan[billingCycle].founder
+  const isCustomPlan = !plan[billingCycle]
   
   const formatPrice = (amount: number) => {
     if (currency === 'USD') {
@@ -26,8 +24,8 @@ export function PricingCard({ locale, plan, billingCycle, currency }: PricingCar
     return `MXN ${amount}`
   }
 
-  const strikePrice = formatPrice(rawRegular)
-  const mainPrice = formatPrice(rawFounder)
+  const strikePrice = !isCustomPlan ? formatPrice(plan[billingCycle]!.regular) : null
+  const mainPrice = !isCustomPlan ? formatPrice(plan[billingCycle]!.founder) : null
   
   const periodLabel = billingCycle === 'monthly' 
     ? (locale === 'es' ? '/mes' : '/mo') 
@@ -50,23 +48,37 @@ export function PricingCard({ locale, plan, billingCycle, currency }: PricingCar
           <h3 className="text-xl font-bold text-[#E0E5EB]" style={{ fontFamily: 'var(--font-brand-display)' }}>
             {plan.title[locale]}
           </h3>
-          <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-400">
-            {pricing.founderBadge[locale]}
-          </span>
+          {!isCustomPlan ? (
+            <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+              {pricing.founderBadge[locale]}
+            </span>
+          ) : (
+            <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-200">
+              {locale === 'es' ? 'Custom fit' : 'Custom fit'}
+            </span>
+          )}
         </div>
         
         <div className="mt-6 flex items-baseline gap-2">
-          <span className="text-sm text-[#4E576A] line-through decoration-[#4E576A]/50">
-            {strikePrice}
-          </span>
-          <span className="text-4xl font-bold text-white" style={{ fontFamily: 'var(--font-brand-display)' }}>
-            {mainPrice}
-          </span>
-          <span className="text-sm text-[#8D95A6]">{periodLabel}</span>
+          {isCustomPlan ? (
+            <span className="text-4xl font-bold text-white" style={{ fontFamily: 'var(--font-brand-display)' }}>
+              {plan.customPricingLabel?.[locale] ?? (locale === 'es' ? 'A medida' : 'Custom')}
+            </span>
+          ) : (
+            <>
+              <span className="text-sm text-[#4E576A] line-through decoration-[#4E576A]/50">
+                {strikePrice}
+              </span>
+              <span className="text-4xl font-bold text-white" style={{ fontFamily: 'var(--font-brand-display)' }}>
+                {mainPrice}
+              </span>
+              <span className="text-sm text-[#8D95A6]">{periodLabel}</span>
+            </>
+          )}
         </div>
         
         <p className="mt-3 text-[13px] leading-relaxed text-[#8D95A6]">
-          {pricing.founderNote[locale]}
+          {plan.note?.[locale] ?? pricing.founderNote[locale]}
         </p>
       </div>
 
@@ -84,13 +96,26 @@ export function PricingCard({ locale, plan, billingCycle, currency }: PricingCar
       </div>
 
       <div className="space-y-4">
-        <button className={`w-full rounded-2xl py-4 text-sm font-bold transition-all duration-200 ${
-          plan.popular 
-            ? 'bg-[#E0E5EB] text-[#101417] hover:bg-white' 
-            : 'border border-[#4E576A] text-[#E0E5EB] hover:border-white/40 hover:bg-white/5'
-        }`}>
-          {pricing.cta[locale]}
-        </button>
+        {plan.ctaHref ? (
+          <a
+            href={plan.ctaHref}
+            className={`block w-full rounded-2xl py-4 text-center text-sm font-bold transition-all duration-200 ${
+              plan.popular 
+                ? 'bg-[#E0E5EB] text-[#101417] hover:bg-white' 
+                : 'border border-[#4E576A] text-[#E0E5EB] hover:border-white/40 hover:bg-white/5'
+            }`}
+          >
+            {plan.cta?.[locale] ?? pricing.enterpriseCta[locale]}
+          </a>
+        ) : (
+          <button className={`w-full rounded-2xl py-4 text-sm font-bold transition-all duration-200 ${
+            plan.popular 
+              ? 'bg-[#E0E5EB] text-[#101417] hover:bg-white' 
+              : 'border border-[#4E576A] text-[#E0E5EB] hover:border-white/40 hover:bg-white/5'
+          }`}>
+            {plan.cta?.[locale] ?? pricing.cta[locale]}
+          </button>
+        )}
         
         <p className="text-center text-[11px] text-[#4E576A]">
           {pricing.urgencyNote[locale]}

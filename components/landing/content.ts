@@ -59,15 +59,19 @@ type ExampleOutput = {
 
 type PricingPlan = {
   title: LocalizedText
-  monthly: {
+  monthly?: {
     regular: number
     founder: number
   }
-  annual: {
+  annual?: {
     regular: number
     founder: number
   }
+  cta?: LocalizedText
+  ctaHref?: string
+  customPricingLabel?: LocalizedText
   features: LocalizedText[]
+  note?: LocalizedText
   popular?: boolean
 }
 
@@ -611,6 +615,10 @@ export const landingContent = {
       en: 'Join the priority list',
       es: 'Unirme a la lista prioritaria',
     },
+    enterpriseCta: {
+      en: 'Talk to sales',
+      es: 'Hablar con ventas',
+    },
     plans: [
       {
         title: { en: 'Founder', es: 'Fundador' },
@@ -647,6 +655,23 @@ export const landingContent = {
           { en: 'Multi-brand workflow', es: 'Multi-brand workflow' },
           { en: 'Custom branding', es: 'Branding personalizado' },
           { en: 'Concierge onboarding', es: 'Onboarding prioritario' },
+        ],
+      },
+      {
+        title: { en: 'Enterprise', es: 'Enterprise' },
+        customPricingLabel: { en: 'Custom', es: 'A medida' },
+        cta: { en: 'Talk to sales', es: 'Hablar con ventas' },
+        ctaHref: 'mailto:hello@noctra.studio?subject=Enterprise%20Noctra%20Social',
+        note: {
+          en: 'For operations with more than 10 brands, custom capacity, bespoke onboarding and deeper operational support.',
+          es: 'Para operaciones con más de 10 marcas, capacidad personalizada, onboarding a medida y soporte operativo más profundo.',
+        },
+        features: [
+          { en: 'More than 10 brands', es: 'Más de 10 marcas' },
+          { en: 'Custom brand capacity', es: 'Capacidad personalizada de marcas' },
+          { en: 'Priority implementation support', es: 'Acompañamiento prioritario de implementación' },
+          { en: 'Advanced team permissions', es: 'Permisos avanzados para equipo' },
+          { en: 'Custom commercial agreement', es: 'Acuerdo comercial personalizado' },
         ],
       },
     ] satisfies PricingPlan[],

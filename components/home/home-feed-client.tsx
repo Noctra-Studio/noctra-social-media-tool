@@ -6,6 +6,7 @@ import { es } from 'date-fns/locale'
 import {
   CalendarClock,
   CalendarRange,
+  CheckCircle2,
   Clock3,
   FileStack,
   Layers3,
@@ -15,22 +16,37 @@ import {
   SquareStack,
 } from 'lucide-react'
 import { DateRangePicker, type DateRangeValue } from '@/components/home/date-range-picker'
+import { MarkPublishedModal } from '@/components/home/MarkPublishedModal'
 import { SocialPlatformMark } from '@/components/ui/SocialPlatformMark'
-import { buildStructuredPostFields, type SupportedPostType } from '@/lib/post-records'
+import {
+  buildStructuredPostFields,
+  type StoredArticleData,
+  type StoredCarouselSlide,
+  type StoredSlidesData,
+  type StoredThreadItem,
+  type SupportedPostType,
+} from '@/lib/post-records'
 import { formatPlatformLabel, platforms, type Platform } from '@/lib/product'
-import { getCaptionText, getPreviewText, inferPostFormat, isRecord } from '@/lib/social-content'
+import {
+  getCaptionText,
+  getPreviewText,
+  inferPostFormat,
+  isRecord,
+  type PostFormat,
+} from '@/lib/social-content'
 import { cn } from '@/lib/utils'
 
 type FeedPlatformFilter = 'all' | Platform
 type FeedStatusFilter = 'all' | 'backlog' | 'published' | 'scheduled'
 type FeedTypeFilter = 'all' | SupportedPostType
 
-type DashboardPostRow = {
+export type DashboardPostRow = {
   angle: string | null
   article_data?: unknown
   carousel_slides?: unknown
   content: Record<string, unknown> | null
   created_at: string
+  external_post_id?: string | null
   export_metadata?: Record<string, unknown> | null
   format: string | null
   id: string
@@ -50,6 +66,7 @@ type NormalizedFeedPost = {
   carouselSlides: ReturnType<typeof buildStructuredPostFields>['carousel_slides']
   content: Record<string, unknown>
   displayDate: string
+  externalPostId: string | null
   id: string
   platform: Platform
   postType: SupportedPostType
@@ -88,30 +105,31 @@ function normalizePost(row: DashboardPostRow): NormalizedFeedPost {
   const structured = buildStructuredPostFields({
     content,
     export_metadata: row.export_metadata,
-    format: (row.format as any) ?? undefined,
+    format: (row.format as PostFormat | null) ?? undefined,
     platform: row.platform,
   })
 
   return {
     angle: row.angle ?? '',
-    articleData: isRecord(row.article_data) ? (row.article_data as any) : structured.article_data,
-    carouselSlides: isStructuredArray(row.carousel_slides)
-      ? (row.carousel_slides as any)
+    articleData: isRecord(row.article_data) ? (row.article_data as StoredArticleData) : structured.article_data,
+    carouselSlides: isStructuredArray<StoredCarouselSlide>(row.carousel_slides)
+      ? row.carousel_slides
       : structured.carousel_slides,
     content,
     displayDate: row.published_at || row.scheduled_at || row.created_at,
+    externalPostId: row.external_post_id ?? null,
     id: row.id,
     platform: row.platform,
     postType: row.post_type ?? structured.post_type,
     primaryImageUrl: row.image_url ?? structured.image_url,
     publishedAt: row.published_at,
     scheduledAt: row.scheduled_at,
-    slidesData: isStructuredArray(row.slides_data)
-      ? (row.slides_data as any)
+    slidesData: isStructuredArray<StoredSlidesData>(row.slides_data)
+      ? row.slides_data
       : structured.slides_data,
     status: row.status ?? 'draft',
-    threadItems: isStructuredArray(row.thread_items)
-      ? (row.thread_items as any)
+    threadItems: isStructuredArray<StoredThreadItem>(row.thread_items)
+      ? row.thread_items
       : structured.thread_items,
   }
 }
@@ -304,7 +322,13 @@ function SinglePostPreview({ post }: { post: NormalizedFeedPost }) {
   )
 }
 
-function PostCard({ post }: { post: NormalizedFeedPost }) {
+function PostCard({
+  onMarkPublished,
+  post,
+}: {
+  onMarkPublished: (post: NormalizedFeedPost) => void
+  post: NormalizedFeedPost
+}) {
   const badge = typeMeta[post.postType]
   const previewText = getCaptionText(
     post.platform,
@@ -360,6 +384,19 @@ function PostCard({ post }: { post: NormalizedFeedPost }) {
           <SinglePostPreview post={post} />
         )}
       </div>
+
+      {post.status !== 'published' ? (
+        <div className="mt-5 flex justify-end">
+          <button
+            type="button"
+            onClick={() => onMarkPublished(post)}
+            className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/[0.08]"
+          >
+            <CheckCircle2 className="h-4 w-4" />
+            Marcar como publicado
+          </button>
+        </div>
+      ) : null}
     </article>
   )
 }
@@ -371,15 +408,23 @@ export function HomeFeedClient({
   firstName: string
   posts: DashboardPostRow[]
 }) {
+  const [postRows, setPostRows] = useState(posts)
+  const [markPublishedPost, setMarkPublishedPost] = useState<NormalizedFeedPost | null>(null)
+  const [notice, setNotice] = useState<{ kind: 'info' | 'success'; message: string } | null>(null)
+
+  useEffect(() => {
+    setPostRows(posts)
+  }, [posts])
+
   const normalizedPosts = useMemo(
     () =>
-      posts
+      postRows
         .map(normalizePost)
         .sort(
           (left, right) =>
             new Date(right.displayDate).getTime() - new Date(left.displayDate).getTime()
         ),
-    [posts]
+    [postRows]
   )
   const [platformFilter, setPlatformFilter] = useState<FeedPlatformFilter>('all')
   const [typeFilter, setTypeFilter] = useState<FeedTypeFilter>('all')
@@ -492,6 +537,18 @@ export function HomeFeedClient({
       </section>
 
       <section className="rounded-[30px] border border-white/10 bg-[#12161D] p-5">
+        {notice ? (
+          <div
+            className={`mb-5 rounded-[20px] border px-4 py-3 text-sm ${
+              notice.kind === 'success'
+                ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-100'
+                : 'border-sky-400/20 bg-sky-400/10 text-sky-100'
+            }`}
+          >
+            {notice.message}
+          </div>
+        ) : null}
+
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.24em] text-[#6F7786]">Filtros</p>
@@ -590,7 +647,7 @@ export function HomeFeedClient({
         {filteredPosts.length > 0 ? (
           <div className="grid gap-4 xl:grid-cols-2">
             {filteredPosts.map((post) => (
-              <PostCard key={post.id} post={post} />
+              <PostCard key={post.id} post={post} onMarkPublished={setMarkPublishedPost} />
             ))}
           </div>
         ) : (
@@ -605,6 +662,41 @@ export function HomeFeedClient({
           </div>
         )}
       </section>
+
+      <MarkPublishedModal
+        isOpen={Boolean(markPublishedPost)}
+        onClose={() => setMarkPublishedPost(null)}
+        onSaved={(updatedPost) => {
+          setPostRows((current) =>
+            current.map((row) =>
+              row.id === updatedPost.id
+                ? {
+                    ...row,
+                    external_post_id: updatedPost.external_post_id,
+                    published_at: updatedPost.published_at,
+                    status: updatedPost.status,
+                  }
+                : row
+            )
+          )
+          setNotice({
+            kind: updatedPost.warning ? 'info' : 'success',
+            message:
+              updatedPost.warning ||
+              'El post se marcó como publicado y ya puede entrar al flujo de métricas.',
+          })
+        }}
+        post={
+          markPublishedPost
+            ? {
+                externalPostId: markPublishedPost.externalPostId,
+                id: markPublishedPost.id,
+                platform: markPublishedPost.platform,
+                publishedAt: markPublishedPost.publishedAt,
+              }
+            : null
+        }
+      />
     </div>
   )
 }

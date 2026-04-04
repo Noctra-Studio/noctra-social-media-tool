@@ -7,12 +7,24 @@ type AppShellProps = {
   userAvatarUrl: string
   userEmail: string
   userName: string
+  noctraRole?: string
 }
 
-export function AppShell({ children, userAvatarUrl, userEmail, userName }: AppShellProps) {
+export function AppShell({
+  children,
+  userAvatarUrl,
+  userEmail,
+  userName,
+  noctraRole,
+}: AppShellProps) {
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
-      <TopNavbar userAvatarUrl={userAvatarUrl} userEmail={userEmail} userName={userName} />
+      <TopNavbar
+        userAvatarUrl={userAvatarUrl}
+        userEmail={userEmail}
+        userName={userName}
+        noctraRole={noctraRole}
+      />
 
       <div className="flex min-h-[calc(100vh-4rem)] flex-col">
         <main className="min-w-0 flex-1">

@@ -205,16 +205,8 @@ export function TemplateSelector({
                   </span>
                 </div>
               )}
-              <div className="absolute bottom-4 left-4 right-4 z-20 flex items-end justify-between gap-3">
-                <div className="rounded-2xl border border-white/10 bg-black/25 px-3 py-2 backdrop-blur-md">
-                  <p className="text-[10px] uppercase tracking-[0.18em] text-[#9CA6BC]">
-                    Vista previa
-                  </p>
-                  <p className="mt-1 text-sm font-medium text-white">
-                    Lista para editar
-                  </p>
-                </div>
-                <div className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-white opacity-0 transition-all duration-300 group-hover:opacity-100">
+              <div className="absolute bottom-3 left-3 right-3 z-20 flex items-end justify-end gap-2">
+                <div className="shrink-0 rounded-full border border-white/20 bg-white shadow-xl px-4 py-2 text-[10px] font-bold uppercase tracking-[0.18em] text-black opacity-0 transition-all duration-300 group-hover:opacity-100">
                   Seleccionar
                 </div>
               </div>
@@ -259,7 +251,13 @@ export function TemplateSelector({
               Empezar desde cero
             </button>
             <button
-              onClick={onKeepCurrent}
+              onClick={() => {
+                if (suggestedTemplateId && templates[suggestedTemplateId]) {
+                  onSelect(templates[suggestedTemplateId], applyToAll);
+                } else if (onKeepCurrent) {
+                  onKeepCurrent();
+                }
+              }}
               className="inline-flex items-center gap-2 rounded-2xl border border-white/8 bg-white/[0.02] px-4 py-2.5 text-sm font-medium text-[#8D95A6] transition-colors hover:border-white/16 hover:text-[#E0E5EB]">
               <RotateCcw className="h-4 w-4" />
               Usar diseño actual

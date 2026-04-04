@@ -2,15 +2,16 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Check, Loader2, Save } from 'lucide-react'
+import { useWorkspace } from '@/contexts/WorkspaceContext'
 import { createClient } from '@/lib/supabase/client'
 import { TagInput } from '@/components/ui/tag-input'
 
 type BrandVoiceRow = {
-  example_posts: string[] | null
+  brand_values: string[] | null
   forbidden_words: string[] | string | null
-  id: string
-  tone: string | null
-  values: string[] | string | null
+  id?: string
+  reference_posts: string[] | null
+  tone_of_voice: string | null
 }
 
 function readStringList(value: string[] | string | null | undefined) {
@@ -30,7 +31,7 @@ function readStringList(value: string[] | string | null | undefined) {
 
 export function BrandVoiceSettingsForm() {
   const supabase = useMemo(() => createClient(), [])
-  const [id, setId] = useState<string | null>(null)
+  const { isLoading: workspaceLoading, workspace } = useWorkspace()
   const [tone, setTone] = useState('')
   const [values, setValues] = useState<string[]>([])
   const [forbiddenWords, setForbiddenWords] = useState<string[]>([])
@@ -44,11 +45,26 @@ export function BrandVoiceSettingsForm() {
     let isActive = true
 
     async function loadBrandVoice() {
+      if (isActive) {
+        setLoading(true)
+      }
+
+      if (!workspace?.workspace.id) {
+        if (isActive && !workspaceLoading) {
+          setTone('')
+          setValues([])
+          setForbiddenWords([])
+          setExamplePosts(['', '', ''])
+          setLoading(false)
+        }
+        return
+      }
+
       try {
         const { data, error } = await supabase
-          .from('brand_voice')
+          .from('workspace_config')
           .select('*')
-          .limit(1)
+          .eq('workspace_id', workspace.workspace.id)
           .maybeSingle()
 
         if (error) {
@@ -58,18 +74,22 @@ export function BrandVoiceSettingsForm() {
         const brandVoice = data as BrandVoiceRow | null
 
         if (brandVoice && isActive) {
-          setId(brandVoice.id)
-          setTone(brandVoice.tone || '')
-          setValues(readStringList(brandVoice.values))
+          setTone(brandVoice.tone_of_voice || '')
+          setValues(readStringList(brandVoice.brand_values))
           setForbiddenWords(readStringList(brandVoice.forbidden_words))
 
-          const loadedExamples = brandVoice.example_posts || []
+          const loadedExamples = brandVoice.reference_posts || []
           const paddedExamples = [
             ...loadedExamples,
             ...Array(Math.max(0, 3 - loadedExamples.length)).fill(''),
           ].slice(0, 5)
 
           setExamplePosts(paddedExamples)
+        } else if (isActive) {
+          setTone('')
+          setValues([])
+          setForbiddenWords([])
+          setExamplePosts(['', '', ''])
         }
       } catch (error) {
         console.error('Failed to load brand voice', error)
@@ -85,7 +105,7 @@ export function BrandVoiceSettingsForm() {
     return () => {
       isActive = false
     }
-  }, [supabase])
+  }, [supabase, workspace?.workspace.id, workspaceLoading])
 
   const handleExampleChange = (index: number, value: string) => {
     setExamplePosts((current) => current.map((post, currentIndex) => (currentIndex === index ? value : post)))
@@ -102,34 +122,26 @@ export function BrandVoiceSettingsForm() {
 
     try {
       const payload = {
-        example_posts: examplePosts.filter((post) => post.trim() !== ''),
+        brand_values: values,
         forbidden_words: forbiddenWords,
-        tone,
-        values,
+        reference_posts: examplePosts.filter((post) => post.trim() !== ''),
+        tone_of_voice: tone,
       }
 
-      if (id) {
-        const { error } = await supabase.from('brand_voice').update(payload).eq('id', id)
+      if (!workspace?.workspace.id) {
+        throw new Error('No active workspace selected.')
+      }
 
-        if (error) {
-          throw error
-        }
-      } else {
-        const { data, error } = await supabase
-          .from('brand_voice')
-          .insert([payload])
-          .select()
-          .single()
+      const { error } = await supabase.from('workspace_config').upsert(
+        {
+          ...payload,
+          workspace_id: workspace.workspace.id,
+        },
+        { onConflict: 'workspace_id' }
+      )
 
-        const brandVoice = data as BrandVoiceRow | null
-
-        if (error) {
-          throw error
-        }
-
-        if (brandVoice) {
-          setId(brandVoice.id)
-        }
+      if (error) {
+        throw error
       }
 
       setMessage('Voz de marca guardada.')
@@ -157,7 +169,7 @@ export function BrandVoiceSettingsForm() {
     }
   }, [saveState])
 
-  if (loading) {
+  if (loading || workspaceLoading) {
     return (
       <div className="flex min-h-56 items-center justify-center rounded-[28px] border border-white/10 bg-transparent">
         <Loader2 className="h-5 w-5 animate-spin text-[#8D95A6]" />

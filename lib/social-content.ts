@@ -117,7 +117,7 @@ export const platformFormatOptions: Record<Platform, SocialFormatOption[]> = {
   instagram: [
     {
       value: 'single',
-      label: 'Single post',
+      label: 'Post único',
       description: '1 imagen + caption. Ideal para quotes, fotos, anuncios.',
     },
     {
@@ -129,7 +129,7 @@ export const platformFormatOptions: Record<Platform, SocialFormatOption[]> = {
   x: [
     {
       value: 'tweet',
-      label: 'Single post',
+      label: 'Post único',
       description: '1 idea directa, con margen para editar antes de publicar.',
     },
     {
@@ -146,12 +146,12 @@ export const platformFormatOptions: Record<Platform, SocialFormatOption[]> = {
   linkedin: [
     {
       value: 'text',
-      label: 'Single post',
+      label: 'Post único',
       description: 'Texto puro para feed, con saltos de linea y lectura limpia.',
     },
     {
       value: 'image',
-      label: 'Single post + imagen',
+      label: 'Post único + imagen',
       description: 'Post de texto con direccion visual lista para buscar imagen.',
     },
     {
@@ -272,11 +272,9 @@ export function readInstagramSlides(value: unknown): InstagramCarouselSlide[] {
 
       if (
         !body ||
-        !design_note ||
         !headline ||
         !Number.isFinite(slide_number) ||
-        (type !== 'cover' && type !== 'content' && type !== 'cta') ||
-        !visual_direction
+        (type !== 'cover' && type !== 'content' && type !== 'cta')
       ) {
         return null
       }

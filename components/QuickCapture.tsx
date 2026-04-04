@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation'
 import { startTransition, useEffect, useEffectEvent, useRef, useState } from 'react'
 import { Check, Loader2, Plus, Sparkles, X } from 'lucide-react'
+import { useWorkspace } from '@/contexts/WorkspaceContext'
 import { OPEN_QUICK_CAPTURE_EVENT } from '@/lib/quick-capture'
 import { createClient } from '@/lib/supabase/client'
 
@@ -10,6 +11,7 @@ export default function QuickCapture() {
   const router = useRouter()
   const pathname = usePathname()
   const timeoutRef = useRef<number | null>(null)
+  const { workspace } = useWorkspace()
   const [isOpen, setIsOpen] = useState(false)
   const [idea, setIdea] = useState('')
   const [loading, setLoading] = useState(false)
@@ -78,7 +80,14 @@ export default function QuickCapture() {
 
       const { error } = await supabase
         .from('content_ideas')
-        .insert([{ raw_idea: idea.trim(), status: 'raw', user_id: user.id }])
+        .insert([
+          {
+            raw_idea: idea.trim(),
+            status: 'raw',
+            user_id: user.id,
+            workspace_id: workspace?.workspace.id,
+          },
+        ])
 
       if (error) {
         throw error

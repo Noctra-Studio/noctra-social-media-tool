@@ -68,7 +68,7 @@ export function ComposeMockup({
       <div className="absolute inset-0 opacity-[0.08] [background-image:radial-gradient(rgba(255,255,255,0.9)_0.6px,transparent_0.6px)] [background-size:14px_14px]" />
 
       <div className="relative border-b border-white/8 px-4 py-4 sm:px-6">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:items-center">
           {tabs.map((tab) => {
             const platformId = tab.id as Platform
             const active = platformId === activeTab
@@ -78,7 +78,7 @@ export function ComposeMockup({
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(platformId)}
-                className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs transition ${
+                className={`inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-2xl border px-3 py-2.5 text-xs transition sm:w-auto sm:rounded-full ${
                   active
                     ? 'border-[#E0E5EB] bg-white/8 text-[#E0E5EB]'
                     : 'border-white/8 bg-white/[0.03] text-[#70798C] hover:border-white/15 hover:text-[#E0E5EB]'

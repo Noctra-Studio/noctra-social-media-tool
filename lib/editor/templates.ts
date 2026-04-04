@@ -62,35 +62,21 @@ export const templates: Record<string, SlideTemplate> = {
         role: 'decorator',
         props: {
           x1: 60,
-          y1: 680,
+          y1: 580,
           x2: 340,
-          y2: 680,
+          y2: 580,
           stroke: '#6C4CE4',
           strokeWidth: 3,
         },
       },
-      {
-        type: 'textbox',
-        role: 'eyebrow',
-        props: {
-          text: 'INSIGHT',
-          left: 60,
-          top: 705,
-          width: 500,
-          fontSize: 24,
-          fontFamily: 'Inter',
-          fontWeight: '600',
-          fill: '#8D95A6',
-          charSpacing: 250,
-        },
-      },
+
       {
         type: 'textbox',
         role: 'headline',
         props: {
           text: 'Titular de Alto Impacto',
           left: 60,
-          top: 750,
+          top: 620,
           width: 920,
           fontSize: 92,
           fontFamily: 'Satoshi',
@@ -106,7 +92,7 @@ export const templates: Record<string, SlideTemplate> = {
         props: {
           text: 'Este diseño está optimizado para legibilidad máxima en dispositivos móviles.',
           left: 60,
-          top: 970,
+          top: 820,
           width: 750,
           fontSize: 34,
           fontFamily: 'Inter',
@@ -193,7 +179,7 @@ export const templates: Record<string, SlideTemplate> = {
         props: {
           text: 'MENOS ES MAS',
           left: 60,
-          top: 140,
+          top: 100,
           width: 960,
           fontSize: 160,
           fontFamily: 'Satoshi',
@@ -209,7 +195,7 @@ export const templates: Record<string, SlideTemplate> = {
         role: 'decorator',
         props: {
           left: 500,
-          top: 500,
+          top: 450,
           width: 80,
           height: 4,
           fill: '#6C4CE4',
@@ -222,7 +208,7 @@ export const templates: Record<string, SlideTemplate> = {
         props: {
           text: 'La simplicidad es la máxima sofisticación.',
           left: 60,
-          top: 880,
+          top: 800,
           width: 960,
           fontSize: 42,
           fontFamily: 'Inter',
@@ -421,7 +407,7 @@ export const templates: Record<string, SlideTemplate> = {
         props: {
           text: 'LOUD & CLEAR',
           left: 60,
-          top: 140,
+          top: 100,
           width: 960,
           fontSize: 150,
           fontFamily: 'Satoshi',
@@ -437,7 +423,7 @@ export const templates: Record<string, SlideTemplate> = {
         props: {
           text: 'Rompe el ruido con contenido que no solo se ve, se siente.',
           left: 60,
-          top: 880,
+          top: 800,
           width: 900,
           fontSize: 40,
           fontFamily: 'Inter',

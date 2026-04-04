@@ -36,6 +36,7 @@ body {
   color: var(--foreground);
   font-family: var(--font-satoshi), sans-serif;
   font-weight: 400; /* Regular weight for body */
+  overflow-x: hidden;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -110,4 +111,15 @@ html {
 .loading-dots::after {
   content: "";
   animation: loadingDots 1.2s steps(1, end) infinite;
+}
+
+/* Typography overflow protection */
+p, li, td, th, div, span {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+/* Bottom safe area support for iOS notch */
+.bottom-safe {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
 }

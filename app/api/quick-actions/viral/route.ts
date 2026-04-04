@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { anthropic } from '@/lib/anthropic';
 import { withUserInputLanguageRule } from '@/lib/ai/language-rule';
+import { buildTemporalContext, buildLatamGeoContext, buildNoctraIndustryContext } from '@/lib/ai/temporal-context';
 import {
   asPlatform,
   formatBrandVoice,
@@ -22,7 +23,8 @@ type ViralResponse = {
 
 export async function POST(req: Request) {
   try {
-    const { brandVoice, supabase, user } = await getQuickActionContext();
+    const { brandVoice, supabase, user, workspace } = await getQuickActionContext();
+    if (!workspace) return NextResponse.json({ error: 'No workspace' }, { status: 401 })
     const body = (await req.json()) as { platform?: unknown };
     const platform = asPlatform(body.platform);
 
@@ -31,10 +33,24 @@ export async function POST(req: Request) {
     }
 
     const currentMonth = new Intl.DateTimeFormat('es-MX', { month: 'long' }).format(new Date());
+    const temporalClosingInstruction = `
+INSTRUCCIÓN FINAL — TIEMPO:
+Antes de escribir este post, confirma mentalmente:
+- ¿Estoy usando el año actual (${new Date().getFullYear()}) como presente? ✓
+- ¿Estoy usando el año pasado (${new Date().getFullYear() - 1}) solo como historia
+  o contraste, nunca como presente o futuro? ✓
+- ¿Mis proyecciones usan horizonte relativo ("próximos meses", "para ${new Date().getFullYear() + 1}")
+  y no años que ya pasaron? ✓
+Si cualquier respuesta es NO — reescribe esa parte antes de responder.
+`
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 2600,
-      system: withUserInputLanguageRule(`You are a content strategist for Noctra Studio, a digital agency in Querétaro, Mexico specializing in web dev, SEO, and AI automation.
+      system: withUserInputLanguageRule([
+        buildTemporalContext(),
+        buildLatamGeoContext(),
+        buildNoctraIndustryContext(),
+        `You are a content strategist for Noctra Studio, a digital agency in Querétaro, Mexico specializing in web dev, SEO, and AI automation.
 
 Based on current viral content trends on ${platform} in the LATAM/Mexico digital marketing space, generate 5 content ideas that Noctra Studio could create TODAY to tap into these trends.
 
@@ -48,7 +64,9 @@ Brand voice:
 ${formatBrandVoice(brandVoice)}
 
 Return ONLY valid JSON:
-{ "trends": [{ "trend_context": "...", "hook": "...", "angle": "opinion", "urgency": "high", "platform": "${platform}" }] }`),
+{ "trends": [{ "trend_context": "...", "hook": "...", "angle": "opinion", "urgency": "high", "platform": "${platform}" }] }`,
+        temporalClosingInstruction,
+      ].join('\n\n')),
       messages: [
         {
           role: 'user',
@@ -107,6 +125,7 @@ Then return the JSON only.`,
     const savedIdeas = await saveRawIdeas(
       supabase,
       user.id,
+      workspace.id,
       normalizedTrends.map((trend) => ({
         platform: trend.platform,
         rawIdea: `${trend.hook}\n\nTendencia: ${trend.trend_context}\nUrgencia: ${trend.urgency}\nÁngulo: ${trend.angle}`,

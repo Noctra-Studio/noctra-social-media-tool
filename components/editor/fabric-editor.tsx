@@ -941,18 +941,7 @@ function SortableSlideThumb({
             )}
           </div>
 
-          {/* Hover Action */}
-          <div
-            className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 transition-opacity group-hover:opacity-100 cursor-pointer"
-            onClick={(e) => {
-              e.stopPropagation()
-              onSetTab?.('imagen')
-            }}
-          >
-            <span className="text-[10px] font-bold text-white bg-[#462D6E] px-2 py-1 rounded-lg">
-              {slide.background.type === 'image' ? 'Cambiar fondo' : 'Poner fondo'}
-            </span>
-          </div>
+
         </div>
         <div className="mt-2 flex items-center justify-between text-[10px] text-[#4E576A]">
           <span>{SLIDE_TYPE_LABELS[slide.type]}</span>

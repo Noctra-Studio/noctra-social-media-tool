@@ -5,15 +5,33 @@ import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import { usePathname, useRouter } from 'next/navigation'
 import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
-import { BookOpen, CalendarDays, Home, Layout, Lightbulb, Menu, SquarePen, X } from 'lucide-react'
+import {
+  BookOpen,
+  Building2,
+  CalendarDays,
+  Check,
+  ChevronDown,
+  Home,
+  Layout,
+  Lightbulb,
+  Loader2,
+  LineChart,
+  Menu,
+  SquarePen,
+  ShieldCheck,
+  X,
+} from 'lucide-react'
+import { useWorkspace } from '@/contexts/WorkspaceContext'
 import { LocaleToggle } from '@/components/landing/locale-toggle'
 import { createClient } from '@/lib/supabase/client'
+import { getWorkspacePlanLabel } from '@/lib/workspace/plans'
 import { motion, AnimatePresence } from 'framer-motion'
 
 type TopNavbarProps = {
   userAvatarUrl: string
   userEmail: string
   userName: string
+  noctraRole?: string
 }
 
 function getInitials(email: string) {
@@ -29,30 +47,43 @@ function isNavigationActive(pathname: string, href: string) {
   return pathname.startsWith(href)
 }
 
-export function TopNavbar({ userAvatarUrl, userEmail, userName }: TopNavbarProps) {
+export function TopNavbar({
+  userAvatarUrl,
+  userEmail,
+  userName,
+  noctraRole,
+}: TopNavbarProps) {
   const t = useTranslations('dashboard.nav')
   const pathname = usePathname()
   const router = useRouter()
+  const { isLoading: isWorkspaceLoading, switchWorkspace, workspace, workspaces } = useWorkspace()
   const supabase = useMemo(() => createClient(), [])
   const initials = useMemo(() => getInitials(userEmail), [userEmail])
   const displayName = userName.trim() || userEmail.split('@')[0] || 'Usuario'
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false)
+  const [isWorkspaceMenuOpen, setIsWorkspaceMenuOpen] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
-  const profileMenuRef = useRef<HTMLDivElement | null>(null)
+  const [isSwitchingWorkspace, setIsSwitchingWorkspace] = useState(false)
+  const desktopMenusRef = useRef<HTMLDivElement | null>(null)
   const navigation = [
     { href: '/home', icon: Home, label: t('home') },
     { href: '/templates', icon: Layout, label: 'Plantillas' },
     { href: '/compose', icon: SquarePen, label: t('compose') },
     { href: '/calendar', icon: CalendarDays, label: t('calendar') },
     { href: '/ideas', icon: Lightbulb, label: t('ideas') },
+    { href: '/metrics', icon: LineChart, label: t('metrics') },
   ]
   const settingsLinks = [{ href: '/settings?section=account', label: t('settings') }]
+  const currentWorkspaceName = workspace?.workspace.name?.trim() || 'Workspace'
+  const currentWorkspacePlan = getWorkspacePlanLabel(workspace?.workspace.plan)
+  const hasMultipleWorkspaces = workspaces.length > 1
 
   useEffect(() => {
     function handlePointerDown(event: MouseEvent) {
-      if (!profileMenuRef.current?.contains(event.target as Node)) {
+      if (!desktopMenusRef.current?.contains(event.target as Node)) {
         setIsProfileMenuOpen(false)
+        setIsWorkspaceMenuOpen(false)
       }
     }
 
@@ -69,6 +100,7 @@ export function TopNavbar({ userAvatarUrl, userEmail, userName }: TopNavbarProps
     try {
       await supabase.auth.signOut()
       setIsProfileMenuOpen(false)
+      setIsWorkspaceMenuOpen(false)
       setIsMobileMenuOpen(false)
       startTransition(() => {
         router.replace('/login')
@@ -81,7 +113,29 @@ export function TopNavbar({ userAvatarUrl, userEmail, userName }: TopNavbarProps
 
   function closeMenus() {
     setIsProfileMenuOpen(false)
+    setIsWorkspaceMenuOpen(false)
     setIsMobileMenuOpen(false)
+  }
+
+  async function handleWorkspaceSwitch(workspaceId: string) {
+    if (workspaceId === workspace?.workspace.id) {
+      setIsWorkspaceMenuOpen(false)
+      setIsMobileMenuOpen(false)
+      return
+    }
+
+    setIsSwitchingWorkspace(true)
+
+    try {
+      await switchWorkspace(workspaceId)
+      setIsWorkspaceMenuOpen(false)
+      setIsMobileMenuOpen(false)
+      startTransition(() => {
+        router.refresh()
+      })
+    } finally {
+      setIsSwitchingWorkspace(false)
+    }
   }
 
   const hasAvatar = userAvatarUrl.trim().length > 0
@@ -141,11 +195,92 @@ export function TopNavbar({ userAvatarUrl, userEmail, userName }: TopNavbarProps
             })}
           </nav>
 
-          <div className="hidden items-center justify-end lg:flex lg:w-[220px]">
-            <div className="relative" ref={profileMenuRef}>
+          <div className="hidden items-center justify-end gap-3 md:flex md:w-[260px] lg:w-[320px]" ref={desktopMenusRef}>
+            <div className="relative">
               <button
                 type="button"
-                onClick={() => setIsProfileMenuOpen((current) => !current)}
+                onClick={() => {
+                  if (!hasMultipleWorkspaces) {
+                    return
+                  }
+
+                  setIsProfileMenuOpen(false)
+                  setIsWorkspaceMenuOpen((current) => !current)
+                }}
+                disabled={isWorkspaceLoading || isSwitchingWorkspace || !hasMultipleWorkspaces}
+                className="flex min-w-0 max-w-[210px] items-center gap-3 rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-left text-sm text-[#E0E5EB] transition-colors hover:border-white/20 hover:bg-white/[0.05] disabled:cursor-default disabled:opacity-80 lg:max-w-none lg:min-w-[180px]"
+              >
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-[#1A1F29] text-[#8D95A6]">
+                  {isSwitchingWorkspace ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Building2 className="h-4 w-4" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm">{currentWorkspaceName}</p>
+                  <p className="truncate text-[11px] uppercase tracking-[0.18em] text-[#8D95A6]">
+                    {currentWorkspacePlan}
+                  </p>
+                </div>
+                {hasMultipleWorkspaces && <ChevronDown className="h-4 w-4 text-[#8D95A6]" />}
+              </button>
+
+              <AnimatePresence>
+                {isWorkspaceMenuOpen && hasMultipleWorkspaces && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    className="absolute right-0 top-full z-50 mt-3 min-w-[280px] rounded-xl border border-[#2A3040] bg-[#212631] p-2 shadow-xl"
+                  >
+                    <div className="px-3 py-2">
+                      <p className="text-[11px] uppercase tracking-[0.2em] text-[#8D95A6]">
+                        Workspaces
+                      </p>
+                    </div>
+                    <div className="grid gap-1">
+                      {workspaces.map((entry) => {
+                        const active = entry.workspace.id === workspace?.workspace.id
+
+                        return (
+                          <button
+                            key={entry.workspace.id}
+                            type="button"
+                            onClick={() => void handleWorkspaceSwitch(entry.workspace.id)}
+                            disabled={isSwitchingWorkspace}
+                            className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-sm transition-colors ${
+                              active
+                                ? 'bg-[#101417] text-white'
+                                : 'text-[#E0E5EB] hover:bg-[#101417]'
+                            }`}
+                          >
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-[#1A1F29] text-[#8D95A6]">
+                              <Building2 className="h-4 w-4" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate">{entry.workspace.name}</p>
+                              <p className="truncate text-[11px] uppercase tracking-[0.18em] text-[#8D95A6]">
+                                {entry.role} · {getWorkspacePlanLabel(entry.workspace.plan)}
+                              </p>
+                            </div>
+                            {active && <Check className="h-4 w-4 text-emerald-300" />}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsWorkspaceMenuOpen(false)
+                  setIsProfileMenuOpen((current) => !current)
+                }}
                 className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-[#4E576A] bg-[#212631] text-xs font-medium text-white transition-colors hover:border-[#7A8498]"
                 style={{ fontFamily: 'var(--font-brand-display, Satoshi, sans-serif)' }}
                 aria-expanded={isProfileMenuOpen}
@@ -224,6 +359,29 @@ export function TopNavbar({ userAvatarUrl, userEmail, userName }: TopNavbarProps
                       <span>{t('tutorial')}</span>
                     </Link>
 
+                    <Link
+                      href="/docs"
+                      onClick={closeMenus}
+                      className="flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm font-normal text-[#E0E5EB] transition-colors hover:bg-[#101417]"
+                    >
+                      <BookOpen className="h-4 w-4 text-[#8D95A6]" />
+                      <span>{t('docs')}</span>
+                    </Link>
+
+                    {noctraRole === 'noctra_admin' && (
+                      <>
+                        <div className="my-2 h-px bg-[#2A3040]" />
+                        <Link
+                          href="/admin/requests"
+                          onClick={closeMenus}
+                          className="flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm font-normal text-amber-200 transition-colors hover:bg-white/[0.03]"
+                        >
+                          <ShieldCheck className="h-4 w-4 text-amber-400" />
+                          <span>Panel Admin</span>
+                        </Link>
+                      </>
+                    )}
+
                     <div className="my-2 h-px bg-[#2A3040]" />
 
                     <button
@@ -287,6 +445,55 @@ export function TopNavbar({ userAvatarUrl, userEmail, userName }: TopNavbarProps
               className="overflow-hidden border-t border-white/10 bg-[#12161d] lg:hidden"
             >
               <div className="space-y-2 p-4">
+                <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/10 bg-[#1A1F29] text-[#8D95A6]">
+                      {isSwitchingWorkspace ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Building2 className="h-4 w-4" />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm text-[#E0E5EB]">{currentWorkspaceName}</p>
+                      <p className="truncate text-[11px] uppercase tracking-[0.18em] text-[#8D95A6]">
+                        {currentWorkspacePlan}
+                      </p>
+                    </div>
+                  </div>
+
+                  {workspaces.length > 1 && (
+                    <div className="mt-3 grid gap-2">
+                      {workspaces.map((entry) => {
+                        const active = entry.workspace.id === workspace?.workspace.id
+
+                        return (
+                          <button
+                            key={entry.workspace.id}
+                            type="button"
+                            onClick={() => void handleWorkspaceSwitch(entry.workspace.id)}
+                            disabled={isSwitchingWorkspace}
+                            className={`flex items-center gap-3 rounded-xl px-3 py-3 text-left text-sm transition-colors ${
+                              active
+                                ? 'border border-white/10 bg-[#101417] text-white'
+                                : 'border border-transparent bg-white/[0.03] text-[#E0E5EB] hover:bg-white/[0.06]'
+                            }`}
+                          >
+                            <Building2 className="h-4 w-4 shrink-0 text-[#8D95A6]" />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate">{entry.workspace.name}</p>
+                              <p className="truncate text-[11px] uppercase tracking-[0.18em] text-[#8D95A6]">
+                                {entry.role} · {getWorkspacePlanLabel(entry.workspace.plan)}
+                              </p>
+                            </div>
+                            {active && <Check className="h-4 w-4 text-emerald-300" />}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+
                 {navigation.map(({ href, icon: Icon, label }, i) => {
                   const active = isNavigationActive(pathname, href)
 
@@ -367,9 +574,32 @@ export function TopNavbar({ userAvatarUrl, userEmail, userName }: TopNavbarProps
                     onClick={closeMenus}
                     className="flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm font-normal text-[#E0E5EB] transition-colors hover:bg-[#101417]"
                   >
-                    < BookOpen className="h-4 w-4 text-[#8D95A6]" />
+                    <BookOpen className="h-4 w-4 text-[#8D95A6]" />
                     <span>{t('tutorial')}</span>
                   </Link>
+
+                  <Link
+                    href="/docs"
+                    onClick={closeMenus}
+                    className="flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm font-normal text-[#E0E5EB] transition-colors hover:bg-[#101417]"
+                  >
+                    <BookOpen className="h-4 w-4 text-[#8D95A6]" />
+                    <span>{t('docs')}</span>
+                  </Link>
+
+                  {noctraRole === 'noctra_admin' && (
+                    <>
+                      <div className="my-2 h-px bg-[#2A3040]" />
+                      <Link
+                        href="/admin/requests"
+                        onClick={closeMenus}
+                        className="flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm font-normal text-amber-200 transition-colors hover:bg-white/[0.03]"
+                      >
+                        <ShieldCheck className="h-4 w-4 text-amber-400" />
+                        <span>Panel Admin</span>
+                      </Link>
+                    </>
+                  )}
 
                   <div className="my-2 h-px bg-[#2A3040]" />
 

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { anthropic } from '@/lib/anthropic';
 import { withUserInputLanguageRule } from '@/lib/ai/language-rule';
+import { buildTemporalContext, buildLatamGeoContext, buildNoctraIndustryContext } from '@/lib/ai/temporal-context';
 import { type Platform } from '@/lib/product';
 import {
   asPlatform,
@@ -23,7 +24,8 @@ type PlanResponse = {
 
 export async function POST(req: Request) {
   try {
-    const { brandVoice, supabase, user } = await getQuickActionContext();
+    const { brandVoice, supabase, user, workspace } = await getQuickActionContext();
+    if (!workspace) return NextResponse.json({ error: 'No workspace' }, { status: 401 })
     const body = (await req.json()) as {
       days?: unknown;
       platforms?: unknown;
@@ -45,10 +47,25 @@ export async function POST(req: Request) {
       ? `\n\nThe following ideas have already been suggested in this session: \n- ${history.join('\n- ')}\n\nDO NOT repeat these topics, hooks, or angles. Explore DIFFERENT creative directions.`
       : '';
 
+    const temporalClosingInstruction = `
+INSTRUCCIÓN FINAL — TIEMPO:
+Antes de escribir este post, confirma mentalmente:
+- ¿Estoy usando el año actual (${new Date().getFullYear()}) como presente? ✓
+- ¿Estoy usando el año pasado (${new Date().getFullYear() - 1}) solo como historia
+  o contraste, nunca como presente o futuro? ✓
+- ¿Mis proyecciones usan horizonte relativo ("próximos meses", "para ${new Date().getFullYear() + 1}")
+  y no años que ya pasaron? ✓
+Si cualquier respuesta es NO — reescribe esa parte antes de responder.
+`
+
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 2200,
-      system: withUserInputLanguageRule(`You are a social media content strategist for Noctra Studio, a boutique digital agency in Querétaro, Mexico.
+      system: withUserInputLanguageRule([
+        buildTemporalContext(),
+        buildLatamGeoContext(),
+        buildNoctraIndustryContext(),
+        `You are a social media content strategist for Noctra Studio, a boutique digital agency in Querétaro, Mexico.
 Brand voice:
 ${formatBrandVoice(brandVoice)}
 
@@ -62,7 +79,9 @@ Rules:
   { day: number, platform: string, angle: string, hook: string, why: string }
 
 Return ONLY valid JSON:
-{ "plan": [{ "day": 1, "platform": "linkedin", "angle": "opinion", "hook": "...", "why": "..." }] }`),
+{ "plan": [{ "day": 1, "platform": "linkedin", "angle": "opinion", "hook": "...", "why": "..." }] }`,
+        temporalClosingInstruction,
+      ].join('\n\n')),
       messages: [{ role: 'user', content: 'Generate the plan now.' }],
     });
 
@@ -102,6 +121,7 @@ Return ONLY valid JSON:
     const savedIdeas = await saveRawIdeas(
       supabase,
       user.id,
+      workspace.id,
       normalizedPlan.map((item) => ({
         platform: item.platform,
         rawIdea: `Día ${item.day}: ${item.hook}\n\nÁngulo: ${item.angle}\n\nPor qué: ${item.why}`,

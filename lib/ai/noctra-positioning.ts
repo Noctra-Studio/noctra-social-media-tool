@@ -126,17 +126,17 @@ export const NOCTRA_PRODUCT_TOPICS = `
 ## PRODUCTOS Y SERVICIOS — ÁNGULOS DE CONTENIDO
 
 ### SEO (Posicionamiento en buscadores)
-Contexto 2025: Google AI Overviews está cambiando cómo los usuarios
+Contexto 2026: Google AI Overviews está cambiando cómo los usuarios
 consumen resultados. El SEO tradicional ya no es suficiente.
-  
+
 Ángulos de alto impacto:
 - "Tu competencia apareció en ChatGPT cuando alguien preguntó por [tu servicio]. Tú no."
-- "SEO en 2025 no es lo que era en 2020. Aquí la diferencia que importa."
+- "SEO en 2026 no es lo que era en 2020. Aquí la diferencia que importa."
 - "El contenido que posiciona en Google Y en IA: cómo producirlo"
 - Resultado tangible para el cliente: más llamadas, no solo más visitas
 
 ### GEO (Generative Engine Optimization)
-Contexto: término emergente 2024-2025. Las búsquedas en ChatGPT, Perplexity,
+Contexto: término consolidado desde 2025. Las búsquedas en ChatGPT, Perplexity,
 Google AI ya generan respuestas directas. Los negocios que aparecen ahí
 ganan autoridad exponencial.
   
@@ -182,14 +182,14 @@ Contexto: Google rankea por velocidad. Un sitio lento es dinero perdido.
 Ángulos de alto impacto:
 - "Tu sitio carga en 8 segundos. Tu competencia en 1.2. Esto es lo que pierdes."
 - "El sitio web que sí convierte tiene estas 5 características (y no es el más caro)"
-- "Por qué elegir tecnología moderna no es opcional para crecer en 2025"
+- "Por qué elegir tecnología moderna no es opcional para crecer en 2026"
 `
 
 /**
  * Tendencias y predicciones para contenido de alto impacto.
  */
 export const NOCTRA_TRENDS_CONTEXT = `
-## TENDENCIAS 2025 — CONTEXTO PARA CONTENIDO DE IMPACTO
+## TENDENCIAS 2026 — CONTEXTO PARA CONTENIDO DE IMPACTO
 
 ### Tecnología y negocios
 - La adopción de IA en PYME latinoamericana está en etapa temprana —

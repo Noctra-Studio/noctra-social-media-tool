@@ -140,7 +140,7 @@ export const PLATFORM_PRINCIPLES: Record<string, PlatformPrinciples> = {
     avoid: [
       'Threads genéricos de "N cosas que deberías saber sobre X"',
       'Tweets que terminan en "Hilo 🧵" sin entregar valor en el tweet 1',
-      'Hashtags en tweets — en X 2025 no aportan alcance orgánico',
+      'Hashtags en tweets — en X 2026 no aportan alcance orgánico',
       'Frases de cierre motivacionales sin contenido: "El éxito está en tus manos"',
     ],
   },

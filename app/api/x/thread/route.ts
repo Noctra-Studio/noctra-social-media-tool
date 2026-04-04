@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { anthropic } from '@/lib/anthropic'
 import { buildUserContext } from '@/lib/ai/build-user-context'
 import { withUserInputLanguageRule } from '@/lib/ai/language-rule'
+import { buildTemporalContext, buildLatamGeoContext, buildNoctraIndustryContext } from '@/lib/ai/temporal-context'
 import {
   getAudiencePrompt,
   getPillarPrompt,
@@ -41,7 +42,8 @@ type ThreadResponse = {
 
 export async function POST(req: Request) {
   try {
-    const { brandVoice: savedBrandVoice, supabase, user } = await getGenerationContext()
+    const { brandVoice: savedBrandVoice, supabase, user, workspace } = await getGenerationContext()
+    if (!workspace) return NextResponse.json({ error: 'No workspace' }, { status: 401 })
     const body = (await req.json()) as ThreadBody
     const idea = body.idea?.trim()
     const angle = body.angle?.trim()
@@ -125,10 +127,28 @@ ${userCtx.total_posts_generated >= 5 ? `
 ` : ''}
 `
 
+    const temporalClosingInstruction = `
+INSTRUCCIÓN FINAL — TIEMPO:
+Antes de escribir este post, confirma mentalmente:
+- ¿Estoy usando el año actual (${new Date().getFullYear()}) como presente? ✓
+- ¿Estoy usando el año pasado (${new Date().getFullYear() - 1}) solo como historia
+  o contraste, nunca como presente o futuro? ✓
+- ¿Mis proyecciones usan horizonte relativo ("próximos meses", "para ${new Date().getFullYear() + 1}")
+  y no años que ya pasaron? ✓
+Si cualquier respuesta es NO — reescribe esa parte antes de responder.
+`
+
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 2200,
-      system: withUserInputLanguageRule(`You are writing a Twitter/X thread for Manu, founder of Noctra Studio, a boutique digital agency in Queretaro, Mexico.
+      system: withUserInputLanguageRule([
+        buildTemporalContext(),
+        buildLatamGeoContext(),
+        buildNoctraIndustryContext(),
+        `You are writing a Twitter/X thread for Manu, founder of Noctra Studio, a boutique digital agency in Queretaro, Mexico.
+Audience: comunidad tech, emprendedores y profesionales digitales en
+México/LATAM. Más abierta a opiniones directas y datos concretos.
+El humor es válido si es seco e inteligente — no forzado.
 Brand voice:
 ${formatBrandVoice(brandVoice)}
 
@@ -137,7 +157,9 @@ ${strategyContext}
 ${learningInjection}
 
 Language: Spanish (LATAM).
-Return only valid JSON.`),
+Return only valid JSON.`,
+        temporalClosingInstruction,
+      ].join('\n\n')),
       messages: [
         {
           role: 'user',
@@ -178,6 +200,7 @@ Return ONLY valid JSON:
     const postId = await saveGeneratedPost({
       angle,
       content,
+      createdBy: user.id,
       exportMetadata,
       format: 'thread',
       idea,
@@ -185,6 +208,7 @@ Return ONLY valid JSON:
       platform: 'x' satisfies Platform,
       postId: body.post_id,
       userId: user.id,
+      workspaceId: workspace.id,
     })
 
     return NextResponse.json({

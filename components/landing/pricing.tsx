@@ -84,7 +84,7 @@ export function Pricing({ locale }: { locale: LandingLocale }) {
           )}
         </div>
 
-        <div className="mt-20 grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-20 grid grid-cols-1 gap-8 md:grid-cols-2 xl:grid-cols-4">
           {pricing.plans.map((plan, index) => (
             <PricingCard
               key={index}

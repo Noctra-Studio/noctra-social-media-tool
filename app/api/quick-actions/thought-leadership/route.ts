@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { anthropic } from '@/lib/anthropic';
 import { withUserInputLanguageRule } from '@/lib/ai/language-rule';
+import { buildTemporalContext, buildLatamGeoContext, buildNoctraIndustryContext } from '@/lib/ai/temporal-context';
 import {
   asPlatform,
   formatBrandVoice,
@@ -20,7 +21,8 @@ type ThoughtLeadershipResponse = {
 
 export async function POST(req: Request) {
   try {
-    const { brandVoice, supabase, user } = await getQuickActionContext();
+    const { brandVoice, supabase, user, workspace } = await getQuickActionContext();
+    if (!workspace) return NextResponse.json({ error: 'No workspace' }, { status: 401 })
     const body = (await req.json()) as {
       platform?: unknown;
       stance?: unknown;
@@ -36,10 +38,25 @@ export async function POST(req: Request) {
 
     const topic = body.topic.trim();
 
+    const temporalClosingInstruction = `
+INSTRUCCIÓN FINAL — TIEMPO:
+Antes de escribir este post, confirma mentalmente:
+- ¿Estoy usando el año actual (${new Date().getFullYear()}) como presente? ✓
+- ¿Estoy usando el año pasado (${new Date().getFullYear() - 1}) solo como historia
+  o contraste, nunca como presente o futuro? ✓
+- ¿Mis proyecciones usan horizonte relativo ("próximos meses", "para ${new Date().getFullYear() + 1}")
+  y no años que ya pasaron? ✓
+Si cualquier respuesta es NO — reescribe esa parte antes de responder.
+`
+
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 1900,
-      system: withUserInputLanguageRule(`You are writing a thought leadership post for Manu, founder of Noctra Studio — a boutique digital agency in Querétaro, Mexico specializing in web development, SEO, branding, and AI automation for LATAM SMBs.
+      system: withUserInputLanguageRule([
+        buildTemporalContext(),
+        buildLatamGeoContext(),
+        buildNoctraIndustryContext(),
+        `You are writing a thought leadership post for Manu, founder of Noctra Studio — a boutique digital agency in Querétaro, Mexico specializing in web development, SEO, branding, and AI automation for LATAM SMBs.
 
 Brand voice:
 ${formatBrandVoice(brandVoice)}
@@ -62,7 +79,9 @@ X: thread of 4-6 tweets, each tweet a standalone argument
 Instagram: 120-150 words, hook + 3 punchy points + CTA
 
 Return ONLY valid JSON:
-{ "post": { "platform": "${platform}", "content": { "caption": "..." } }, "stance_used": "..." }`),
+{ "post": { "platform": "${platform}", "content": { "caption": "..." } }, "stance_used": "..." }`,
+        temporalClosingInstruction,
+      ].join('\n\n')),
       messages: [{ role: 'user', content: 'Write the thought leadership post now.' }],
     });
 
@@ -78,7 +97,7 @@ Return ONLY valid JSON:
       throw new Error('Invalid thought leadership response');
     }
 
-    const savedPosts = await saveDraftPosts(supabase, user.id, [
+    const savedPosts = await saveDraftPosts(supabase, user.id, workspace.id, [
       {
         angle: 'Thought leadership',
         content: parsed.post.content,

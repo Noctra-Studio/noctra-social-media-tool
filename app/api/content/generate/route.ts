@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { anthropic } from '@/lib/anthropic'
 import { buildUserContext } from '@/lib/ai/build-user-context'
 import { withUserInputLanguageRule } from '@/lib/ai/language-rule'
+import { buildTemporalContext, buildLatamGeoContext, buildNoctraIndustryContext } from '@/lib/ai/temporal-context'
 import {
   getAudiencePrompt,
   getPillarPrompt,
@@ -86,16 +87,38 @@ function deriveInstagramHeadline(...sources: string[]) {
   return ''
 }
 
+function buildTemporalClosingInstruction(): string {
+  const year = new Date().getFullYear()
+  return `
+INSTRUCCIÓN FINAL — TIEMPO:
+Antes de escribir este post, confirma mentalmente:
+- ¿Estoy usando el año actual (${year}) como presente? ✓
+- ¿Estoy usando el año pasado (${year - 1}) solo como historia
+  o contraste, nunca como presente o futuro? ✓
+- ¿Mis proyecciones usan horizonte relativo ("próximos meses", "para ${year + 1}")
+  y no años que ya pasaron? ✓
+Si cualquier respuesta es NO — reescribe esa parte antes de responder.
+`
+}
+
 function getInstagramSinglePrompt(idea: string, angle: string, brandVoice: string, strategyContext: string) {
   return {
-    system: withUserInputLanguageRule(`You are the lead content strategist for Noctra Studio, a boutique digital agency in Queretaro, Mexico.
+    system: withUserInputLanguageRule([
+      buildTemporalContext(),
+      buildLatamGeoContext(),
+      buildNoctraIndustryContext(),
+      `You are the lead content strategist for Noctra Studio, a boutique digital agency in Queretaro, Mexico.
+Audience: dueños de negocio, emprendedores y profesionales en México y LATAM.
+Consumen contenido en español. Esperan valor práctico, no teoría de mercado.
 Brand voice:
 ${brandVoice}
 
 ${strategyContext}
 
 Language: Spanish (LATAM).
-Output only valid JSON.`),
+Output only valid JSON.`,
+      buildTemporalClosingInstruction(),
+    ].join('\n\n')),
     prompt: `Create an Instagram single-image post.
 
 Idea: ${idea}
@@ -135,7 +158,14 @@ function getLinkedInPrompt(
       : ''
 
   return {
-    system: withUserInputLanguageRule(`You are writing for LinkedIn on behalf of Noctra Studio, a boutique digital agency in Queretaro, Mexico.
+    system: withUserInputLanguageRule([
+      buildTemporalContext(),
+      buildLatamGeoContext(),
+      buildNoctraIndustryContext(),
+      `You are writing for LinkedIn on behalf of Noctra Studio, a boutique digital agency in Queretaro, Mexico.
+Audience: profesionales, directivos de PYMEs y emprendedores en México/LATAM.
+LinkedIn en LATAM tiene un tono más formal que en USA — el contenido debe
+ser directo y orientado a resultado, sin ser demasiado casual.
 Brand voice:
 ${brandVoice}
 
@@ -143,7 +173,9 @@ ${strategyContext}
 
 Language: Spanish (LATAM).
 Tone: practitioner, direct, useful, not corporate.
-Output only valid JSON.`),
+Output only valid JSON.`,
+      buildTemporalClosingInstruction(),
+    ].join('\n\n')),
     prompt: `Write a LinkedIn post.
 
 Idea: ${idea}
@@ -167,10 +199,17 @@ Return ONLY valid JSON:
 
 function getXTweetPrompt(idea: string, angle: string, brandVoice: string, strategyContext: string) {
   return {
-    system: withUserInputLanguageRule(`You are Manu, founder of Noctra Studio,
+    system: withUserInputLanguageRule([
+      buildTemporalContext(),
+      buildLatamGeoContext(),
+      buildNoctraIndustryContext(),
+      `You are Manu, founder of Noctra Studio,
 writing on X (Twitter) from a practitioner's perspective.
 You execute digital projects for SMBs in Mexico and LATAM.
 Your voice: direct, specific, earned credibility — not corporate.
+Audience: comunidad tech, emprendedores y profesionales digitales en
+México/LATAM. Más abierta a opiniones directas y datos concretos.
+El humor es válido si es seco e inteligente — no forzado.
 
 Brand voice context:
 ${brandVoice}
@@ -178,7 +217,9 @@ ${brandVoice}
 ${strategyContext}
 
 Language: Spanish (LATAM).
-Output only valid JSON.`),
+Output only valid JSON.`,
+      buildTemporalClosingInstruction(),
+    ].join('\n\n')),
     prompt: `Write one publication-ready tweet for X.
 
 Idea: ${idea}
@@ -288,7 +329,8 @@ function normalizeGeneratedPayload(platform: Platform, requestedFormat: PostForm
 
 export async function POST(req: Request) {
   try {
-    const { brandVoice: savedBrandVoice, supabase, user } = await getGenerationContext()
+    const { brandVoice: savedBrandVoice, supabase, user, workspace } = await getGenerationContext()
+    if (!workspace) return NextResponse.json({ error: 'No workspace' }, { status: 401 })
     const body = (await req.json()) as GenerateBody
     const idea = body.idea?.trim()
     const platform = body.platform
@@ -304,6 +346,33 @@ export async function POST(req: Request) {
       body.brand_voice && Object.keys(body.brand_voice).length > 0
         ? (body.brand_voice as BrandVoice)
         : savedBrandVoice
+
+    // Fetch active AI insights for this workspace + platform
+    const { createAdminClient } = await import('@/lib/supabase')
+    const adminForInsights = createAdminClient()
+    const { data: activeInsights } = await adminForInsights
+      .from('ai_insights')
+      .select('insight_type, summary, confidence')
+      .eq('workspace_id', workspace.id)
+      .eq('is_active', true)
+      .or(`platform.eq.${platform},platform.eq.all`)
+      .gte('confidence', 0.4)
+      .gt('expires_at', new Date().toISOString())
+      .order('confidence', { ascending: false })
+      .limit(6)
+
+    const insightsBlock =
+      activeInsights && activeInsights.length > 0
+        ? `\n\n## Performance insights from past posts (apply these patterns):\n${activeInsights
+            .map((i: { insight_type: string; summary: string }) => `- [${i.insight_type.toUpperCase()}] ${i.summary}`)
+            .join('\n')}`
+        : ''
+
+    const insightsApplied =
+      activeInsights && activeInsights.length > 0
+        ? activeInsights.map((i: { summary: string }) => i.summary)
+        : []
+
     const [{ data: pillars, error: pillarsError }, { data: audience, error: audienceError }] =
       await Promise.all([
         supabase
@@ -344,6 +413,7 @@ export async function POST(req: Request) {
         const learningInjection = `
 ${userCtx.editorial_principles ?? ''}
 ${marketSignals}
+${insightsBlock}
 ${userCtx.total_posts_generated >= 5 ? `
 ## CONTEXTO DE POSTS ANTERIORES
 - Referencias de alto rendimiento: ${userCtx.top_performing_posts
@@ -383,6 +453,7 @@ Calibra el lenguaje, ejemplos, y CTA del post para esta audiencia específica. U
         const postId = await saveGeneratedPost({
           angle,
           content: normalized.content,
+          createdBy: user.id,
           exportMetadata: normalized.exportMetadata,
           format: normalized.format,
           idea,
@@ -390,6 +461,7 @@ Calibra el lenguaje, ejemplos, y CTA del post para esta audiencia específica. U
           platform,
           postId: body.post_id,
           userId: user.id,
+          workspaceId: workspace.id,
         })
 
         return NextResponse.json({
@@ -397,6 +469,7 @@ Calibra el lenguaje, ejemplos, y CTA del post para esta audiencia específica. U
           content: normalized.content,
           export_metadata: normalized.exportMetadata,
           format: normalized.format,
+          insights_applied: insightsApplied,
           platform,
           pillar_id: null,
           post_id: postId,
@@ -435,6 +508,7 @@ Calibra el lenguaje, ejemplos, y CTA del post para esta audiencia específica. U
 ${getNoctraPositioningPrompt(idea)}
 ${userCtx.editorial_principles ?? ''}
 ${marketSignals}
+${insightsBlock}
 ${userCtx.total_posts_generated >= 5 ? `
 ## CONTEXTO DE POSTS ANTERIORES
 - Referencias de alto rendimiento: ${userCtx.top_performing_posts
@@ -476,6 +550,7 @@ Calibra el lenguaje, ejemplos, y CTA del post para esta audiencia específica. U
     const postId = await saveGeneratedPost({
       angle,
       content: normalized.content,
+      createdBy: user.id,
       exportMetadata: normalized.exportMetadata,
       format: normalized.format,
       idea,
@@ -483,6 +558,7 @@ Calibra el lenguaje, ejemplos, y CTA del post para esta audiencia específica. U
       platform,
       postId: body.post_id,
       userId: user.id,
+      workspaceId: workspace.id,
     })
 
     return NextResponse.json({
@@ -490,6 +566,7 @@ Calibra el lenguaje, ejemplos, y CTA del post para esta audiencia específica. U
       content: normalized.content,
       export_metadata: normalized.exportMetadata,
       format: normalized.format,
+      insights_applied: insightsApplied,
       platform,
       pillar_id: activePillar?.id || null,
       post_id: postId,

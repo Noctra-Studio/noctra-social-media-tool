@@ -1,5 +1,4 @@
 import type Anthropic from '@anthropic-ai/sdk'
-import { getUser } from '@/lib/auth/get-user'
 import {
   buildStructuredPostFields,
   isMissingStructuredPostColumnError,
@@ -8,6 +7,7 @@ import {
 import { createClient } from '@/lib/supabase/server'
 import type { Platform } from '@/lib/product'
 import type { ExportMetadata, PostFormat } from '@/lib/social-content'
+import { getActiveWorkspaceContext } from '@/lib/workspace/server'
 
 export type BrandVoice = {
   example_posts?: string[]
@@ -21,18 +21,21 @@ type SavedPostRow = {
 }
 
 export async function getGenerationContext() {
-  const user = await getUser()
-  const supabase = await createClient()
-  const { data, error } = await supabase.from('brand_voice').select('*').limit(1).maybeSingle()
-
-  if (error) {
-    throw error
-  }
+  const { config, supabase, user, workspace } = await getActiveWorkspaceContext()
+  const data = config
+    ? {
+        example_posts: config.reference_posts ?? [],
+        forbidden_words: config.forbidden_words ?? [],
+        tone: config.tone_of_voice,
+        values: config.brand_values ?? [],
+      }
+    : null
 
   return {
     brandVoice: (data as BrandVoice | null) ?? null,
     supabase,
     user,
+    workspace,
   }
 }
 
@@ -43,6 +46,7 @@ export function formatBrandVoice(brandVoice: BrandVoice | null) {
       'Values: claridad, criterio, resultados.',
       'Forbidden words: none.',
       'Example posts: none.',
+      '\nVoz de marca — nota editorial:\nNoctra habla desde el presente y desde la experiencia acumulada.\nNo predice el futuro de forma especulativa — señala hacia dónde va la industria\nbasado en lo que ya está ocurriendo. El tono es el de un practicante\nque lleva tiempo en el mercado, no el de un consultor que proyecta desde afuera.',
     ].join('\n')
   }
 
@@ -51,6 +55,7 @@ export function formatBrandVoice(brandVoice: BrandVoice | null) {
     `Values: ${brandVoice.values?.length ? brandVoice.values.join(', ') : 'claridad, criterio, resultados'}`,
     `Forbidden words: ${brandVoice.forbidden_words?.length ? brandVoice.forbidden_words.join(', ') : 'none'}`,
     `Example posts: ${brandVoice.example_posts?.length ? brandVoice.example_posts.join(' | ') : 'none'}`,
+    `\nVoz de marca — nota editorial:\nNoctra habla desde el presente y desde la experiencia acumulada.\nNo predice el futuro de forma especulativa — señala hacia dónde va la industria\nbasado en lo que ya está ocurriendo. El tono es el de un practicante\nque lleva tiempo en el mercado, no el de un consultor que proyecta desde afuera.`,
   ].join('\n')
 }
 
@@ -76,6 +81,7 @@ export function parseAnthropicJson<T>(message: Anthropic.Messages.Message) {
 export async function saveGeneratedPost(params: {
   angle: string
   content: Record<string, unknown>
+  createdBy?: string | null
   exportMetadata?: ExportMetadata
   format: PostFormat
   idea: string
@@ -83,8 +89,21 @@ export async function saveGeneratedPost(params: {
   platform: Platform
   postId?: string | null
   userId: string
+  workspaceId?: string | null
 }) {
-  const { angle, content, exportMetadata, format, idea, pillarId, platform, postId, userId } = params
+  const {
+    angle,
+    content,
+    createdBy,
+    exportMetadata,
+    format,
+    idea,
+    pillarId,
+    platform,
+    postId,
+    userId,
+    workspaceId,
+  } = params
   const supabase = await createClient()
   const structuredFields = buildStructuredPostFields({
     content,
@@ -112,6 +131,7 @@ export async function saveGeneratedPost(params: {
       .from('posts')
       .update({
         ...postPayload,
+        ...(workspaceId ? { workspace_id: workspaceId } : {}),
         status: 'generated',
       })
       .eq('id', postId)
@@ -124,6 +144,7 @@ export async function saveGeneratedPost(params: {
         .from('posts')
         .update({
           ...omitStructuredPostFields(postPayload),
+          ...(workspaceId ? { workspace_id: workspaceId } : {}),
           status: 'generated',
         })
         .eq('id', postId)
@@ -147,8 +168,10 @@ export async function saveGeneratedPost(params: {
     .insert([
       {
         ...postPayload,
+        created_by: createdBy ?? userId,
         status: 'generated',
         user_id: userId,
+        ...(workspaceId ? { workspace_id: workspaceId } : {}),
       },
     ])
     .select('id')
@@ -160,8 +183,10 @@ export async function saveGeneratedPost(params: {
       .insert([
         {
           ...omitStructuredPostFields(postPayload),
+          created_by: createdBy ?? userId,
           status: 'generated',
           user_id: userId,
+          ...(workspaceId ? { workspace_id: workspaceId } : {}),
         },
       ])
       .select('id')

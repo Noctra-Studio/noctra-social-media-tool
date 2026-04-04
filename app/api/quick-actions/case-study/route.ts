@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { anthropic } from '@/lib/anthropic';
 import { withUserInputLanguageRule } from '@/lib/ai/language-rule';
+import { buildTemporalContext, buildLatamGeoContext, buildNoctraIndustryContext } from '@/lib/ai/temporal-context';
 import {
   asPlatform,
   formatBrandVoice,
@@ -19,7 +20,8 @@ type CaseStudyResponse = {
 
 export async function POST(req: Request) {
   try {
-    const { brandVoice, supabase, user } = await getQuickActionContext();
+    const { brandVoice, supabase, user, workspace } = await getQuickActionContext();
+    if (!workspace) return NextResponse.json({ error: 'No workspace' }, { status: 401 })
     const body = (await req.json()) as {
       client?: unknown;
       platform?: unknown;
@@ -45,10 +47,25 @@ export async function POST(req: Request) {
     const service = body.service.trim();
     const result = body.result.trim();
 
+    const temporalClosingInstruction = `
+INSTRUCCIÓN FINAL — TIEMPO:
+Antes de escribir este post, confirma mentalmente:
+- ¿Estoy usando el año actual (${new Date().getFullYear()}) como presente? ✓
+- ¿Estoy usando el año pasado (${new Date().getFullYear() - 1}) solo como historia
+  o contraste, nunca como presente o futuro? ✓
+- ¿Mis proyecciones usan horizonte relativo ("próximos meses", "para ${new Date().getFullYear() + 1}")
+  y no años que ya pasaron? ✓
+Si cualquier respuesta es NO — reescribe esa parte antes de responder.
+`
+
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 1800,
-      system: withUserInputLanguageRule(`You are writing a case study post for Noctra Studio, a boutique digital agency in Querétaro, Mexico.
+      system: withUserInputLanguageRule([
+        buildTemporalContext(),
+        buildLatamGeoContext(),
+        buildNoctraIndustryContext(),
+        `You are writing a case study post for Noctra Studio, a boutique digital agency in Querétaro, Mexico.
 Brand voice:
 ${formatBrandVoice(brandVoice)}
 
@@ -73,7 +90,9 @@ IMPORTANT: Never mention client names without placeholder approval.
 Use 'un cliente de [industry]' format unless client field explicitly contains a public brand name.
 
 Return ONLY valid JSON:
-{ "post": { "platform": "${platform}", "content": { "caption": "...", "hashtags": ["#uno"] } } }`),
+{ "post": { "platform": "${platform}", "content": { "caption": "...", "hashtags": ["#uno"] } } }`,
+        temporalClosingInstruction,
+      ].join('\n\n')),
       messages: [{ role: 'user', content: 'Write the case study now.' }],
     });
 
@@ -84,7 +103,7 @@ Return ONLY valid JSON:
       throw new Error('Invalid case study response');
     }
 
-    const savedPosts = await saveDraftPosts(supabase, user.id, [
+    const savedPosts = await saveDraftPosts(supabase, user.id, workspace.id, [
       {
         angle: 'Caso de estudio',
         content: parsed.post.content,

@@ -573,7 +573,7 @@ function ContentSlide({ background, slide, totalSlides, onUpdateSlide }: SlideTe
   const rawBody = sanitizeSlideText(slide.body)
   const promotedCopy = rawHeadline ? null : splitPreviewCopy(rawBody)
   const stat = sanitizeSlideText(slide.stat_or_example)
-  const eyebrow = sanitizeSlideText(slide.visual_direction)?.toUpperCase()
+  const eyebrow = null // Visual direction is for image generation hooks, not text content
   const template = slide.suggested_template || 'editorial'
   const showCounter = totalSlides > 1
   const headline = rawHeadline || promotedCopy?.headline || rawBody

@@ -1,15 +1,22 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { genAI } from '@/lib/gemini';
+import { NextRequest, NextResponse } from 'next/server'
+import { genAI } from '@/lib/gemini'
+import { requireRouteUser } from '@/lib/auth/require-route-user'
 
 export async function POST(req: NextRequest) {
   try {
-    const { imageBase64, slideType, platform, angle } = await req.json();
+    const { response } = await requireRouteUser()
 
-    if (!imageBase64) {
-      return NextResponse.json({ error: 'Falta la imagen' }, { status: 400 });
+    if (response) {
+      return response
     }
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const { imageBase64, slideType, platform, angle } = await req.json()
+
+    if (!imageBase64) {
+      return NextResponse.json({ error: 'Falta la imagen' }, { status: 400 })
+    }
+
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
 
     const prompt = `You are an expert social media designer analyzing an
              ${platform} ${slideType} slide for ${angle} content.
@@ -37,7 +44,7 @@ export async function POST(req: NextRequest) {
                  "fix": "string (exact actionable fix)"
                }],
                "quick_wins": ["string", "string"]
-             }`;
+             }`
 
     const result = await model.generateContent([
       {
@@ -47,24 +54,24 @@ export async function POST(req: NextRequest) {
         }
       },
       { text: prompt }
-    ]);
+    ])
 
-    const response = await result.response;
-    const text = response.text();
+    const aiResponse = await result.response
+    const text = aiResponse.text()
     
     // Clean-up markdown-style JSON blocks if present
-    const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim()
     
     try {
-      const parsed = JSON.parse(cleanJson);
-      return NextResponse.json(parsed);
-    } catch (parseError) {
-      console.error('Gemini JSON Parse Error:', text);
-      return NextResponse.json({ error: 'Error al procesar la respuesta de la IA' }, { status: 500 });
+      const parsed = JSON.parse(cleanJson)
+      return NextResponse.json(parsed)
+    } catch {
+      console.error('Gemini JSON Parse Error:', text)
+      return NextResponse.json({ error: 'Error al procesar la respuesta de la IA' }, { status: 500 })
     }
 
   } catch (error) {
-    console.error('Critique API Error:', error);
-    return NextResponse.json({ error: 'Error en el análisis del diseño' }, { status: 500 });
+    console.error('Critique API Error:', error)
+    return NextResponse.json({ error: 'Error en el análisis del diseño' }, { status: 500 })
   }
 }

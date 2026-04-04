@@ -53,8 +53,8 @@ export function LandingFooter({ locale }: { locale: LandingLocale }) {
   return (
     <footer className="border-t border-white/6 px-6 py-14 sm:px-8 lg:px-10">
       <div className="mx-auto max-w-7xl">
-        <div className="grid gap-10 lg:grid-cols-[minmax(0,1.2fr)_repeat(3,minmax(0,180px))]">
-          <div>
+        <div className="grid gap-10 md:grid-cols-2 lg:grid-cols-[minmax(0,1.2fr)_repeat(3,minmax(0,180px))]">
+          <div className="md:col-span-2 lg:col-span-1">
             <div className="flex items-center gap-3">
               <Image
                 src="/noctra-navbar-dark.svg"
