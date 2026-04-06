@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import * as fs from 'fs'
 
 const envStr = fs.readFileSync('.env.local', 'utf8')
-const getEnv = (key) => {
+const getEnv = (key: string): string => {
   const match = envStr.match(new RegExp(`${key}="(.*?)"`))
   return match ? match[1] : ''
 }
